@@ -219,7 +219,10 @@ Numbers in this example are made up.
   every side names the same driver; otherwise it is `null`. For pooled captures this holds
   across every capture, and the note `drivers_differ` names the driver of each capture.
 - `machine_state.status` is `quiet`, `busy` or `unknown`. It also carries the hash of the
-  decision to set rounds aside and `undecided_launches`; an absent count is 0. See
+  decision to set rounds aside and `undecided_launches`; an absent count is 0. Each entry
+  of `machine_state.gates` and `machine_state.degraded` names a built-in check (`cpus`,
+  `quiet`, `census`, and the readiness checks `stop_file`, `gpu_memory` and `check_locks`)
+  or `plugin` for a check a plug-in provides; a readiness check that is off has no entry. See
   [shared machines](../method/shared-machines.md).
 - `energy`, present when power was sampled:
   `{"scope": "gpu", "excludes": ["cpu", "memory", "storage", "cooling", "power supply losses"]}`.

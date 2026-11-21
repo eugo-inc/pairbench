@@ -37,6 +37,14 @@ def _flock() -> tuple[Locker, int, int, int] | None:
     return fcntl.flock, fcntl.LOCK_EX | fcntl.LOCK_NB, fcntl.LOCK_UN, 0
 
 
+def flock_calls() -> tuple[Locker, int, int, int] | None:
+    """``fcntl.flock`` with its exclusive-without-waiting and unlock operations.
+
+    ``None`` on a platform without ``fcntl``.
+    """
+    return _flock()
+
+
 class HeldLocks:
     """The locks a run holds. ``release`` frees every one; it is safe to call again."""
 

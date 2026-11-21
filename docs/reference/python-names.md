@@ -910,9 +910,30 @@ class GateSettings:
     quiet: QuietSettings = field(default_factory=QuietSettings)
     census: CensusSettings = field(default_factory=CensusSettings)
     discard: DiscardThresholds = field(default_factory=DiscardThresholds)
+    stop_file: str | None = None
+    min_gpu_free_mib: float | None = None
+    check_locks: tuple[str, ...] = ()
 ```
 
 Machine-check settings.
+
+`stop_file`, `min_gpu_free_mib` and `check_locks` turn on the
+readiness checks; each is off while unset. A path that holds a NUL
+character, an empty entry of `check_locks` and a path that both
+`check_locks` and `locks` name are refused: the run holds a lock of
+`locks` itself in the re-check. Two paths name the same lock when they
+are the same text once repeated slashes and `.` parts are folded; no
+file is read, and a `..` part is kept, as a link before it changes the
+file the path names.
+
+#### <span id="pairbench.GateSettings.readiness"></span>`GateSettings.readiness`
+
+```python
+@property
+def readiness(self) -> tuple[str, ...]
+```
+
+The names of the readiness checks that are on, in the order they run.
 
 ### <span id="pairbench.Launch"></span>`pairbench.Launch`
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import math
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
@@ -53,6 +54,7 @@ SMI: Final = "nvidia-smi"
 SMI_TIMEOUT_S: Final = 20.0
 SMI_FORMAT: Final = "--format=csv,noheader,nounits"
 SMI_GPU_QUERY: Final = "--query-gpu=index,uuid,memory.used"
+SMI_FREE_QUERY: Final = "--query-gpu=index,memory.free"
 SMI_APPS_QUERY: Final = "--query-compute-apps=pid,gpu_uuid"
 SMI_REASON_FIELDS: Final[tuple[str, ...]] = (
     "clocks_event_reasons.active",
@@ -111,6 +113,10 @@ class GpuSource(Protocol):
         """The index of every GPU the source sees, selected or not."""
         ...
 
+    def memory_free_mib(self) -> tuple[tuple[int, float], ...] | None:
+        """The index and free memory in MiB of each selected GPU, in the order selected."""
+        ...
+
 
 def selected_indices(gpus: str, count: int) -> tuple[int, ...] | None:
     """The indices ``gpus`` selects among ``count`` GPUs, or ``None`` when one is missing.
@@ -162,6 +168,18 @@ def _field(text: str) -> str | None:
     if not value or value.startswith("[") or value.upper() in ("N/A", "NA"):
         return None
     return value
+
+
+def _amount(text: str) -> float | None:
+    """A finite amount that is not negative, or ``None``."""
+    value = _field(text)
+    if value is None:
+        return None
+    try:
+        amount = float(value)
+    except ValueError:
+        return None
+    return amount if math.isfinite(amount) and amount >= 0 else None
 
 
 class SmiSource:
@@ -271,6 +289,32 @@ class SmiSource:
             return tuple(masks[i] for i in wanted)
         return None
 
+    def memory_free_mib(self) -> tuple[tuple[int, float], ...] | None:
+        """The index and free memory in MiB of each selected GPU, in the order selected.
+
+        Only the selected GPUs are judged: a GPU that is not selected may
+        report no figure (``[N/A]``) without making the read fail. A row
+        that names no GPU index makes the whole read fail.
+        """
+        rows = self._query(SMI_FREE_QUERY)
+        if rows is None:
+            return None
+        free: dict[int, float | None] = {}
+        for row in rows:
+            if len(row) != 2 or not row[0].isdigit():
+                return None
+            free[int(row[0])] = _amount(row[1])
+        wanted = selected_indices(self._gpus, len(rows))
+        if wanted is None:
+            return None
+        found: list[tuple[int, float]] = []
+        for index in wanted:
+            amount = free.get(index)
+            if amount is None:
+                return None
+            found.append((index, amount))
+        return tuple(found)
+
 
 class NvmlSource:
     """Reads the selected GPUs through the GPU management library (the ``gpu`` extra).
@@ -284,6 +328,7 @@ class NvmlSource:
         self._module = module
         self._library: Any | None = None
         self._opened: tuple[Any, list[Any]] | None = None
+        self._wanted: tuple[int, ...] = ()
 
     def _ready(self) -> Any:
         """The module, imported and initialised once; raises when it cannot be."""
@@ -311,6 +356,7 @@ class NvmlSource:
             if wanted is None:
                 return None
             self._opened = (nvml, [nvml.nvmlDeviceGetHandleByIndex(i) for i in wanted])
+            self._wanted = wanted
         except Exception:
             return None
         return self._opened
@@ -357,6 +403,20 @@ class NvmlSource:
         except Exception:
             return None
 
+    def memory_free_mib(self) -> tuple[tuple[int, float], ...] | None:
+        """The index and free memory in MiB of each selected GPU, in the order selected."""
+        opened = self._handles()
+        if opened is None:
+            return None
+        nvml, handles = opened
+        try:
+            free = [float(nvml.nvmlDeviceGetMemoryInfo(h).free) / MIB for h in handles]
+        except Exception:
+            return None
+        if not all(math.isfinite(amount) and amount >= 0 for amount in free):
+            return None
+        return tuple(zip(self._wanted, free, strict=True))
+
 
 class FailingSource:
     """The source where no GPU can be read: every read fails."""
@@ -374,6 +434,10 @@ class FailingSource:
         return None
 
     def present(self) -> tuple[int, ...] | None:
+        """Always ``None``."""
+        return None
+
+    def memory_free_mib(self) -> tuple[tuple[int, float], ...] | None:
         """Always ``None``."""
         return None
 

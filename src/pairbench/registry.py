@@ -79,6 +79,9 @@ BUILTINS: Final[Mapping[str, Mapping[str, str]]] = {
         "cpus": "pairbench.gates.cpus:CpusGate",
         "quiet": "pairbench.gates.quiet:QuietGate",
         "census": "pairbench.gates.census:CensusGate",
+        "stop_file": "pairbench.gates.ready:StopFileGate",
+        "gpu_memory": "pairbench.gates.ready:GpuMemoryGate",
+        "check_locks": "pairbench.gates.ready:CheckLocksGate",
     },
     GROUP_RULES: {
         "strict": "pairbench.registry:StrictRule",

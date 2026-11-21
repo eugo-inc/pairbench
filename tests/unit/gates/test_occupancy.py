@@ -309,3 +309,118 @@ def test_nvml_present_that_cannot_be_read_is_none() -> None:
 
 def test_failing_source_sees_no_gpu_list() -> None:
     assert FailingSource().present() is None
+
+
+# ---------------------------------------------------------------------------
+# Free memory per GPU
+# ---------------------------------------------------------------------------
+
+FREE_QUERY = "--query-gpu=index,memory.free"
+
+
+def test_smi_free_memory_of_each_selected_gpu() -> None:
+    smi = _smi(**{FREE_QUERY: (0, "0, 81000\n1, 512.5\n2, 7\n")})
+    assert SmiSource("all", run=smi).memory_free_mib() == ((0, 81000.0), (1, 512.5), (2, 7.0))
+    assert SmiSource("2,0", run=smi).memory_free_mib() == ((2, 7.0), (0, 81000.0))
+    assert ("nvidia-smi", FREE_QUERY, "--format=csv,noheader,nounits") in smi.calls
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "0, [N/A]\n",
+        "0, N/A\n",
+        "0, lots\n",
+        "0, inf\n",
+        "0, nan\n",
+        "0, -5\n",
+        "0\n",
+        "x, 5\n",
+        "1, 5\n",
+    ],
+    ids=["bracketed", "na", "text", "inf", "nan", "negative", "short", "index", "missing"],
+)
+def test_smi_free_memory_that_cannot_be_read(output: str) -> None:
+    smi = _smi(**{FREE_QUERY: (0, output)})
+    assert SmiSource("0", run=smi).memory_free_mib() is None
+
+
+@pytest.mark.parametrize(
+    ("gpus", "output", "expected"),
+    [
+        ("1", "0, [N/A]\n1, 5\n", ((1, 5.0),)),
+        ("0", "0, 5\n1, nan\n", ((0, 5.0),)),
+        ("2,0", "0, 3\n1, N/A\n2, 4\n", ((2, 4.0), (0, 3.0))),
+        ("1", "0, 5\n1, [N/A]\n", None),
+        ("all", "0, [N/A]\n1, 5\n", None),
+    ],
+    ids=["unwatched-first", "unwatched-last", "unwatched-between", "watched", "all"],
+)
+def test_smi_free_memory_judges_only_the_watched_gpus(
+    gpus: str, output: str, expected: tuple[tuple[int, float], ...] | None
+) -> None:
+    smi = _smi(**{FREE_QUERY: (0, output)})
+    assert SmiSource(gpus, run=smi).memory_free_mib() == expected
+
+
+def test_smi_free_memory_with_a_row_of_no_known_gpu_is_none() -> None:
+    smi = _smi(**{FREE_QUERY: (0, "0, 5\nx, 5\n")})
+    assert SmiSource("0", run=smi).memory_free_mib() is None
+
+
+def test_smi_free_memory_when_the_command_fails() -> None:
+    smi = _smi(**{FREE_QUERY: (9, "")})
+    assert SmiSource("all", run=smi).memory_free_mib() is None
+
+
+class FreeNvml(FakeNvml):
+    """The library with a free amount per GPU, in bytes."""
+
+    def __init__(self, free: Sequence[float], *, fail: bool = False) -> None:
+        super().__init__()
+        self.free = list(free)
+        self.broken = fail
+
+    def nvmlDeviceGetCount(self) -> int:
+        return len(self.free)
+
+    def nvmlDeviceGetMemoryInfo(self, handle: int) -> Any:
+        if self.broken:
+            raise RuntimeError("made-up library error")
+        return type("M", (), {"used": 0, "free": self.free[handle]})()
+
+
+def test_nvml_free_memory_of_each_selected_gpu() -> None:
+    mib = 1024 * 1024
+    nvml = FreeNvml([4096 * mib, 512 * mib + mib // 2, 7 * mib])
+    assert NvmlSource("all", module=nvml).memory_free_mib() == (
+        (0, 4096.0),
+        (1, 512.5),
+        (2, 7.0),
+    )
+    assert NvmlSource("2,1", module=nvml).memory_free_mib() == ((2, 7.0), (1, 512.5))
+
+
+def test_nvml_free_memory_errors_are_failed_reads() -> None:
+    assert NvmlSource("0", module=FreeNvml([1], fail=True)).memory_free_mib() is None
+    assert NvmlSource("4", module=FreeNvml([1])).memory_free_mib() is None
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [-1024.0 * 1024, float("nan"), float("inf"), float("-inf")],
+    ids=["negative", "nan", "inf", "minus-inf"],
+)
+def test_nvml_free_memory_that_is_not_a_finite_amount_of_zero_or_more_is_a_failed_read(
+    bad: float,
+) -> None:
+    mib = 1024 * 1024
+    assert NvmlSource("all", module=FreeNvml([4096 * mib, bad])).memory_free_mib() is None
+    assert NvmlSource("1", module=FreeNvml([4096 * mib, bad])).memory_free_mib() is None
+    # Only the watched GPUs are read, as with nvidia-smi.
+    assert NvmlSource("0", module=FreeNvml([4096 * mib, bad])).memory_free_mib() == ((0, 4096.0),)
+    assert NvmlSource("0", module=FreeNvml([0])).memory_free_mib() == ((0, 0.0),)
+
+
+def test_failing_source_has_no_free_memory() -> None:
+    assert FailingSource().memory_free_mib() is None

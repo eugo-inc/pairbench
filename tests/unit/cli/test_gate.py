@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -401,3 +402,176 @@ def test_a_check_that_did_not_pass_still_prints_its_record_as_json(
         "E_GATE_FAILED: check cpus failed: busy",
         DOCS_LINE + "e_gate_failed",
     ]
+
+
+# --- gate check runs the readiness checks whose key is set --------------------
+
+NOTHING_TO_CHECK = (
+    "E_USAGE: gate check has nothing to check: give --cpus LIST, or set gates.stop_file, "
+    "gates.min_gpu_free_mib or gates.check_locks"
+)
+
+
+def _checks(monkeypatch: pytest.MonkeyPatch, *gates: RecordingGate) -> dict[str, RecordingGate]:
+    by_name = {gate.name: gate for gate in gates}
+    monkeypatch.setattr(registry, "gate", lambda name: by_name[name])
+    return by_name
+
+
+def test_gate_check_without_cpus_runs_the_stop_file_check_alone(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None
+) -> None:
+    gates = _checks(monkeypatch, RecordingGate("cpus"), RecordingGate("stop_file"))
+    monkeypatch.setenv("PAIRBENCH__GATES__STOP_FILE", "made-up/hold.stop")
+
+    result = cli("gate", "check")
+
+    assert result.code == EXIT_OK
+    assert result.out == "check stop_file: pass\n"
+    assert result.err == ""
+    assert gates["cpus"].contexts == []
+    (ctx,) = gates["stop_file"].contexts
+    assert ctx.mode == "enforce"
+    assert ctx.gates.stop_file == "made-up/hold.stop"
+
+
+def test_gate_check_with_neither_cpus_nor_a_readiness_key_is_a_usage_error(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None
+) -> None:
+    gates = _checks(monkeypatch, RecordingGate("cpus"), RecordingGate("stop_file"))
+
+    result = cli("gate", "check")
+
+    assert result.code == EXIT_USAGE
+    assert result.out == ""
+    assert result.err == refusal_text(NOTHING_TO_CHECK)
+    assert gates["cpus"].contexts == []
+
+
+def test_gate_check_runs_the_cpu_check_then_each_readiness_check_in_table_order(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None, tmp_path: Path
+) -> None:
+    gates = _checks(
+        monkeypatch,
+        RecordingGate("cpus"),
+        RecordingGate("stop_file", message="no stop file present"),
+        RecordingGate("gpu_memory"),
+        RecordingGate("check_locks"),
+    )
+    path = _config(
+        tmp_path,
+        '[gates]\ncheck_locks = ["made-up/a.lock"]\nstop_file = "made-up/hold.stop"\n',
+    )
+
+    result = cli("gate", "check", "--cpus", "0-1", "--config", str(path))
+
+    assert result.code == EXIT_OK
+    assert result.out == (
+        "check cpus: pass\ncheck stop_file: pass: no stop file present\ncheck check_locks: pass\n"
+    )
+    assert gates["gpu_memory"].contexts == []
+
+
+def test_gate_check_runs_every_check_after_one_that_failed_and_names_the_first(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None
+) -> None:
+    _checks(
+        monkeypatch,
+        RecordingGate("cpus", "fail", "mixed core types"),
+        RecordingGate("stop_file"),
+        RecordingGate("check_locks", "fail", "check-only lock 1 of 1 is held"),
+    )
+    monkeypatch.setenv("PAIRBENCH__GATES__STOP_FILE", "made-up/hold.stop")
+    monkeypatch.setenv("PAIRBENCH__GATES__CHECK_LOCKS", '["made-up/a.lock"]')
+
+    result = cli("gate", "check", "--cpus", "0-7")
+
+    assert result.code == EXIT_MACHINE
+    assert result.out == "check stop_file: pass\n"
+    line = "E_GATE_FAILED: check cpus failed: mixed core types"
+    assert result.err == (
+        "pairbench: check cpus: fail: mixed core types\n"
+        "pairbench: check check_locks: fail: check-only lock 1 of 1 is held\n"
+    ) + refusal_text(line)
+
+
+def test_gate_check_names_a_readiness_check_that_could_not_run(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None
+) -> None:
+    _checks(
+        monkeypatch,
+        RecordingGate("gpu_memory", "unavailable", "no GPU is visible here"),
+        RecordingGate("check_locks", "fail", "check-only lock 1 of 1 is held"),
+    )
+    monkeypatch.setenv("PAIRBENCH__GATES__MIN_GPU_FREE_MIB", "2000")
+    monkeypatch.setenv("PAIRBENCH__GATES__CHECK_LOCKS", '["made-up/a.lock"]')
+
+    result = cli("gate", "check")
+
+    assert result.code == EXIT_MACHINE
+    assert result.out == ""
+    line = "E_GATE_UNAVAILABLE: check gpu_memory could not run fully: no GPU is visible here"
+    assert result.err == (
+        "pairbench: check gpu_memory: unavailable: no GPU is visible here\n"
+        "pairbench: check check_locks: fail: check-only lock 1 of 1 is held\n"
+    ) + refusal_text(line)
+
+
+def test_gate_check_json_prints_one_record_when_one_check_ran(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None
+) -> None:
+    _checks(monkeypatch, RecordingGate("stop_file"))
+    monkeypatch.setenv("PAIRBENCH__GATES__STOP_FILE", "made-up/hold.stop")
+
+    result = cli("gate", "check", "--json")
+
+    assert result.code == EXIT_OK
+    assert json.loads(result.out) == {
+        "t": "gate",
+        "name": "stop_file",
+        "mode": "enforce",
+        "status": "pass",
+        "detail": {},
+    }
+
+
+def test_gate_check_json_prints_a_list_when_several_checks_ran(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None
+) -> None:
+    _checks(monkeypatch, RecordingGate("cpus"), RecordingGate("stop_file", "fail", "present"))
+    monkeypatch.setenv("PAIRBENCH__GATES__STOP_FILE", "made-up/hold.stop")
+
+    result = cli("gate", "check", "--cpus", "1", "--json")
+
+    assert result.code == EXIT_MACHINE
+    assert [(r["name"], r["status"]) for r in json.loads(result.out)] == [
+        ("cpus", "pass"),
+        ("stop_file", "fail"),
+    ]
+    assert result.err == "pairbench: check stop_file: fail: present\n" + refusal_text(
+        "E_GATE_FAILED: check stop_file failed: present"
+    )
+
+
+def test_wait_quiet_runs_the_readiness_check_whose_key_is_set_and_refuses_on_it(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, no_machine: None, tmp_path: Path
+) -> None:
+    gates = _checks(
+        monkeypatch,
+        RecordingGate("quiet"),
+        RecordingGate("stop_file", "fail", "the stop file is present"),
+        RecordingGate("check_locks"),
+    )
+    monkeypatch.setenv("PAIRBENCH__GATES__STOP_FILE", "made-up/hold.stop")
+    marker = tmp_path / "ran"
+
+    result = cli("gate", "wait-quiet", "--", sys.executable, "-c", f"open({str(marker)!r}, 'w')")
+
+    assert result.code == EXIT_MACHINE
+    assert result.out == ""
+    assert result.err == "pairbench: check stop_file: fail: the stop file is present\n" + (
+        refusal_text("E_GATE_FAILED: the command was not run: the stop file is present")
+    )
+    assert len(gates["stop_file"].contexts) == 1
+    assert gates["check_locks"].contexts == []
+    assert not marker.exists()

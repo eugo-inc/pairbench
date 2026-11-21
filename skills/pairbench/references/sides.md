@@ -46,5 +46,11 @@ the run says so in a note. Use `lines` to time the work alone.
 - `--wait-quiet` waits for a quiet machine before the first round; with `--gates off` it is refused (`E_USAGE`), because off skips the checks before the run.
 - `--cpus LIST` pins every launch to a CPU set; pairbench moves itself off it where it can.
 - `--lock PATH` takes a lock that other runs on the machine also take.
+- The readiness checks, off until their key is set in the config or with `--set`, fail
+  while a stop file exists (`gates.stop_file`), while a watched GPU has less free memory than
+  a floor in MiB (`gates.min_gpu_free_mib`), or while another process holds a lock that the
+  run only checks (`gates.check_locks`). Under the default `--gates warn` the run goes on and
+  its results are stamped `busy`; `--wait-quiet` waits for them, `--gates enforce` stops the
+  run (exit 4), and `--gates off` skips them. `pairbench gate check` runs them on their own.
 - Rounds a witness marks as disturbed are set aside in a second analysis; a verdict that
   changes is downgraded to UNRESOLVED.

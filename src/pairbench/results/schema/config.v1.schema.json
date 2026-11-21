@@ -309,6 +309,21 @@
               "minimum": 0
             }
           }
+        },
+        "stop_file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min_gpu_free_mib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "check_locks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },

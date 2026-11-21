@@ -1327,11 +1327,15 @@ def test_gate_check_names_a_cpu_range_that_runs_backwards(
     assert result.err == refusal_text("E_USAGE: --cpus: the CPU range 7-4 runs backwards")
 
 
-def test_gate_check_needs_cpus(cli: Cli) -> None:
+def test_gate_check_needs_cpus_or_a_readiness_key(cli: Cli, no_machine: None) -> None:
     result = cli("gate", "check")
 
     assert result.code == EXIT_USAGE
-    assert "the following arguments are required: --cpus" in result.err
+    assert result.out == ""
+    assert result.err == refusal_text(
+        "E_USAGE: gate check has nothing to check: give --cpus LIST, or set gates.stop_file, "
+        "gates.min_gpu_free_mib or gates.check_locks"
+    )
 
 
 def test_gate_check_takes_no_command(cli: Cli, no_machine: None) -> None:

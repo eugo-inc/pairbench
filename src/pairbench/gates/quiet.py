@@ -9,6 +9,13 @@ reached or ``gates.quiet.max_wait_s`` has passed. Otherwise it takes one
 streak of samples and records pass or fail. The re-check once the locks are
 held takes one sample and never waits.
 
+While it waits, a sample counts toward the streak only when every readiness
+check that is on (``GateSettings.readiness``) also passes at that sample; one that
+cannot run counts as not ready. When the time runs out and the last samples
+were quiet by the busy cores and the GPU processes alone, the quiet record
+passes: the readiness check that was not ready fails in its own record. The
+check that does not wait, and the re-check, read no readiness check.
+
 A sample is quiet when the busy cores, summed over the machine, are at most
 ``gates.quiet.max_busy_cores`` and, when GPUs are watched, no compute
 process runs on them. A probe that fails to read counts as busy. The GPUs
@@ -35,6 +42,7 @@ from typing import Any, Final, TextIO
 from pairbench.api import (
     API_VERSION,
     DoctorReport,
+    Gate,
     GateContext,
     Notify,
     gate_line,
@@ -58,6 +66,7 @@ from pairbench.gates.platform import (
     side_launches,
     this_system,
 )
+from pairbench.gates.ready import CheckLocksGate, GpuMemoryGate, StopFileGate
 from pairbench.model import GateRecord, GateSettings, GateStatus, LaunchSettings
 
 NAME: Final = "quiet"
@@ -124,20 +133,52 @@ class QuietSample:
     """One sample: the busy cores, the other GPU compute processes, and whether it was quiet.
 
     A value of ``None`` means its probe failed to read; ``gpu_processes`` is
-    also ``None`` when GPUs are not watched.
+    also ``None`` when GPUs are not watched. ``quiet`` is judged by the busy
+    cores and the GPU processes alone; ``ready`` says whether every readiness
+    check that is on passed at the sample, and is ``None`` when none was read.
     """
 
     busy_cores: float | None
     gpu_processes: int | None
     quiet: bool
+    ready: bool | None = None
 
     def to_json(self) -> dict[str, Any]:
         """The sample as the record's detail keeps it."""
-        return {
+        out: dict[str, Any] = {
             "busy_cores": None if self.busy_cores is None else round(self.busy_cores, 4),
             "gpu_processes": self.gpu_processes,
             "quiet": self.quiet,
         }
+        if self.ready is not None:
+            out["ready"] = self.ready
+        return out
+
+
+@dataclass(frozen=True)
+class Sampled:
+    """What one round of sampling found.
+
+    ``quiet`` says whether the streak was reached, every sample of it quiet
+    and ready; ``quiet_alone`` whether the last samples reached the streak
+    by the busy cores and the GPU processes alone; ``not_ready`` names the
+    readiness checks that did not pass at the last sample; ``quiet_run``
+    counts the quiet samples in a row at the end, by the busy cores and the
+    GPU processes alone, also when ``samples`` keeps only the last of them.
+    ``busy`` counts the samples of all ``taken`` that were not quiet by the
+    busy cores and the GPU processes, and ``last_busy`` is the last of them,
+    also when ``samples`` does not keep it.
+    """
+
+    quiet: bool
+    quiet_alone: bool
+    samples: list[QuietSample]
+    taken: int
+    elapsed: float
+    not_ready: tuple[str, ...] = ()
+    quiet_run: int = 0
+    busy: int = 0
+    last_busy: QuietSample | None = None
 
 
 def _selecting(ctx: GateContext, present: Sequence[int]) -> str:
@@ -177,8 +218,18 @@ def _reason(sample: QuietSample, limit: float, watch_gpu: bool, source: str) -> 
     return "; ".join(parts) or "not quiet"
 
 
+def _too_few(run: int, needed: int) -> str:
+    """Say how many quiet samples in a row were taken of the ``needed``."""
+    taken = "was" if run == 1 else "were"
+    return f"{run} of the {needed} quiet samples needed {taken} taken in that time"
+
+
 class QuietGate:
-    """The quiet-machine check (``api.Gate``)."""
+    """The quiet-machine check (``api.Gate``).
+
+    ``readiness`` holds the readiness checks the wait reads, by name; by
+    default the built-in ones, reading GPUs through the same source.
+    """
 
     name: Final = NAME
     api_version: Final = API_VERSION
@@ -192,6 +243,7 @@ class QuietGate:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         loadavg: Callable[[], float] | None = None,
+        readiness: Sequence[Gate] | None = None,
     ) -> None:
         self._root = root or Root()
         self._system = system
@@ -199,6 +251,17 @@ class QuietGate:
         self._clock = clock
         self._sleep = sleep
         self._loadavg = loadavg or (lambda: os.getloadavg()[0])
+        if readiness is None:
+            readiness = (
+                StopFileGate(),
+                GpuMemoryGate(system=system, gpu_sources=self._gpu_sources),
+                CheckLocksGate(),
+            )
+        self._readiness = {gate.name: gate for gate in readiness}
+
+    def readiness(self, gates: GateSettings) -> list[Gate]:
+        """The readiness checks that are on, in the order they run."""
+        return [self._readiness[name] for name in gates.readiness if name in self._readiness]
 
     def check(self, ctx: GateContext) -> GateRecord:
         """Run the check once and report."""
@@ -236,14 +299,18 @@ class QuietGate:
         waits = ctx.gates.wait_quiet and ctx.phase == "before"
         needed = settings.samples if ctx.phase == "before" else 1
         source = "load average" if platform.system == "darwin" else "busy cores"
-        quiet, samples, taken, waited_s = self._sample(
+        ready = self.readiness(ctx.gates) if waits else []
+        found = self._sample(
             platform,
             settings.max_busy_cores,
             probe,
             needed,
             settings.interval_s,
             settings.max_wait_s if waits else None,
+            ready=lambda: _not_ready(ready, ctx) if ready else None,
         )
+        samples, taken = found.samples, found.taken
+        quiet = found.quiet or (bool(ready) and found.quiet_alone)
         detail: dict[str, Any] = {
             "where": platform.where,
             "source": "load_average" if platform.system == "darwin" else "proc_stat",
@@ -251,7 +318,7 @@ class QuietGate:
             "ci": platform.ci,
             "phase": ctx.phase,
             "waited": waits,
-            "waited_s": round(waited_s, 3),
+            "waited_s": round(found.elapsed, 3),
             "samples_needed": needed,
             "samples_taken": taken,
             "max_busy_cores": settings.max_busy_cores,
@@ -259,6 +326,9 @@ class QuietGate:
             "gpus": gpus if watch_gpu else None,
             "last": [s.to_json() for s in samples[-KEPT_SAMPLES:]],
         }
+        if ready:
+            detail["readiness"] = [gate.name for gate in ready]
+            detail["not_ready"] = list(found.not_ready)
         label = " (machine-wide view from inside a container)" if platform.in_container else ""
         status: GateStatus
         if quiet:
@@ -269,15 +339,26 @@ class QuietGate:
                 status, message = "pass", ""
         else:
             status = "fail"
-            last_busy = next((s for s in reversed(samples) if not s.quiet), samples[-1])
-            reason = _reason(last_busy, settings.max_busy_cores, watch_gpu, source)
             if waits:
+                last_busy = next((s for s in reversed(samples) if not s.quiet), None)
+                if last_busy is None:
+                    # Every kept sample was quiet: the time ran out before enough were in a row.
+                    reason = _too_few(found.quiet_run, needed)
+                else:
+                    reason = _reason(last_busy, settings.max_busy_cores, watch_gpu, source)
                 message = (
                     f"the machine did not become quiet within {settings.max_wait_s:g} s: {reason}"
                 )
             else:
-                busy = sum(1 for s in samples if not s.quiet)
-                message = f"not quiet in {busy} of {taken} samples: {reason}"
+                # Without a wait every sample needed is taken, so one of them was not quiet,
+                # even when the kept samples do not hold it.
+                last_busy = found.last_busy
+                reason = (
+                    "not quiet"
+                    if last_busy is None
+                    else _reason(last_busy, settings.max_busy_cores, watch_gpu, source)
+                )
+                message = f"not quiet in {found.busy} of {taken} samples: {reason}"
         return make_record(NAME, ctx, status, message + label if message else "", **detail)
 
     def _read(self, platform: Platform) -> Any:
@@ -296,43 +377,68 @@ class QuietGate:
         needed: int,
         interval_s: float,
         max_wait_s: float | None,
-    ) -> tuple[bool, list[QuietSample], int, float]:
+        ready: Callable[[], tuple[str, ...] | None] = lambda: None,
+    ) -> Sampled:
         """Sample until the streak is reached, the samples are taken, or the wait is over.
 
-        Returns whether the streak was reached, the last samples, how many
-        samples were taken and the seconds it took.
+        ``ready`` names the readiness checks that do not pass at this sample, or gives
+        ``None`` when none is read; a sample counts toward the streak only
+        when it is quiet and that list is empty.
         """
         start = self._clock()
         previous = self._read(platform)
         samples: list[QuietSample] = []
         streak = 0
+        alone = 0
         taken = 0
+        not_quiet = 0
+        last_busy: QuietSample | None = None
+        not_ready: tuple[str, ...] = ()
         while True:
             self._sleep(interval_s)
             current = self._read(platform)
             if platform.system == "darwin":
-                busy: float | None = current
+                cores: float | None = current
             else:
-                busy = busy_cores(previous, current)
+                cores = busy_cores(previous, current)
             previous = current
             gpu_n = probe.compute_processes() if probe is not None else None
             quiet = (
-                busy is not None
-                and busy <= limit
+                cores is not None
+                and cores <= limit
                 and (probe is None or (gpu_n is not None and gpu_n == 0))
             )
-            samples.append(QuietSample(busy, gpu_n, quiet))
+            missing = ready()
+            is_ready = None if missing is None else not missing
+            not_ready = missing or ()
+            sample = QuietSample(cores, gpu_n, quiet, is_ready)
+            samples.append(sample)
+            if not quiet:
+                not_quiet += 1
+                last_busy = sample
             if len(samples) > KEPT_SAMPLES * 2:
                 del samples[: len(samples) - KEPT_SAMPLES]
-            streak = streak + 1 if quiet else 0
+            alone = alone + 1 if quiet else 0
+            streak = streak + 1 if quiet and is_ready is not False else 0
             taken += 1
             elapsed = self._clock() - start
-            if streak >= needed:
-                return True, samples, taken, elapsed
-            if max_wait_s is None and taken >= needed:
-                return False, samples, taken, elapsed
-            if max_wait_s is not None and elapsed >= max_wait_s:
-                return False, samples, taken, elapsed
+            done = (
+                streak >= needed
+                or (max_wait_s is None and taken >= needed)
+                or (max_wait_s is not None and elapsed >= max_wait_s)
+            )
+            if done:
+                return Sampled(
+                    quiet=streak >= needed,
+                    quiet_alone=alone >= needed,
+                    samples=samples,
+                    taken=taken,
+                    elapsed=elapsed,
+                    not_ready=not_ready,
+                    quiet_run=alone,
+                    busy=not_quiet,
+                    last_busy=last_busy,
+                )
 
     def doctor(self) -> DoctorReport:
         """What this platform lets the check do."""
@@ -344,6 +450,11 @@ class QuietGate:
         if read_stat(self._root) is None:
             return DoctorReport("unavailable", "the processor time counters could not be read")
         return DoctorReport("ok", "busy cores from the processor time counters")
+
+
+def _not_ready(ready: Sequence[Gate], ctx: GateContext) -> tuple[str, ...]:
+    """The readiness checks that do not pass at this read; one that cannot run is not ready."""
+    return tuple(gate.name for gate in ready if gate.check(ctx).status != "pass")
 
 
 RunCommand = Callable[[Sequence[str]], int]
@@ -364,21 +475,29 @@ def wait_then_run(
     in_container: bool = False,
     ci: bool = False,
     gate: QuietGate | None = None,
+    readiness: Sequence[Gate] | None = None,
     run: RunCommand = _call,
     err: TextIO | None = None,
     note: Notify = no_notes,
 ) -> int:
     """``pairbench gate wait-quiet -- COMMAND``: wait for quiet, then run the command once.
 
-    The check waits up to ``gates.quiet.max_wait_s`` whatever
-    ``gates.wait_quiet`` says. When the machine became quiet the command
+    The check waits whatever ``gates.wait_quiet`` says, until the machine is
+    quiet or ``gates.quiet.max_wait_s`` has passed; the time is looked at
+    after each sample, so a slow read can end the wait later. The wait
+    includes the readiness checks that are on. After it each of them runs
+    once. When the quiet check and every one of them passed, the command
     runs and its own exit code is returned; a command ended by a signal
-    gives 128 plus the signal number. Otherwise the command is not run: a
-    check that failed is refused with ``E_GATE_FAILED``, one that was
-    degraded or could not run with ``E_GATE_UNAVAILABLE``, both exit 4, and
-    the check's line is printed on ``err``. A command that cannot be started
-    is refused with ``E_USAGE``. ``sides`` gives the launch settings of each
-    side, as ``GateContext.sides`` does.
+    gives 128 plus the signal number.
+    Otherwise the command is not run: the line of each check that did not
+    pass is printed on ``err``, and the refusal names the first of them, in
+    the order quiet, stop file, GPU memory, check-only locks: one that failed
+    is refused with ``E_GATE_FAILED``, one that was degraded or could not run
+    with ``E_GATE_UNAVAILABLE``, both exit 4. A command that cannot be
+    started is refused with ``E_USAGE``. ``sides`` gives the launch settings
+    of each side, as ``GateContext.sides`` does. ``readiness`` holds the
+    readiness checks run after the wait, by name; by default those of the
+    quiet check.
     """
     if not command:
         raise Refusal("E_USAGE", "gate wait-quiet needs a command after --")
@@ -393,14 +512,24 @@ def wait_then_run(
         note=note,
         sides=dict(sides or {}),
     )
-    record = (gate or QuietGate()).check(ctx)
-    if record.status != "pass":
+    quiet = gate or QuietGate()
+    if readiness is None:
+        after = quiet.readiness(ctx.gates) if isinstance(quiet, QuietGate) else []
+    else:
+        by_name = {ready.name: ready for ready in readiness}
+        after = [by_name[name] for name in ctx.gates.readiness if name in by_name]
+    records = [quiet.check(ctx)]
+    records += [ready.check(ctx) for ready in after]
+    missed = [record for record in records if record.status != "pass"]
+    if missed:
         if err is not None:
-            print(gate_line(record), file=err)
-        message = record.detail.get("message") or record.status
-        code = "E_GATE_FAILED" if record.status == "fail" else "E_GATE_UNAVAILABLE"
+            for record in missed:
+                print(gate_line(record), file=err)
+        first = missed[0]
+        message = first.detail.get("message") or first.status
+        code = "E_GATE_FAILED" if first.status == "fail" else "E_GATE_UNAVAILABLE"
         raise Refusal(
-            code, f"the command was not run: {message}", detail={"record": record.to_json()}
+            code, f"the command was not run: {message}", detail={"record": first.to_json()}
         )
     try:
         return run(command)

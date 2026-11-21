@@ -153,7 +153,7 @@ def test_a_read_without_a_key_or_a_side_names_a_folder_cut_and_records_nothing()
     sideless = CaseNames(KEY)
     assert sideless.names([READ], WHERE, ADVICE) == {READ: READ_SHOWN}
     assert sideless.take_new() == (None, ())
-    # A driver outside a run cuts the folder as it always did.
+    # A driver outside a run cuts the folder.
     made = Sample(case=READ, metric="time", unit="s", better="lower", kind="time", value=1.0)
     (sample,) = api.public_cases([made], WHERE)
     assert sample.case == READ_SHOWN

@@ -517,8 +517,24 @@ ENUMS: dict[tuple[str, str, str], list[Any]] = {
         None,
     ],
     ("results", "MachineState", "status"): ["quiet", "busy", "unknown"],
-    ("results", "GateSummary", "name"): ["cpus", "quiet", "census", "plugin"],
-    ("results", "Degraded", "name"): ["cpus", "quiet", "census", "plugin"],
+    ("results", "GateSummary", "name"): [
+        "cpus",
+        "quiet",
+        "census",
+        "stop_file",
+        "gpu_memory",
+        "check_locks",
+        "plugin",
+    ],
+    ("results", "Degraded", "name"): [
+        "cpus",
+        "quiet",
+        "census",
+        "stop_file",
+        "gpu_memory",
+        "check_locks",
+        "plugin",
+    ],
     ("results", "DriverInfo", "name"): [
         "wall",
         "lines",
@@ -751,7 +767,16 @@ def test_the_names_a_results_document_may_show_are_the_built_ins_and_plugin() ->
         "plugin",
     )
     assert model.BUILTIN_GATES == ("cpus", "quiet", "census")
-    assert model.SHOWN_GATES == ("cpus", "quiet", "census", "plugin")
+    assert model.READINESS_GATES == ("stop_file", "gpu_memory", "check_locks")
+    assert model.SHOWN_GATES == (
+        "cpus",
+        "quiet",
+        "census",
+        "stop_file",
+        "gpu_memory",
+        "check_locks",
+        "plugin",
+    )
     assert get_args(model.ShownDriver) == model.BUILTIN_DRIVERS
     assert model.PLUGIN_NAME == "plugin"
 

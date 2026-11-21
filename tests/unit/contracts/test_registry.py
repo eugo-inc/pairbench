@@ -43,7 +43,7 @@ BUILTIN_NAMES: dict[str, tuple[str, ...]] = {
         "vllm-bench",
     ),
     "pairbench.capture_readers": ("jsonl", "text"),
-    "pairbench.gates": ("cpus", "quiet", "census"),
+    "pairbench.gates": ("cpus", "quiet", "census", "stop_file", "gpu_memory", "check_locks"),
     "pairbench.rules": ("strict",),
     "pairbench.reporters": ("terminal", "markdown", "json", "html"),
     "pairbench.launchers": ("docker", "podman", "host"),
@@ -156,7 +156,7 @@ def test_a_built_in_reference_names_a_module_of_the_package_and_an_object() -> N
 def test_the_model_knows_the_names_of_the_built_ins_a_results_document_may_show() -> None:
     assert BUILTIN_NAMES["pairbench.side_kinds"] == model.BUILTIN_KINDS
     assert BUILTIN_NAMES["pairbench.drivers"] == model.BUILTIN_DRIVERS
-    assert BUILTIN_NAMES["pairbench.gates"] == model.BUILTIN_GATES
+    assert BUILTIN_NAMES["pairbench.gates"] == (*model.BUILTIN_GATES, *model.READINESS_GATES)
     assert model.PLUGIN_NAME == "plugin"
 
 

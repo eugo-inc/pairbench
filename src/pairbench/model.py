@@ -480,7 +480,7 @@ FailOn = Literal["better", "worse", "unresolved", "no_verdict"]
 # machine checks, ``rows`` for a capture made from rows, and ``plugin`` in
 # place of every name a plug-in chose.
 ShownKind = Literal["cmd", "image", "python", "venv", "conda", "serve", "file", "rows", "plugin"]
-ShownGate = Literal["cpus", "quiet", "census", "plugin"]
+ShownGate = Literal["cpus", "quiet", "census", "stop_file", "gpu_memory", "check_locks", "plugin"]
 ShownDriver = Literal[
     "wall",
     "lines",
@@ -698,6 +698,9 @@ BUILTIN_DRIVERS: Final[tuple[str, ...]] = (
     "vllm-bench",
 )
 BUILTIN_GATES: Final[tuple[str, ...]] = ("cpus", "quiet", "census")
+# The readiness checks: built in, and run only when their key is set
+# (``GateSettings.readiness``), right after the quiet check.
+READINESS_GATES: Final[tuple[str, ...]] = ("stop_file", "gpu_memory", "check_locks")
 SHOWN_GATES: Final[tuple[str, ...]] = get_args(ShownGate)
 # What a results document shows in place of a name that a plug-in chose: the
 # kind of a side, the name of a machine check. Plug-in names are never written.
@@ -2944,11 +2947,31 @@ def set_aside(thresholds: DiscardThresholds, witnesses: Sequence[RoundWitness]) 
     return SetAside(rounds=rounds, sha256=digest)
 
 
+def _lock_text(path: str) -> str:
+    """The path with repeated slashes and ``.`` parts folded, and ``..`` kept."""
+    parts = [part for part in path.split("/") if part not in ("", ".")]
+    return ("/" if path.startswith("/") else "") + "/".join(parts)
+
+
 @dataclass(frozen=True)
 class GateSettings(_Model):
-    """Machine-check settings."""
+    """Machine-check settings.
 
-    LIMITS: ClassVar[Mapping[str, Mapping[str, Any]]] = {"lock_timeout_s": {"minimum": 0}}
+    ``stop_file``, ``min_gpu_free_mib`` and ``check_locks`` turn on the
+    readiness checks; each is off while unset. A path that holds a NUL
+    character, an empty entry of ``check_locks`` and a path that both
+    ``check_locks`` and ``locks`` name are refused: the run holds a lock of
+    ``locks`` itself in the re-check. Two paths name the same lock when they
+    are the same text once repeated slashes and ``.`` parts are folded; no
+    file is read, and a ``..`` part is kept, as a link before it changes the
+    file the path names.
+    """
+
+    LIMITS: ClassVar[Mapping[str, Mapping[str, Any]]] = {
+        "lock_timeout_s": {"minimum": 0},
+        "stop_file": {"minLength": 1},
+        "min_gpu_free_mib": {"exclusiveMinimum": 0},
+    }
 
     mode: GateMode = "warn"
     wait_quiet: bool = False
@@ -2958,6 +2981,35 @@ class GateSettings(_Model):
     quiet: QuietSettings = field(default_factory=QuietSettings)
     census: CensusSettings = field(default_factory=CensusSettings)
     discard: DiscardThresholds = field(default_factory=DiscardThresholds)
+    stop_file: str | None = None
+    min_gpu_free_mib: float | None = None
+    check_locks: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.stop_file is not None and "\0" in self.stop_file:
+            raise ValueError("gates.stop_file must not hold a NUL character")
+        if not all(self.check_locks):
+            raise ValueError("gates.check_locks must be a list of texts that are not empty")
+        if any("\0" in path for path in self.check_locks):
+            raise ValueError("gates.check_locks must not hold a NUL character")
+        taken = {_lock_text(path) for path in self.locks if path and "\0" not in path}
+        for place, path in enumerate(self.check_locks, start=1):
+            if _lock_text(path) in taken:
+                raise ValueError(
+                    f"gates.check_locks entry {place} is also in gates.locks: the run holds "
+                    "that lock itself during the re-check; keep it in one of the two lists"
+                )
+
+    @property
+    def readiness(self) -> tuple[str, ...]:
+        """The names of the readiness checks that are on, in the order they run."""
+        on = (
+            ("stop_file", self.stop_file is not None),
+            ("gpu_memory", self.min_gpu_free_mib is not None),
+            ("check_locks", bool(self.check_locks)),
+        )
+        return tuple(name for name, is_on in on if is_on)
 
 
 @dataclass(frozen=True)
@@ -3538,6 +3590,27 @@ def _c_text(value: Any, key: str) -> str:
     return value
 
 
+def _c_path_text(value: Any, key: str) -> str:
+    """Read a path: a text that is not empty and holds no NUL character."""
+    path = _c_text(value, key)
+    if "\0" in path:
+        raise _config_error(f"{key} must not hold a NUL character")
+    return path
+
+
+def _c_path_texts(value: Any, key: str) -> tuple[str, ...]:
+    """Read a list of paths, each a text that is not empty and holds no NUL character."""
+    if (
+        not isinstance(value, list | tuple)
+        or not all(isinstance(v, str) for v in value)
+        or not all(value)
+    ):
+        raise _config_error(f"{key} must be a list of texts that are not empty")
+    if any("\0" in v for v in value):
+        raise _config_error(f"{key} must not hold a NUL character")
+    return tuple(value)
+
+
 def _c_paths(value: Any, key: str) -> tuple[str, ...]:
     paths = (value,) if isinstance(value, str) else _c_strs(value, key)
     if not paths or not all(paths):
@@ -3719,6 +3792,11 @@ def _read_config(data: Mapping[str, Any]) -> Experiment:
         locks=gates_t.take("locks", _c_strs, ()),
         lock_timeout_s=gates_t.take("lock_timeout", _c_duration, 1800.0),
         allow_mixed_core_types=gates_t.take("allow_mixed_core_types", _c_bool, False),
+        stop_file=gates_t.take("stop_file", _c_path_text, None),
+        min_gpu_free_mib=gates_t.take(
+            "min_gpu_free_mib", _c_limited(_c_number, GateSettings, "min_gpu_free_mib"), None
+        ),
+        check_locks=gates_t.take("check_locks", _c_path_texts, ()),
         quiet=QuietSettings(
             max_busy_cores=quiet_t.take(
                 "max_busy_cores", _c_limited(_c_number, QuietSettings, "max_busy_cores"), 1.0
@@ -3982,6 +4060,15 @@ def _experiment_to_config(exp: Experiment, *, redact: bool) -> dict[str, Any]:
             ),
             "census": {"max_busy_cores": exp.gates.census.max_busy_cores},
             "discard": {"max_busy_cores": exp.gates.discard.max_busy_cores},
+            # The readiness keys are recorded only when set, so a run that sets
+            # none keeps the recorded config and the config hash it had.
+            **_drop_unset(
+                {
+                    "stop_file": exp.gates.stop_file,
+                    "min_gpu_free_mib": exp.gates.min_gpu_free_mib,
+                    "check_locks": list(exp.gates.check_locks) or None,
+                }
+            ),
         },
         "rule": {"name": exp.rule.name, "fail_on": list(exp.rule.fail_on)},
         "cases": {
@@ -4076,6 +4163,9 @@ CONFIG_KEYS: Final[tuple[str, ...]] = (
     "gates.quiet.max_wait_s",
     "gates.census.max_busy_cores",
     "gates.discard.max_busy_cores",
+    "gates.stop_file",
+    "gates.min_gpu_free_mib",
+    "gates.check_locks",
     "rule.name",
     "rule.fail_on",
     "cases.primary",
@@ -13536,7 +13626,8 @@ class GateRecord(_Model):
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def _shown_name(self) -> ShownGate:
-        return cast("ShownGate", self.name if self.name in BUILTIN_GATES else PLUGIN_NAME)
+        shown = self.name in BUILTIN_GATES or self.name in READINESS_GATES
+        return cast("ShownGate", self.name if shown else PLUGIN_NAME)
 
     def summary(self) -> GateSummary:
         """Return the check as a results document shows it, without its detail.
@@ -15889,6 +15980,7 @@ __all__ = [
     "PUBLIC_IDENTITY_TEXT_KEYS",
     "PYSAMPLER_MIN_PYTHON",
     "P_SMALLEST_WRITTEN",
+    "READINESS_GATES",
     "REASONS",
     "REASONS_NO_VERDICT",
     "REASONS_RESERVED",

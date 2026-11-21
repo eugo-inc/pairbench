@@ -649,6 +649,9 @@
             "cpus",
             "quiet",
             "census",
+            "stop_file",
+            "gpu_memory",
+            "check_locks",
             "plugin"
           ]
         },
@@ -979,6 +982,9 @@
             "cpus",
             "quiet",
             "census",
+            "stop_file",
+            "gpu_memory",
+            "check_locks",
             "plugin"
           ]
         },

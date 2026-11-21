@@ -1283,16 +1283,24 @@ A setting a kind of side cannot honour is refused, never dropped: `memory`, `mou
 |---|---|---|
 | `gates.mode` | `"warn"` | `"off"`, `"warn"` or `"enforce"` |
 | `gates.wait_quiet` | `false` | wait until the machine is quiet before starting; refused with `gates.mode = "off"`, which skips the checks before the run |
-| `gates.locks` | `[]` | advisory lock files, taken in order |
+| `gates.locks` | `[]` | advisory lock files, taken with `flock` in order |
 | `gates.lock_timeout` | `"30m"` | the longest wait for the locks |
 | `gates.allow_mixed_core_types` | `false` | allow a CPU set that mixes core types |
+| `gates.stop_file` | none | a path; while a file of any kind exists there, the machine is not ready (the check `stop_file`); the file is never created, read or removed |
+| `gates.min_gpu_free_mib` | none | a number above 0: the free memory, in MiB, each watched GPU must have for the machine to be ready (the check `gpu_memory`) |
+| `gates.check_locks` | none | lock files that must be free for the machine to be ready (the check `check_locks`): held by no other process with `flock` or with a POSIX record lock (`fcntl` or `lockf`); each is asked and tried once and released at once, never held, and a path also in `gates.locks` is refused |
 | `gates.quiet.max_busy_cores` | 1.0 | busy cores, summed over the machine, that still count as quiet |
 | `gates.quiet.gpu_idle` | `true` when a side selects a GPU | require no other compute process on the GPUs any side selects |
 | `gates.quiet.samples` | 5 | consecutive quiet samples needed |
 | `gates.quiet.interval_s` | 2 | seconds between samples |
-| `gates.quiet.max_wait_s` | 1800 | the longest wait, then the check fails |
+| `gates.quiet.max_wait_s` | 1800 | the longest wait, then the check fails; the time is looked at after each sample, so a slow read can end the wait later |
 | `gates.census.max_busy_cores` | 0.5 | busy cores above which another container fails the census |
 | `gates.discard.max_busy_cores` | 2.0 | busy cores of others above which a launch is disturbed |
+
+The three [readiness checks](../method/shared-machines.md#readiness-checks) are off until
+their key is set, and a key that is not set is left out of the recorded config, so it does not
+change the config hash. None has a flag; each has its `PAIRBENCH__GATES__...` variable and its
+`--set` path.
 
 ### `[rule]` and `[cases]`
 

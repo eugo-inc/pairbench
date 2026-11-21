@@ -121,6 +121,7 @@ from pairbench.model import (
     NOTE_UNDERPOWERED,
     NOTE_UNPINNED_MIXED_CORES,
     NOTE_WITNESS_UNDECIDED,
+    READINESS_GATES,
     REDACTED,
     SEED_DRIVER,
     SEED_ENV_PAD,
@@ -1369,7 +1370,7 @@ def _gates(run: _Run, phase: str) -> None:
         note=run.notes,
         sides=_side_settings(experiment),
     )
-    names = [*BUILTIN_GATES, *(n for n in registry.names(GROUP_GATES) if n not in BUILTIN_GATES)]
+    names = gate_order(gates, registry.names(GROUP_GATES))
     records: list[GateRecord] = []
     for name in names:
         record = registry.gate(name).check(ctx)
@@ -1388,6 +1389,19 @@ def _gates(run: _Run, phase: str) -> None:
         raise Refusal(
             "E_GATE_UNAVAILABLE", f"machine check could not run fully: {', '.join(unable)}"
         )
+
+
+def gate_order(gates: GateSettings, known: Sequence[str]) -> list[str]:
+    """The checks a run runs, in order.
+
+    The CPU and quiet checks, then each readiness check whose key is set, in
+    the order of ``READINESS_GATES``, then the neighbour census, then each
+    plug-in check. A readiness check that is off is not run.
+    """
+    cut = BUILTIN_GATES.index("quiet") + 1
+    built_in = {*BUILTIN_GATES, *READINESS_GATES}
+    plugins = [name for name in known if name not in built_in]
+    return [*BUILTIN_GATES[:cut], *gates.readiness, *BUILTIN_GATES[cut:], *plugins]
 
 
 def _quiet_hint(gates: GateSettings, failed: Sequence[str]) -> str:

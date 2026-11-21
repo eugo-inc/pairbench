@@ -130,7 +130,11 @@ class FakeGpu:
     masks: list[tuple[int, ...] | None] = field(default_factory=lambda: [(0,)])
     memory: float | None = 0.0
     indices: tuple[int, ...] | None = None
+    free: list[tuple[tuple[int, float], ...] | None] = field(
+        default_factory=lambda: [((0, 81000.0),)]
+    )
     reads: int = 0
+    free_reads: int = 0
 
     @staticmethod
     def _next(script: list[Any]) -> Any:
@@ -148,6 +152,10 @@ class FakeGpu:
 
     def present(self) -> tuple[int, ...] | None:
         return self.indices
+
+    def memory_free_mib(self) -> tuple[tuple[int, float], ...] | None:
+        self.free_reads += 1
+        return self._next(self.free)
 
 
 @pytest.fixture

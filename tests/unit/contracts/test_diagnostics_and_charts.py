@@ -206,8 +206,8 @@ def test_the_config_keys_of_the_controls_the_explain_step_and_the_charts() -> No
     assert len(CONTROL_EXPLAIN_AND_CHART_KEYS) == 15
     for key in CONTROL_EXPLAIN_AND_CHART_KEYS:
         assert key in model.CONFIG_KEYS, key
-    assert len(model.CONFIG_KEYS) == 103
-    assert len(set(model.CONFIG_KEYS)) == 103
+    assert len(model.CONFIG_KEYS) == 106
+    assert len(set(model.CONFIG_KEYS)) == 106
 
 
 FLAG_KEYS = {

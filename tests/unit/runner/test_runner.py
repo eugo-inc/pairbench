@@ -1238,6 +1238,121 @@ def test_under_warn_a_failed_check_is_recorded_and_the_run_goes_on(
     assert capsys.readouterr().err.count("pairbench: check quiet: fail") == 2
 
 
+READINESS = ("stop_file", "gpu_memory", "check_locks")
+
+
+def _all_gates(monkeypatch: pytest.MonkeyPatch, **statuses: str) -> None:
+    """Fake every built-in check; each passes unless ``statuses`` says otherwise."""
+    for name in ("cpus", "quiet", "census", *READINESS):
+        status = statuses.get(name, "pass")
+        monkeypatch.setitem(registry._state.builtins, (GROUP_GATES, name), _Gate(name, status))
+
+
+def test_readiness_checks_that_are_off_write_no_record(
+    world: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _all_gates(monkeypatch)
+    capture = _run(world, tmp_path, _experiment(gates={"mode": "warn"}))
+    assert [g.name for g in capture.gates] == ["cpus", "quiet", "census"] * 2
+
+
+@pytest.mark.parametrize(
+    ("keys", "order"),
+    [
+        ({"stop_file": "made-up/hold.stop"}, ["stop_file"]),
+        ({"check_locks": ("made-up/a.lock",)}, ["check_locks"]),
+        (
+            {
+                "check_locks": ("made-up/a.lock",),
+                "min_gpu_free_mib": 2000.0,
+                "stop_file": "made-up/hold.stop",
+            },
+            ["stop_file", "gpu_memory", "check_locks"],
+        ),
+    ],
+    ids=["stop-file", "check-locks", "all-three"],
+)
+def test_readiness_checks_that_are_on_run_after_the_quiet_check_in_both_phases(
+    keys: dict[str, Any],
+    order: list[str],
+    world: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _all_gates(monkeypatch)
+    capture = _run(world, tmp_path, _experiment(gates={"mode": "warn", **keys}))
+    assert [g.name for g in capture.gates] == ["cpus", "quiet", *order, "census"] * 2
+
+
+def test_a_present_stop_file_under_enforce_stops_the_run(
+    world: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _all_gates(monkeypatch, stop_file="fail")
+    experiment = _experiment(gates={"mode": "enforce", "stop_file": "made-up/hold.stop"})
+    refusal = _refused(world, tmp_path, experiment)
+    assert refusal.code == "E_GATE_FAILED"
+    assert refusal.exit_code == EXIT_MACHINE
+    assert refusal.message == "machine check failed: stop_file"
+    assert "pairbench: check stop_file: fail: a made-up reason\n" in capsys.readouterr().err
+    assert world.requests == []
+
+
+def test_a_readiness_check_that_cannot_run_under_enforce_is_refused(
+    world: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _all_gates(monkeypatch, gpu_memory="unavailable")
+    experiment = _experiment(gates={"mode": "enforce", "min_gpu_free_mib": 2000.0})
+    refusal = _refused(world, tmp_path, experiment)
+    assert refusal.code == "E_GATE_UNAVAILABLE"
+    assert refusal.message == "machine check could not run fully: gpu_memory"
+
+
+def test_under_warn_a_present_stop_file_is_recorded_and_the_run_goes_on(
+    world: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _all_gates(monkeypatch, stop_file="fail")
+    capture = _run(world, tmp_path, _experiment(gates={"mode": "warn", "stop_file": "made-up/x"}))
+    assert capture.complete
+    assert [(g.name, g.status) for g in capture.gates if g.name == "stop_file"] == [
+        ("stop_file", "fail"),
+        ("stop_file", "fail"),
+    ]
+    assert capsys.readouterr().err.count("pairbench: check stop_file: fail") == 2
+
+
+def test_with_the_checks_off_no_readiness_check_runs(
+    world: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _all_gates(monkeypatch, stop_file="fail")
+    capture = _run(world, tmp_path, _experiment(gates={"mode": "off", "stop_file": "made-up/x"}))
+    assert capture.complete
+    assert capture.gates == ()
+
+
+def test_a_plugin_check_runs_after_the_census(
+    world: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _all_gates(monkeypatch)
+    monkeypatch.setitem(
+        registry._state.plugins, (GROUP_GATES, "made-up-check"), _Gate("made-up-check", "pass")
+    )
+    experiment = _experiment(gates={"mode": "warn", "stop_file": "made-up/x"})
+    capture = _run(world, tmp_path, experiment)
+    assert [g.name for g in capture.gates] == [
+        "cpus",
+        "quiet",
+        "stop_file",
+        "census",
+        "made-up-check",
+    ] * 2
+
+
 def test_locks_are_taken_and_released(world: World, tmp_path: Path) -> None:
     capture = _run(world, tmp_path, _experiment(gates={"locks": ("made-up.lock",)}))
     assert capture.complete
@@ -2118,6 +2233,39 @@ def test_open_explain_refuses_a_lock_it_cannot_take(world: World) -> None:
         )
     assert caught.value.code == "E_LOCK"
     assert caught.value.exit_code == 4
+
+
+class _CountingGate(_Gate):
+    def __init__(self, name: str) -> None:
+        super().__init__(name, "fail")
+        self.calls = 0
+
+    def check(self, ctx: GateContext) -> GateRecord:
+        self.calls += 1
+        return super().check(ctx)
+
+
+def test_the_explain_launches_take_the_locks_and_run_no_readiness_check(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    counting = {name: _CountingGate(name) for name in READINESS}
+    for name, gate in counting.items():
+        monkeypatch.setitem(registry._state.builtins, (GROUP_GATES, name), gate)
+    experiment = _experiment(
+        gates={
+            "mode": "enforce",
+            "locks": ("made-up.lock",),
+            "stop_file": "made-up/hold.stop",
+            "min_gpu_free_mib": 2000.0,
+            "check_locks": ("made-up/other.lock",),
+        }
+    )
+    session = open_explain(
+        experiment, run_id="run-a", fingerprints=FINGERPRINTS, services=world.services()
+    )
+    session.close()
+    assert world.locked == [("made-up.lock",)]
+    assert [gate.calls for gate in counting.values()] == [0, 0, 0]
 
 
 def test_profiles_are_recorded_under_the_run_folder(

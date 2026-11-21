@@ -85,7 +85,7 @@ and `--set` sets one [config key](config.md), shown beside it.
 |---|---|---|
 | `--gates off\|warn\|enforce` | `gates.mode` | what a failed check does; default `warn` |
 | `--wait-quiet` | `gates.wait_quiet` | wait until the machine is quiet before starting; needs `--gates warn` or `enforce` |
-| `--lock PATH` | `gates.locks` | take an advisory file lock for the run, repeated for more |
+| `--lock PATH` | `gates.locks` | take an advisory file lock (`flock`) for the run, repeated for more |
 | `--lock-timeout DURATION` | `gates.lock_timeout` | the longest wait for the locks; default 30 minutes |
 | `--allow-mixed-core-types` | `gates.allow_mixed_core_types` | allow a CPU set that mixes core types |
 
@@ -281,7 +281,7 @@ diagnostics document.
 ## gate
 
 ```
-pairbench gate check --cpus LIST [--allow-mixed-core-types] [--json] [--config FILE] [--set KEY=VALUE]
+pairbench gate check [--cpus LIST] [--allow-mixed-core-types] [--json] [--config FILE] [--set KEY=VALUE]
 pairbench gate wait-quiet [--config FILE] [--set KEY=VALUE] -- COMMAND...
 ```
 
@@ -298,18 +298,28 @@ the shared launch settings, and a loud note says so.
 
 ### gate check
 
-`gate check` runs the CPU check once under `enforce` on the CPU set given, in place of
-`launch.cpus`; a side's own `cpus` from the config is checked as `run` checks it. A check that
-passes prints its status on standard output. One that does not pass prints its line on standard
-error and exits with 4 (`E_GATE_FAILED` when it failed, `E_GATE_UNAVAILABLE` when it could not
-run fully), with nothing on standard output. A CPU list that is malformed, such as a range that
-runs backwards, is refused with exit code 2.
+`gate check` runs checks once each under `enforce`: the CPU check when `--cpus LIST` is given,
+on that set in place of `launch.cpus` (a side's own `cpus` from the config is checked as `run`
+checks it), then each [readiness check](config.md#gates) whose key is set, in the order
+`stop_file`, `gpu_memory`, `check_locks`. With no `--cpus` and no readiness key set it is a usage
+error (`E_USAGE`, exit 2). Every check runs, also after one that did not pass.
+
+Each check that passes prints `check NAME: pass`, with its message when it gave one, on
+standard output. Each one that does not pass prints its line on standard error, and the command
+then exits with 4, naming the first of them: `E_GATE_FAILED` when it failed,
+`E_GATE_UNAVAILABLE` when it could not run fully. A CPU list that is malformed, such as a range
+that runs backwards, is refused with exit code 2.
+
+```
+$ pairbench gate check --set gates.stop_file=made-up/hold.stop
+check stop_file: pass
+```
 
 | Flag | Meaning |
 |---|---|
-| `--cpus LIST` | required: the CPUs to pin to; checks their core types |
+| `--cpus LIST` | the CPUs to pin to; checks their core types |
 | `--allow-mixed-core-types` | allow a CPU set that mixes core types |
-| `--json` | print the check's record as JSON, whatever its status |
+| `--json` | print the record as JSON, whatever its status, when one check ran; a list of the records, in the order they ran, when several ran |
 | `--config FILE` | the config file to read; also `PAIRBENCH_CONFIG` |
 | `--set KEY=VALUE` | set one config key, as `run --set` does; repeated for more |
 
@@ -319,6 +329,12 @@ runs backwards, is refused with exit code 2.
 command's own exit code. If the machine does not become quiet in time, the exit code is 4 and
 the command is not run. The quiet settings are those of `gates.quiet.*`, and the GPUs it
 watches follow `launch.gpus` and each side's own `gpus`, as in `run`.
+
+The wait includes the readiness checks whose key is set: a sample counts as quiet only when
+each of them would pass at that sample. After the wait each of them runs once, and the command
+runs only when the quiet check and every one of them passed. Otherwise the line of each check
+that did not pass is printed on standard error, the command is not run, and the exit code is 4,
+naming the first such check in the order `quiet`, `stop_file`, `gpu_memory`, `check_locks`.
 
 ## profile
 

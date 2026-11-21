@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026, Eugo, Inc.
-"""``pairbench gate``: run one machine check on its own.
+"""``pairbench gate``: run machine checks on their own.
 
-``gate check --cpus LIST`` runs the CPU check on a pinned set: the core
-types of the set, and whether pinning can be done here. A check that
-passed prints its status on standard output; one that did not pass is
-refused under ``enforce`` (``E_GATE_FAILED`` or ``E_GATE_UNAVAILABLE``,
-exit 4) and its line is printed on standard error. ``gate wait-quiet --
-COMMAND`` runs the command once the machine is quiet and exits with the
-command's own exit code; when the machine does not become quiet in time
-the command is not run and the exit code is 4.
+``gate check`` runs, under ``enforce``, the CPU check on the pinned set
+``--cpus LIST`` gives (the core types of the set, and whether pinning can
+be done here), then each readiness check whose key is set: the stop file,
+the free GPU memory floor and the check-only locks. With neither it is a
+usage error. A check that passed prints its status on standard output; one
+that did not pass prints its line on standard error, and the first such
+check is refused (``E_GATE_FAILED`` or ``E_GATE_UNAVAILABLE``, exit 4).
+``gate wait-quiet -- COMMAND`` runs the command once the machine is quiet
+and every readiness check that is on passes, and exits with the command's
+own exit code; otherwise the command is not run and the exit code is 4.
 
 Both read the settings ``run`` and ``plan`` read: the config file that
 ``--config`` or ``PAIRBENCH_CONFIG`` names, the ``PAIRBENCH__`` variables
@@ -45,6 +47,11 @@ STAND_IN_COMMAND: Final[tuple[str, ...]] = ("true",)
 KINDLESS_KEYS: Final[tuple[str, ...]] = ("baseline", "launch")
 # The note of a config whose sides all are result files.
 NOTE_SHARED_SETTINGS: Final = "checks_use_shared_settings"
+# The refusal of ``gate check`` with no --cpus and no readiness check on.
+NOTHING_TO_CHECK: Final = (
+    "gate check has nothing to check: give --cpus LIST, or set gates.stop_file, "
+    "gates.min_gpu_free_mib or gates.check_locks"
+)
 
 
 def _config_arguments(parser: argparse.ArgumentParser) -> None:
@@ -55,13 +62,19 @@ def _config_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    """The two forms: ``check --cpus LIST`` and ``wait-quiet -- COMMAND``."""
+    """The two forms: ``check [--cpus LIST]`` and ``wait-quiet -- COMMAND``."""
     forms = parser.add_subparsers(dest="form", metavar="check|wait-quiet")
     forms.required = True
-    check = forms.add_parser("check", help="the CPU check on a pinned set", allow_abbrev=False)
-    check.add_argument("--cpus", required=True, metavar="LIST", help="the CPUs to pin to")
+    check = forms.add_parser(
+        "check",
+        help="the CPU check on a pinned set and the readiness checks that are on",
+        allow_abbrev=False,
+    )
+    check.add_argument("--cpus", metavar="LIST", help="the CPUs to pin to")
     check.add_argument("--allow-mixed-core-types", action="store_true")
-    check.add_argument("--json", action="store_true", help="print the check's record as JSON")
+    check.add_argument(
+        "--json", action="store_true", help="print the record, or the list of records, as JSON"
+    )
     _config_arguments(check)
     wait = forms.add_parser(
         "wait-quiet",
@@ -169,28 +182,45 @@ def _machine(environ: dict[str, str]) -> tuple[bool, bool]:
         return False, api.is_ci(environ)
 
 
-def check(options: argparse.Namespace) -> int:
-    """Run the CPU check on the set given, under ``enforce``."""
-    import json
-
-    from pairbench import registry
-    from pairbench.api import GateContext, gate_line
+def _checked_cpus(cpus: str) -> None:
     from pairbench.model import LaunchSettings
 
     try:
-        LaunchSettings(cpus=options.cpus)
+        LaunchSettings(cpus=cpus)
     except ValueError as exc:
         raise Refusal("E_USAGE", f"--cpus: {exc}") from None
     # A range that runs backwards is malformed input, refused as the run
     # refuses it, not a check that cannot run.
-    for part in options.cpus.split(","):
+    for part in cpus.split(","):
         low, dash, high = part.strip().partition("-")
         if dash and low.isdigit() and high.isdigit() and int(high) < int(low):
             raise Refusal("E_USAGE", f"--cpus: the CPU range {part.strip()} runs backwards")
-    flags: dict[str, Any] = {"launch": {"cpus": options.cpus}}
+
+
+def check(options: argparse.Namespace) -> int:
+    """Run the CPU check when ``--cpus`` is given, then each readiness check that is on.
+
+    Every check runs under ``enforce``, also after one that did not pass. A
+    check that passed prints ``check NAME: pass`` on standard output; one
+    that did not pass prints its line on standard error, and the first such
+    check is refused. ``--json`` prints the record of the one check that
+    ran, or the list of records when several ran.
+    """
+    import json
+
+    from pairbench import registry
+    from pairbench.api import GateContext, gate_line
+
+    flags: dict[str, Any] = {}
+    if options.cpus is not None:
+        _checked_cpus(options.cpus)
+        flags["launch"] = {"cpus": options.cpus}
     if options.allow_mixed_core_types:
         flags["gates"] = {"allow_mixed_core_types": True}
     experiment, declared = _experiment(options, flags)
+    names = (["cpus"] if options.cpus is not None else []) + list(experiment.gates.readiness)
+    if not names:
+        raise Refusal("E_USAGE", NOTHING_TO_CHECK)
     environ = dict(os.environ)
     in_container, ci = _machine(environ)
     launch = _checked_launch(experiment, declared)
@@ -204,18 +234,23 @@ def check(options: argparse.Namespace) -> int:
         note=print_note,
         sides=_side_settings(experiment, launch, declared),
     )
-    record = registry.gate("cpus").check(ctx)
+    records = [registry.gate(name).check(ctx) for name in names]
     if options.json:
-        emit(json.dumps(record.to_json(), indent=2))
-    elif record.status == "pass":
-        message = record.detail.get("message")
-        emit(f"check {record.name}: {record.status}" + (f": {message}" if message else ""))
-    if record.status != "pass":
-        print(gate_line(record), file=sys.stderr)
-        reason = message_of(record.detail)
-        if record.status == "fail":
-            raise Refusal("E_GATE_FAILED", f"check {record.name} failed: {reason}")
-        raise Refusal("E_GATE_UNAVAILABLE", f"check {record.name} could not run fully: {reason}")
+        shown = records[0].to_json() if len(records) == 1 else [r.to_json() for r in records]
+        emit(json.dumps(shown, indent=2))
+    for record in records:
+        if record.status != "pass":
+            print(gate_line(record), file=sys.stderr)
+        elif not options.json:
+            message = record.detail.get("message")
+            emit(f"check {record.name}: {record.status}" + (f": {message}" if message else ""))
+    missed = [record for record in records if record.status != "pass"]
+    if missed:
+        first = missed[0]
+        reason = message_of(first.detail)
+        if first.status == "fail":
+            raise Refusal("E_GATE_FAILED", f"check {first.name} failed: {reason}")
+        raise Refusal("E_GATE_UNAVAILABLE", f"check {first.name} could not run fully: {reason}")
     return EXIT_OK
 
 
@@ -238,6 +273,7 @@ def wait_quiet(options: argparse.Namespace) -> int:
     in_container, ci = _machine(environ)
     launch = _checked_launch(experiment, declared)
     gate: Any = registry.gate("quiet")
+    readiness = [registry.gate(name) for name in experiment.gates.readiness]
     return wait_then_run(
         command,
         gates=experiment.gates,
@@ -247,6 +283,7 @@ def wait_quiet(options: argparse.Namespace) -> int:
         in_container=in_container,
         ci=ci,
         gate=gate,
+        readiness=readiness,
         err=sys.stderr,
         note=print_note,
     )

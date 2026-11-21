@@ -266,6 +266,40 @@ def test_the_skill_states_the_side_name_rule_the_code_applies() -> None:
     assert not _refused("new-1.2")
 
 
+def test_the_skill_says_what_each_mode_does_when_a_readiness_check_fails() -> None:
+    (rule,) = [
+        item
+        for item in _read("skills/pairbench/references/sides.md").split("\n- ")
+        if item.startswith("The readiness checks")
+    ]
+    text = " ".join(rule.split())
+    assert "hold a run" not in text
+    for said in (
+        "Under the default `--gates warn` the run goes on and its results are stamped `busy`",
+        "`--wait-quiet` waits for them",
+        "`--gates enforce` stops the run (exit 4)",
+        "`--gates off` skips them",
+    ):
+        assert said in text, said
+
+
+def test_the_method_page_says_a_slow_read_can_end_the_quiet_wait_later() -> None:
+    text = " ".join(_read("docs/method/shared-machines.md").split())
+    assert "within `gates.quiet.max_wait_s`" not in text
+    assert (
+        "The time is looked at after each sample, so a slow read, such as a readiness check "
+        "that waits on `nvidia-smi`, can end the wait later than that."
+    ) in text
+
+
+def test_the_config_page_says_a_slow_read_can_end_the_quiet_wait_later() -> None:
+    meaning = _row(_read("docs/reference/config.md"), "`gates.quiet.max_wait_s`").split("|")[3]
+    assert meaning.strip() == (
+        "the longest wait, then the check fails; the time is looked at after each sample, "
+        "so a slow read can end the wait later"
+    )
+
+
 # --- outcome words -------------------------------------------------------------------
 
 

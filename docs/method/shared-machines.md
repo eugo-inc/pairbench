@@ -1,5 +1,5 @@
 ---
-description: "How pairbench works on a machine others use: the quiet check, pinning, locks, witnesses during every launch and rounds set aside when disturbed."
+description: "How pairbench works on a machine others use: the quiet and readiness checks, pinning, locks, witnesses in every launch, rounds set aside when disturbed."
 ---
 
 # Can I benchmark on a shared or busy machine?
@@ -89,15 +89,81 @@ of a container that broke no rule.
 
 ## Locks
 
-`--lock PATH`, repeated, takes advisory file locks in the order given, after the quiet wait
-and until the end of the run. An existing lock file is opened read-only, so a file owned by
-another user can still be locked; a missing one is created. `--lock-timeout` bounds the wait,
+`--lock PATH`, repeated, takes advisory file locks with `flock` in the order given, after the
+quiet wait and until the end of the run. An existing lock file is opened read-only, so a file
+owned by another user can still be locked; a missing one is created. `--lock-timeout` bounds the wait,
 30 minutes by default. A timeout or any error is exit 4 (`E_LOCK`) in every mode: a run never
 proceeds without a lock it was asked to take. Locks work only between programs that take the
 same lock; agree on a path with the other users of the machine.
 
 The order of events is: refusals that need no launch, the plan exit if asked for, the quiet
-wait (holding no lock), the locks, one short re-check, then warm-up.
+wait (holding no lock) and the readiness checks that are on, the locks, one short re-check
+with the same readiness checks, then warm-up.
+
+## Readiness checks
+
+Three checks let the users of a machine say when a run may start. Each is off until its key
+is set; a check that is off writes no record, and a key that is not set changes neither the
+recorded config nor its hash. None has a flag: set them in the config file, with
+`PAIRBENCH__GATES__...` variables or with `--set`.
+
+| Check | Key | Not ready while |
+|---|---|---|
+| `stop_file` | `gates.stop_file`, a path | a file of any kind exists at that path |
+| `gpu_memory` | `gates.min_gpu_free_mib`, a number above 0 | a watched GPU has less free memory than that many MiB |
+| `check_locks` | `gates.check_locks`, a list of paths | another process holds one of those locks |
+
+```toml
+[gates]
+stop_file = "/made/up/hold.stop"
+min_gpu_free_mib = 2000
+check_locks = ["/made/up/train.lock"]
+```
+
+Each check that is on runs once after the quiet check, before the locks and again in the
+re-check, in the order of the table. It is a check of its own, with its own record and its
+own line, and the mode decides what a failure means: under `warn` a run with the stop file
+present goes on and its results are stamped `busy`, `enforce` stops the run, and `off` skips
+it with the other checks before the run.
+
+- **Stop file.** The path is looked up without following a final link, so a link counts as a
+  file. pairbench never creates, reads or removes the file: whoever made it removes it when
+  runs may start again. A path that cannot be looked up is `unavailable`.
+- **Free GPU memory.** The watched GPUs are those the quiet check watches: every GPU any side
+  selects, or every GPU when no side selects one. Each watched GPU must have at least the
+  floor free on its own. Free memory is read through the GPU management library when the
+  `gpu` extra is installed, else with `nvidia-smi`. A line names the GPU index and the floor,
+  never a process. A selected GPU the machine does not have, or free memory that cannot be
+  read, is `unavailable`; so is a watched GPU for which no figure of free memory is reported.
+  A GPU that is not watched is not judged, and may report no figure.
+- **Check-only locks.** A lock counts as held when another process holds it with `flock` or
+  with a POSIX record lock (`fcntl` or `lockf`) on any part of the file. Each lock file is
+  opened read-only, asked for a record lock of another process, which takes no lock, then
+  tried once with an exclusive `flock` that does not wait, and released at once; pairbench
+  never holds it. A held lock fails the check, and the line names the lock's place in the
+  list, never its path. A missing file is free and is not created. A file that cannot be
+  opened or asked is `unavailable`, and so is every check-only lock on a platform whose record
+  locks pairbench cannot read. A check-only lock says nothing about the moment after the check: a lock the
+  run must hold for its whole length belongs in `gates.locks`, and a path in both lists is
+  refused with `E_CONFIG`.
+
+With `--wait-quiet`, a sample of the quiet wait counts as quiet only when every readiness
+check that is on would pass at that sample, so the run waits until the machine is quiet and
+ready in the same streak, or until `gates.quiet.max_wait_s` has passed. The time is looked at
+after each sample, so a slow read, such as a readiness check that waits on `nvidia-smi`, can
+end the wait later than that. A readiness check that cannot run counts as not ready there.
+When the time runs out on a machine that was quiet but not ready, the quiet record passes
+and only the readiness check that was not ready fails. Without `--wait-quiet`, and in the
+re-check, the quiet check samples without them, and each readiness check runs once after it.
+
+A record keeps only the outcome: whether the stop file is present; the floor, the GPU
+selection and the indices under the floor; how many check-only locks there are and the
+places of those held. It keeps no path, no amount of free memory and no process. The paths
+enter the config hash as typed, as those of `gates.locks` do.
+
+`pairbench gate check` runs the readiness checks whose key is set on their own, and
+`pairbench gate wait-quiet` waits for them as `--wait-quiet` does
+([commands](../reference/commands.md#gate)).
 
 ## Witnesses
 
@@ -162,6 +228,9 @@ disturbed; in the second case the machine state is `busy`.
 | Pinning and core types | full | limited to the container's own CPUs | refused with the reason | full |
 | Neighbour census | full | `unavailable` without the engine socket | scoped to the engine's virtual machine, labelled | full |
 | Locks | full | full | full | full |
+| Stop file | full | the container's own files | full | full |
+| Free GPU memory | full | the GPUs the container sees | `unavailable` | full |
+| Check-only locks | full | full | full | full |
 | Disturbed rounds | full | full | off: no independent witness | full |
 
 "Full" means the check works there; it does not mean the run waits. An automated pipeline is
