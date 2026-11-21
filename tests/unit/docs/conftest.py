@@ -36,6 +36,7 @@ DOCUMENT_FILES = (
     "tools/launch_cost.py",
     "tools/hash_inputs.py",
     "src/pairbench/mcp/__init__.py",
+    "src/pairbench/mcp/library.py",
     "src/pairbench/mcp/server.py",
 )
 TEXT_SUFFIXES = frozenset(

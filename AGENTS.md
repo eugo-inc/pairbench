@@ -14,7 +14,7 @@ writes a verdict per case into `results.json`.
 ## Set up, test and lint
 
 ```
-python -m venv .venv
+python3 -m venv .venv
 . .venv/bin/activate
 pip install -e ".[plot,mcp]" pytest jsonschema ruff mypy build hatchling
 pytest tests/unit tests/mutants

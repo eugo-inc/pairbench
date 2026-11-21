@@ -3,7 +3,7 @@
 """``pairbench mcp``: start the tool server for AI agents over standard input and output.
 
 The server needs the ``mcp`` extra. The tools that launch commands on the
-machine exist only with ``--allow-run``.
+machine are offered only with ``--allow-run``.
 """
 
 from __future__ import annotations
@@ -16,8 +16,6 @@ from pairbench.errors import Refusal
 
 SERVER_MODULE: Final = "pairbench.mcp.server"
 EXTRA_HINT: Final = "install pairbench[mcp]"
-# The module the ``mcp`` extra provides; the server may import it when it starts.
-EXTRA_MODULE: Final = "mcp"
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -32,8 +30,15 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def command(options: argparse.Namespace) -> int:
-    """Start the server and return its exit code when it stops."""
+    """Start the server and return its exit code when it stops.
+
+    The server words a library that cannot be loaded as a refusal of its own.
+    An import error that still reaches this function is read by the same rule
+    the server reads one with, ``library.in_library``: one of the library's
+    own modules is the library's refusal, and any other is raised as it is.
+    """
     from pairbench import registry
+    from pairbench.mcp import library
 
     if options.no_plugins:
         registry.set_plugins_enabled(False)
@@ -50,11 +55,9 @@ def command(options: argparse.Namespace) -> int:
     try:
         code = start(allow_run=options.allow_run)
     except ImportError as exc:
-        if (exc.name or "").partition(".")[0] != EXTRA_MODULE:
+        if not library.in_library(exc.name):
             raise
-        raise Refusal(
-            "E_USAGE", f"the tool server is not available here ({exc.name}): {EXTRA_HINT}"
-        ) from exc
+        raise library.refusal(exc) from exc
     return int(code or 0)
 
 

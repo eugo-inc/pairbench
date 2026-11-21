@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import sys
@@ -18,13 +19,26 @@ from pairbench.model import Results
 
 
 class FakeServer:
-    """Stands in for the SDK's server class: it records the tools and the transport."""
+    """Stands in for the SDK's server class: it records the tools and the transport.
+
+    The handler of a client's ``tools/list`` is the ``list_tools`` method bound
+    when the server is made, as the older SDK binds it; the newer one looks the
+    method up for each request, which a subclass's method serves the same way.
+    """
 
     def __init__(self, name: str, instructions: str | None = None) -> None:
         self.name = name
         self.instructions = instructions
         self.tools: dict[str, dict[str, Any]] = {}
         self.transports: list[str] = []
+        self.list_handler = self.list_tools
+
+    async def list_tools(self) -> list[Any]:
+        return [types.SimpleNamespace(name=name) for name in self.tools]
+
+    def listed(self) -> tuple[str, ...]:
+        """The names a client's ``tools/list`` reads."""
+        return tuple(tool.name for tool in asyncio.run(self.list_handler()))
 
     def add_tool(
         self,
@@ -83,12 +97,12 @@ def fake_sdk(monkeypatch: pytest.MonkeyPatch) -> Sdk:
     """Install a fake of the newer SDK layout, ``mcp.server.mcpserver.MCPServer``."""
     sdk = Sdk()
 
-    def make(name: str, instructions: str | None = None) -> FakeServer:
-        made = FakeServer(name, instructions=instructions)
-        sdk.servers.append(made)
-        return made
+    class MCPServer(FakeServer):
+        def __init__(self, name: str, instructions: str | None = None) -> None:
+            super().__init__(name, instructions=instructions)
+            sdk.servers.append(self)
 
-    leaf = _module("mcp.server.mcpserver", MCPServer=make)
+    leaf = _module("mcp.server.mcpserver", MCPServer=MCPServer)
     middle = _module("mcp.server", mcpserver=leaf)
     monkeypatch.setitem(sys.modules, "mcp", _module("mcp", server=middle))
     monkeypatch.setitem(sys.modules, "mcp.server", middle)
@@ -101,12 +115,12 @@ def older_fake_sdk(monkeypatch: pytest.MonkeyPatch) -> Sdk:
     """Install a fake of the older SDK layout, ``mcp.server.fastmcp.FastMCP``, and nothing newer."""
     sdk = Sdk()
 
-    def make(name: str, instructions: str | None = None) -> FakeServer:
-        made = OlderFakeServer(name, instructions=instructions)
-        sdk.servers.append(made)
-        return made
+    class FastMCP(OlderFakeServer):
+        def __init__(self, name: str, instructions: str | None = None) -> None:
+            super().__init__(name, instructions=instructions)
+            sdk.servers.append(self)
 
-    leaf = _module("mcp.server.fastmcp", FastMCP=make)
+    leaf = _module("mcp.server.fastmcp", FastMCP=FastMCP)
     middle = _module("mcp.server", fastmcp=leaf)
     monkeypatch.setitem(sys.modules, "mcp", _module("mcp", server=middle))
     monkeypatch.setitem(sys.modules, "mcp.server", middle)
@@ -123,38 +137,51 @@ MISSING_DEPENDENCY = "made_up_dependency_a"
 
 
 class FailingFinder:
-    """A module finder whose search for one module fails on a dependency outside ``mcp``."""
+    """A module finder whose search for one module fails on another module, ``missing``.
 
-    def __init__(self, module: str) -> None:
+    With ``error``, the search raises that error instead, as a module that fails
+    with an error other than an import error does.
+    """
+
+    def __init__(self, module: str, missing: str, error: Exception | None = None) -> None:
         self.module = module
+        self.missing = missing
+        self.error = error
 
     def find_spec(self, name: str, path: object = None, target: object = None) -> None:
         if name == self.module:
-            raise ImportError(
-                f"cannot import name 'made_up_name' from '{MISSING_DEPENDENCY}'",
-                name=MISSING_DEPENDENCY,
-            )
+            if self.error is not None:
+                raise self.error
+            raise ModuleNotFoundError(f"No module named {self.missing!r}", name=self.missing)
         return None
 
 
 @pytest.fixture
-def sdk_failing_on(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], Sdk]:
-    """Return a function that installs a fake SDK whose import of one module fails on a dependency.
+def sdk_failing_on(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Sdk]:
+    """Return a function that installs a fake SDK whose import of one module fails on another.
 
-    The module named fails with the import error of ``MISSING_DEPENDENCY``.
-    When it is the newer layout's module, the older layout is there; when it
-    is the older layout's module, the newer layout is absent. Every ``mcp``
-    module already imported is taken out of ``sys.modules`` first, so the
-    import of the failing module reaches the finder.
+    ``install(module, missing=MISSING_DEPENDENCY, other_layout=True, error=None)``:
+    the module named fails with the error of a missing module ``missing``, or
+    with ``error`` when it is given. When it
+    is the newer layout's module, the older layout is there with
+    ``other_layout`` and absent without it; when it is the older layout's
+    module, the newer layout is absent. Every ``mcp`` module already imported
+    is taken out of ``sys.modules`` first, so the import of the failing module
+    reaches the finder.
     """
 
-    def install(module: str) -> Sdk:
+    def install(
+        module: str,
+        missing: str = MISSING_DEPENDENCY,
+        other_layout: bool = True,
+        error: Exception | None = None,
+    ) -> Sdk:
         sdk = Sdk()
 
-        def make(name: str, instructions: str | None = None) -> FakeServer:
-            made = OlderFakeServer(name, instructions=instructions)
-            sdk.servers.append(made)
-            return made
+        class FastMCP(OlderFakeServer):
+            def __init__(self, name: str, instructions: str | None = None) -> None:
+                super().__init__(name, instructions=instructions)
+                sdk.servers.append(self)
 
         for name in [key for key in sys.modules if key == "mcp" or key.startswith("mcp.")]:
             monkeypatch.delitem(sys.modules, name)
@@ -162,10 +189,12 @@ def sdk_failing_on(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], Sdk]:
         monkeypatch.setitem(sys.modules, "mcp", _module("mcp", server=middle, __path__=[]))
         monkeypatch.setitem(sys.modules, "mcp.server", middle)
         if module == NEWER_MODULE:
-            monkeypatch.setitem(sys.modules, OLDER_MODULE, _module(OLDER_MODULE, FastMCP=make))
+            older = _module(OLDER_MODULE, FastMCP=FastMCP) if other_layout else None
+            monkeypatch.setitem(sys.modules, OLDER_MODULE, older)
         else:
             monkeypatch.setitem(sys.modules, NEWER_MODULE, None)
-        monkeypatch.setattr(sys, "meta_path", [FailingFinder(module), *sys.meta_path])
+        finder = FailingFinder(module, missing, error)
+        monkeypatch.setattr(sys, "meta_path", [finder, *sys.meta_path])
         return sdk
 
     return install

@@ -21,7 +21,20 @@ A client starts it as a command, for example in a client configuration:
 ```
 
 Without the extra, `pairbench mcp` exits 2 with `E_USAGE` and says to install
-`pairbench[mcp]`.
+`pairbench[mcp]`. It exits 2 with `E_USAGE` too when the library cannot be loaded:
+
+- A broken install, one whose library cannot import one of its own modules or a library it
+  depends on, or has a module that fails in another way as it loads, is named as such with
+  the module it cannot import, when there is one, and the release installed, and the message
+  says to reinstall it with `pip install 'pairbench[mcp]'`. When the installed release lies
+  outside the releases the extra allows, the message names them too.
+- A module named `mcp` that comes before the library on the import path takes its place:
+  a file `mcp.py`, or a folder `mcp` with an `__init__.py`, in the working folder of
+  `python3 -m pairbench mcp` for example. The message names that file, `mcp.py` or
+  `mcp/__init__.py`, and says to rename it or to start pairbench from another folder. A
+  folder `mcp` without an `__init__.py` takes no place.
+
+None of these messages shows a path.
 
 ## Tools
 
@@ -44,9 +57,11 @@ The arguments of `plan` and `run_start` mirror the command line: `sides` is a li
 `NAME=KIND:SPEC`, `workload` the words after `--`, and `sets` a list of `KEY=VALUE` as
 `--set` takes them.
 
-`run_start` and `run_cancel` exist only when the server is started with `--allow-run`,
-because they launch commands on the machine. Treat a config or a side spec from someone else
-as code before you let an agent run it.
+`run_start` and `run_cancel` are listed only when the server is started with `--allow-run`,
+because they launch commands on the machine. Without it, a call to either is answered with an
+`E_USAGE` refusal that says the server was started without `--allow-run` and to start it with
+`pairbench mcp --allow-run`. Treat a config or a side spec from someone else as code before
+you let an agent run it.
 
 ## Answers
 

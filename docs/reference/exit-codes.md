@@ -172,7 +172,9 @@ Each entry's address is the one a refusal prints on its second line, for example
 Exit code 2.
 
 **Cause.** The command line or a library call was given something invalid, or two flags
-conflict; the message names the flag or the value.
+conflict; the message names the flag or the value. `pairbench mcp` refuses with it as well
+when the tool-server library is not installed, is a broken install, or has a local module
+named `mcp` in its place; the message says which, and what to do.
 
 **Fix.** Correct the flag or value the message names. `pairbench COMMAND --help` lists the
 flags of a command.

@@ -12,8 +12,10 @@ Tools:
 * ``plan``: the plan of an experiment; launches nothing.
 * ``run_start``, ``run_status``, ``run_cancel``: start a run and return a
   handle at once, follow it, cancel it. ``run_start`` and ``run_cancel``
-  exist only when the server was started with ``--allow-run``, because a
-  run launches commands on the machine. A run is the ``pairbench run``
+  are offered only when the server was started with ``--allow-run``,
+  because a run launches commands on the machine; without it they are
+  left out of the tool list, and a call reads a refusal that says how to
+  start the server with it. A run is the ``pairbench run``
   command in a child process: a cancel is an interrupt, exactly as Ctrl-C
   is for the command, and nothing a run prints reaches the protocol stream.
 * ``results``: a results document, or the comparisons of one case, or of every case that a
@@ -43,14 +45,16 @@ import signal
 import subprocess
 import sys
 import threading
+import types
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from pairbench.errors import EXIT_INTERRUPTED, Refusal, docs_address
+from pairbench.mcp import library
 
 if TYPE_CHECKING:
     from pairbench.model import Comparison, Experiment, Results
@@ -87,8 +91,13 @@ TOOL_NAMES: Final[tuple[str, ...]] = (
     "selftest",
     "schema",
 )
-# The tools that launch commands on the machine; they exist only with ``--allow-run``.
+# The tools that launch commands on the machine; they are offered only with ``--allow-run``.
 RUN_TOOLS: Final[frozenset[str]] = frozenset({"run_start", "run_cancel"})
+# The answer to a call of a run tool on a server started without ``--allow-run``.
+WITHOUT_ALLOW_RUN: Final = (
+    "this server was started without --allow-run, so it does not offer {tool}: start it "
+    "with pairbench mcp --allow-run"
+)
 
 # How many lines of a run's output a handle keeps.
 KEPT_LINES: Final = 200
@@ -618,7 +627,12 @@ class ToolServer:
         answered as ``E_INTERNAL``.
         """
         if tool not in self.names():
-            return _text(refusal_answer(Refusal("E_USAGE", f"no tool named {tool!r}")))
+            message = (
+                WITHOUT_ALLOW_RUN.format(tool=tool)
+                if tool in RUN_TOOLS
+                else f"no tool named {tool!r}"
+            )
+            return _text(refusal_answer(Refusal("E_USAGE", message)))
         method: Callable[..., Any] = getattr(self, tool)
         quiet = tool in ("run_status", "run_cancel")
         try:
@@ -718,7 +732,7 @@ class ToolServer:
         from pairbench.model import DIR_RUNS
 
         if not self.allow_run:
-            raise Refusal("E_USAGE", "runs start only when the server is started with --allow-run")
+            raise Refusal("E_USAGE", WITHOUT_ALLOW_RUN.format(tool="run_start"))
         experiment = self._experiment(config, sides, baseline, workload, sets)
         api.require_plot_extra(experiment.plots.mode)
         with self._runs_lock:
@@ -833,7 +847,7 @@ class ToolServer:
     def run_cancel(self, handle: str) -> dict[str, Any]:
         """Interrupt a run, as Ctrl-C interrupts the command; it ends with exit code 130."""
         if not self.allow_run:
-            raise Refusal("E_USAGE", "runs are cancelled only when started with --allow-run")
+            raise Refusal("E_USAGE", WITHOUT_ALLOW_RUN.format(tool="run_cancel"))
         run = self._run(handle)
         if run.process.poll() is None:
             run.cancelled = True
@@ -1306,12 +1320,33 @@ def tool_specs(server: ToolServer) -> list[ToolSpec]:
     return [every[name] for name in server.names()]
 
 
+STAND_IN_HELP: Final = "Offered only when the server is started with --allow-run."
+
+
+def stand_in_specs(server: ToolServer) -> list[ToolSpec]:
+    """A stand-in for each tool the server does not offer, which takes no arguments.
+
+    ``main`` registers the stand-ins and leaves them out of the list a client
+    reads, so a client that calls ``run_start`` of a server started without
+    ``--allow-run`` reads the refusal that says how to start it with it, and
+    not the SDK's answer for a name it does not know.
+    """
+
+    def stand_in(name: str) -> ToolSpec:
+        def refuse() -> str:
+            return server.call(name)
+
+        return ToolSpec(name, STAND_IN_HELP, refuse)
+
+    return [stand_in(name) for name in TOOL_NAMES if name not in server.names()]
+
+
 # ---------------------------------------------------------------------------
 # The SDK
 # ---------------------------------------------------------------------------
 
 
-def sdk_server(name: str, instructions: str) -> Any:
+def sdk_server(name: str, instructions: str, hidden: Collection[str] = ()) -> Any:
     """Make the SDK's server object. This is the only place the SDK is imported.
 
     Two layouts of the SDK are read, as its public source shows them:
@@ -1326,22 +1361,58 @@ def sdk_server(name: str, instructions: str) -> Any:
     so the 1.x layout is imported by name: a statement that imports
     ``FastMCP`` would fail the type check against those releases.
 
-    An SDK that is not installed raises ``ImportError`` for the ``mcp``
-    module, which the command turns into its install hint.
+    An import error whose module is the SDK's own (``library.in_library``)
+    means the layout is absent, and the other one is read; when both are
+    absent, the first error is the one reported. An import error of any
+    other module, such as a dependency of the SDK that is missing, is
+    reported at once, and so is any other error a layout's module raises as
+    it loads. Each error becomes the refusal ``library.refusal`` words for it.
+
+    The tools named in ``hidden`` are left out of the list the server gives a
+    client, and still answer a call.
     """
     try:
         from mcp.server.mcpserver import MCPServer
     except ImportError as newer:
-        if not (newer.name or "").startswith("mcp"):
-            raise
+        if not library.in_library(newer.name):
+            raise library.refusal(newer) from newer
         try:
             older = importlib.import_module("mcp.server.fastmcp")
         except ImportError as error:
-            if not (error.name or "").startswith("mcp"):
-                raise
-            raise newer from None
-        return older.FastMCP(name, instructions=instructions)
-    return MCPServer(name, instructions=instructions)
+            first = newer if library.in_library(error.name) else error
+            raise library.refusal(first) from first
+        except Exception as error:
+            raise library.refusal(error) from error
+        base: Any = older.FastMCP
+    except Exception as error:
+        raise library.refusal(error) from error
+    else:
+        base = MCPServer
+    return hiding(base, frozenset(hidden))(name, instructions=instructions)
+
+
+def hiding(base: Any, hidden: frozenset[str]) -> Any:
+    """The SDK's server class, or a subclass whose ``list_tools`` leaves out the ``hidden`` tools.
+
+    Both layouts answer a client's ``tools/list`` with the server's
+    ``list_tools`` method and its ``tools/call`` with the tools registered,
+    so a tool left out of the list still answers a call. The 1.x layout
+    binds the method when the server is made, so the method is replaced in
+    a subclass and not on the object. Both are read in the ``server.py`` of
+    each layout folder that ``sdk_server`` links, at v2.3.0 and at v1.21.1.
+    """
+    if not hidden:
+        return base
+
+    async def list_tools(self: Any, *args: Any, **kwargs: Any) -> list[Any]:
+        listed = await super(made, self).list_tools(*args, **kwargs)
+        return [tool for tool in listed if tool.name not in hidden]
+
+    def body(namespace: dict[str, Any]) -> None:
+        namespace.update(list_tools=list_tools, __module__=__name__)
+
+    made: Any = types.new_class(base.__name__, (base,), exec_body=body)
+    return made
 
 
 def add_tool(server: Any, spec: ToolSpec) -> None:
@@ -1355,15 +1426,22 @@ def add_tool(server: Any, spec: ToolSpec) -> None:
 def main(*, allow_run: bool) -> int:
     """Serve the tools over standard input and output until the client leaves.
 
-    ``allow_run`` adds ``run_start`` and ``run_cancel``. Runs still going
-    when the client leaves are interrupted and waited for.
+    ``allow_run`` adds ``run_start`` and ``run_cancel``; without it each is
+    a stand-in, left out of the tool list, whose answer to a call is the
+    refusal that says how to start the server with it. Runs still going
+    when the client leaves are interrupted and waited for. A library that
+    cannot be loaded is a refusal, worded by ``library.refusal``.
     """
-    server = sdk_server(SERVER_NAME, INSTRUCTIONS)
     tools = ToolServer(allow_run=allow_run)
-    for spec in tool_specs(tools):
-        add_tool(server, spec)
+    stand_ins = stand_in_specs(tools)
     try:
+        server = sdk_server(SERVER_NAME, INSTRUCTIONS, hidden=[spec.name for spec in stand_ins])
+        for spec in [*tool_specs(tools), *stand_ins]:
+            add_tool(server, spec)
         server.run("stdio")
+    except ImportError as error:
+        # The SDK may import a module of its own, or one it depends on, as it starts to serve.
+        raise library.refusal(error) from error
     finally:
         tools.close()
     return 0
@@ -1377,15 +1455,19 @@ __all__ = [
     "REASON_TEXT",
     "RUN_TOOLS",
     "SERVER_NAME",
+    "STAND_IN_HELP",
     "TOOL_NAMES",
+    "WITHOUT_ALLOW_RUN",
     "RunHandle",
     "ToolServer",
     "ToolSpec",
     "add_tool",
     "explain_comparison",
     "explain_term",
+    "hiding",
     "main",
     "refusal_answer",
     "sdk_server",
+    "stand_in_specs",
     "tool_specs",
 ]

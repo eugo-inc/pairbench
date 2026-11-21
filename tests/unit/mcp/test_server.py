@@ -17,7 +17,7 @@ import pytest
 
 import pairbench
 from pairbench.errors import Refusal
-from pairbench.mcp import server
+from pairbench.mcp import library, server
 from pairbench.mcp.server import ToolServer
 from pairbench.model import Results
 
@@ -37,13 +37,28 @@ EVERY_TOOL = (
     "selftest",
     "schema",
 )
-TOOLS_WITHOUT_RUNS = tuple(name for name in EVERY_TOOL if name not in ("run_start", "run_cancel"))
+RUN_TOOLS = ("run_start", "run_cancel")
+TOOLS_WITHOUT_RUNS = tuple(name for name in EVERY_TOOL if name not in RUN_TOOLS)
 MADE_UP_PLUGIN = "made-up-plugin-a"
+EXIT_USAGE = 2
 EXIT_INTERNAL = 8
-# What the command prints when an SDK module fails to import a dependency outside ``mcp``.
-DEPENDENCY_FAILED = (
-    "E_INTERNAL: ImportError: cannot import name 'made_up_name' from 'made_up_dependency_a'\n"
+MADE_UP_RELEASE = "2.3.0"
+DOCS_LINE_USAGE = (
+    "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage\n"
+)
+DOCS_LINE_INTERNAL = (
     "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_internal\n"
+)
+NOT_INSTALLED = "the tool server is not available here (mcp): install pairbench[mcp]"
+REINSTALL = "reinstall it with pip install 'pairbench[mcp]'"
+# What the server says of an SDK module that fails to import a dependency outside ``mcp``.
+DEPENDENCY_FAILED = (
+    "the tool-server library mcp 2.3.0 is a broken install: it cannot import "
+    f"made_up_dependency_a; {REINSTALL}"
+)
+WITHOUT_ALLOW_RUN = (
+    "this server was started without --allow-run, so it does not offer {tool}: start it with "
+    "pairbench mcp --allow-run"
 )
 
 
@@ -56,21 +71,60 @@ def answer(tools: ToolServer, tool: str, /, **arguments: Any) -> dict[str, Any]:
 # -- the SDK ---------------------------------------------------------------------------
 
 
-def test_main_registers_every_tool_but_the_run_tools_and_serves_on_stdio(fake_sdk: Any) -> None:
+@pytest.fixture
+def installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The module named ``mcp`` is the installed library, of a made-up supported release.
+
+    The refusal for a library that cannot be loaded reads both, so its text
+    does not depend on what is installed where the tests run.
+    """
+    monkeypatch.setattr(library, "found", lambda: library.LIBRARY)
+    monkeypatch.setattr(library, "release", lambda: MADE_UP_RELEASE)
+
+
+def test_main_lists_every_tool_but_the_run_tools_and_serves_on_stdio(fake_sdk: Any) -> None:
     code = server.main(allow_run=False)
 
     assert code == 0
     made = fake_sdk.server
     assert made.name == "pairbench"
     assert made.instructions == server.INSTRUCTIONS
-    assert tuple(made.tools) == TOOLS_WITHOUT_RUNS
+    assert made.listed() == TOOLS_WITHOUT_RUNS
+    assert tuple(made.tools) == (*TOOLS_WITHOUT_RUNS, *RUN_TOOLS)
     assert made.transports == ["stdio"]
 
 
-def test_main_with_allow_run_registers_the_run_tools_too(fake_sdk: Any) -> None:
+def test_main_with_allow_run_lists_the_run_tools_too(fake_sdk: Any) -> None:
     server.main(allow_run=True)
 
     assert tuple(fake_sdk.server.tools) == EVERY_TOOL
+    assert fake_sdk.server.listed() == EVERY_TOOL
+
+
+def test_with_allow_run_the_server_is_the_sdk_class_itself(fake_sdk: Any) -> None:
+    from mcp.server.mcpserver import MCPServer
+
+    server.main(allow_run=True)
+
+    assert type(fake_sdk.server) is MCPServer
+
+
+@pytest.mark.parametrize("tool", RUN_TOOLS)
+def test_a_run_tool_left_out_answers_a_call_with_how_to_start_the_server_with_it(
+    tool: str, fake_sdk: Any
+) -> None:
+    server.main(allow_run=False)
+
+    registered = fake_sdk.server.tools[tool]
+    refused = json.loads(registered["fn"]())["refusal"]
+
+    assert registered["description"] == server.STAND_IN_HELP
+    assert registered["structured_output"] is False
+    assert (refused["code"], refused["exit_code"], refused["message"]) == (
+        "E_USAGE",
+        EXIT_USAGE,
+        WITHOUT_ALLOW_RUN.format(tool=tool),
+    )
 
 
 def test_every_tool_answers_text_and_asks_for_no_structured_output(fake_sdk: Any) -> None:
@@ -96,39 +150,174 @@ def test_the_older_sdk_layout_is_used_when_the_newer_is_absent(older_fake_sdk: A
     made = older_fake_sdk.server
     assert made.name == "pairbench"
     assert made.instructions == server.INSTRUCTIONS
-    assert tuple(made.tools) == TOOLS_WITHOUT_RUNS
+    assert made.listed() == TOOLS_WITHOUT_RUNS
+    assert tuple(made.tools) == (*TOOLS_WITHOUT_RUNS, *RUN_TOOLS)
     assert made.transports == ["stdio"]
 
 
+@pytest.mark.parametrize("tool", RUN_TOOLS)
+def test_the_older_layout_answers_a_run_tool_left_out_with_how_to_start_it(
+    tool: str, older_fake_sdk: Any
+) -> None:
+    server.main(allow_run=False)
+
+    refused = json.loads(older_fake_sdk.server.tools[tool]["fn"]())["refusal"]
+
+    assert refused["message"] == WITHOUT_ALLOW_RUN.format(tool=tool)
+
+
 @pytest.mark.parametrize("failing", [NEWER_MODULE, OLDER_MODULE])
-def test_an_import_error_outside_mcp_while_the_sdk_loads_is_raised_as_is(
+@pytest.mark.usefixtures("installed")
+def test_an_import_error_outside_mcp_while_the_sdk_loads_is_a_broken_install(
     failing: str, sdk_failing_on: Any
 ) -> None:
     sdk = sdk_failing_on(failing)
 
-    with pytest.raises(ImportError) as raised:
+    with pytest.raises(Refusal) as raised:
         server.main(allow_run=False)
 
-    assert raised.value.name == MISSING_DEPENDENCY
+    assert (raised.value.code, raised.value.message) == ("E_USAGE", DEPENDENCY_FAILED)
+    assert isinstance(raised.value.__cause__, ImportError)
+    assert raised.value.__cause__.name == MISSING_DEPENDENCY
     assert sdk.servers == []
 
 
 @pytest.mark.parametrize("failing", [NEWER_MODULE, OLDER_MODULE])
-def test_the_command_reports_an_import_error_outside_mcp_as_internal_not_as_the_install_hint(
+@pytest.mark.usefixtures("installed")
+def test_the_command_reports_an_import_error_outside_mcp_as_a_broken_install(
     failing: str, sdk_failing_on: Any, cli: Any
 ) -> None:
     sdk_failing_on(failing)
 
     result = cli("mcp")
 
-    assert (result.code, result.out, result.err) == (EXIT_INTERNAL, "", DEPENDENCY_FAILED)
+    assert (result.code, result.out, result.err) == (
+        EXIT_USAGE,
+        "",
+        f"E_USAGE: {DEPENDENCY_FAILED}\n{DOCS_LINE_USAGE}",
+    )
 
 
-def test_without_the_extra_main_raises_the_import_error_of_the_mcp_module(no_sdk: None) -> None:
-    with pytest.raises(ImportError) as raised:
+# A made-up failure of an SDK module that is not an import error; its text holds a path.
+OTHER_FAILURE_TEXT = "a made-up failure in /home/user-a/made-up-env/mcp/server/__init__.py"
+# What the server says of an SDK module that fails with such an error.
+MODULE_FAILED = (
+    "the tool-server library mcp 2.3.0 is a broken install: one of its modules cannot be "
+    f"imported; {REINSTALL}"
+)
+
+
+@pytest.mark.parametrize("failing", [NEWER_MODULE, OLDER_MODULE])
+@pytest.mark.parametrize("kind", [TypeError, AttributeError, RuntimeError])
+@pytest.mark.usefixtures("installed")
+def test_an_sdk_module_failing_with_another_error_is_a_broken_install(
+    failing: str, kind: type[Exception], sdk_failing_on: Any
+) -> None:
+    sdk = sdk_failing_on(failing, error=kind(OTHER_FAILURE_TEXT))
+
+    with pytest.raises(Refusal) as raised:
         server.main(allow_run=False)
 
-    assert (raised.value.name or "").partition(".")[0] == "mcp"
+    assert (raised.value.code, raised.value.exit_code, raised.value.message) == (
+        "E_USAGE",
+        EXIT_USAGE,
+        MODULE_FAILED,
+    )
+    assert type(raised.value.__cause__) is kind
+    assert sdk.servers == []
+
+
+@pytest.mark.parametrize("failing", [NEWER_MODULE, OLDER_MODULE])
+@pytest.mark.usefixtures("installed")
+def test_the_command_reports_another_error_of_an_sdk_module_without_its_text(
+    failing: str, sdk_failing_on: Any, cli: Any
+) -> None:
+    sdk_failing_on(failing, error=TypeError(OTHER_FAILURE_TEXT))
+
+    result = cli("mcp")
+
+    assert (result.code, result.out, result.err) == (
+        EXIT_USAGE,
+        "",
+        f"E_USAGE: {MODULE_FAILED}\n{DOCS_LINE_USAGE}",
+    )
+    assert "/home" not in result.err
+
+
+@pytest.mark.parametrize("missing", ["mcp_types", "mcpx", "starlette", MISSING_DEPENDENCY])
+@pytest.mark.usefixtures("installed")
+def test_a_newer_layout_failing_outside_mcp_is_reported_without_trying_the_older(
+    missing: str, sdk_failing_on: Any
+) -> None:
+    sdk = sdk_failing_on(NEWER_MODULE, missing=missing)
+
+    with pytest.raises(Refusal) as raised:
+        server.sdk_server(server.SERVER_NAME, server.INSTRUCTIONS)
+
+    assert raised.value.message == (
+        f"the tool-server library mcp 2.3.0 is a broken install: it cannot import {missing}; "
+        f"{REINSTALL}"
+    )
+    assert sdk.servers == []
+
+
+@pytest.mark.parametrize("missing", ["mcp", "mcp.server.mcpserver", "mcp.made_up_module_a"])
+def test_a_newer_layout_failing_inside_mcp_falls_back_to_the_older(
+    missing: str, sdk_failing_on: Any
+) -> None:
+    sdk = sdk_failing_on(NEWER_MODULE, missing=missing)
+
+    made = server.sdk_server(server.SERVER_NAME, server.INSTRUCTIONS)
+
+    assert sdk.servers == [made]
+    assert type(made).__name__ == "FastMCP"
+
+
+def test_with_neither_layout_the_error_of_the_newer_is_the_one_reported(
+    sdk_failing_on: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(library, "found", lambda: library.LIBRARY)
+    monkeypatch.setattr(library, "release", lambda: "1.2.0")
+    sdk_failing_on(NEWER_MODULE, missing=NEWER_MODULE, other_layout=False)
+
+    with pytest.raises(Refusal) as raised:
+        server.sdk_server(server.SERVER_NAME, server.INSTRUCTIONS)
+
+    assert raised.value.message == (
+        "the tool-server library mcp 1.2.0 is a broken install: it cannot import "
+        f"mcp.server.mcpserver, and pairbench supports mcp>=1.21.1,<3; {REINSTALL}"
+    )
+    assert isinstance(raised.value.__cause__, ImportError)
+    assert raised.value.__cause__.name == NEWER_MODULE
+
+
+@pytest.mark.usefixtures("installed")
+def test_an_import_error_while_the_sdk_serves_is_a_broken_install(
+    fake_sdk: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp.server.mcpserver import MCPServer
+
+    def run(self: Any, transport: str = "stdio") -> None:
+        raise ModuleNotFoundError("No module named 'starlette'", name="starlette")
+
+    monkeypatch.setattr(MCPServer, "run", run)
+
+    with pytest.raises(Refusal) as raised:
+        server.main(allow_run=False)
+
+    assert raised.value.message == (
+        f"the tool-server library mcp 2.3.0 is a broken install: it cannot import starlette; "
+        f"{REINSTALL}"
+    )
+
+
+def test_without_the_extra_main_refuses_with_the_install_hint(no_sdk: None) -> None:
+    with pytest.raises(Refusal) as raised:
+        server.main(allow_run=False)
+
+    assert (raised.value.code, raised.value.message) == ("E_USAGE", NOT_INSTALLED)
+    assert isinstance(raised.value.__cause__, ImportError)
+    assert library.in_library(raised.value.__cause__.name)
 
 
 def test_the_command_without_the_extra_refuses_with_the_install_hint(
@@ -136,10 +325,58 @@ def test_the_command_without_the_extra_refuses_with_the_install_hint(
 ) -> None:
     result = cli("mcp")
 
-    assert result.code == 2
-    assert result.out == ""
-    assert result.err.startswith("E_USAGE: ")
-    assert "pairbench[mcp]" in result.err
+    assert (result.code, result.out, result.err) == (
+        EXIT_USAGE,
+        "",
+        f"E_USAGE: {NOT_INSTALLED}\n{DOCS_LINE_USAGE}",
+    )
+
+
+@pytest.mark.parametrize("name", ["mcp_types", "mcpx", MISSING_DEPENDENCY])
+def test_the_command_raises_an_import_error_outside_mcp_that_reaches_it_as_it_is(
+    name: str, cli: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def main(*, allow_run: bool) -> int:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+
+    monkeypatch.setattr(server, "main", main)
+
+    result = cli("mcp")
+
+    assert (result.code, result.out, result.err) == (
+        EXIT_INTERNAL,
+        "",
+        f"E_INTERNAL: ModuleNotFoundError: No module named {name!r}\n{DOCS_LINE_INTERNAL}",
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("mcp", NOT_INSTALLED),
+        (
+            "mcp.server.made_up_module_a",
+            "the tool-server library mcp 2.3.0 is a broken install: it cannot import "
+            f"mcp.server.made_up_module_a; {REINSTALL}",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("installed")
+def test_the_command_reads_an_import_error_inside_mcp_that_reaches_it_as_the_server_does(
+    name: str, message: str, cli: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def main(*, allow_run: bool) -> int:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+
+    monkeypatch.setattr(server, "main", main)
+
+    result = cli("mcp")
+
+    assert (result.code, result.out, result.err) == (
+        EXIT_USAGE,
+        "",
+        f"E_USAGE: {message}\n{DOCS_LINE_USAGE}",
+    )
 
 
 def test_the_command_starts_the_server_with_the_run_tools_only_when_allowed(
@@ -150,9 +387,8 @@ def test_the_command_starts_the_server_with_the_run_tools_only_when_allowed(
 
     assert (plain.code, allowed.code) == (0, 0)
     first, second = fake_sdk.servers
-    assert "run_start" not in first.tools
-    assert "run_cancel" not in first.tools
-    assert {"run_start", "run_cancel"} <= set(second.tools)
+    assert set(RUN_TOOLS).isdisjoint(first.listed())
+    assert set(RUN_TOOLS) <= set(second.listed())
 
 
 def test_the_sdk_is_imported_inside_one_function_only() -> None:
@@ -211,22 +447,41 @@ def test_the_sdk_is_imported_inside_one_function_only() -> None:
 # -- calling ---------------------------------------------------------------------------
 
 
-def test_a_run_tool_is_unknown_without_allow_run() -> None:
+@pytest.mark.parametrize("name", RUN_TOOLS)
+def test_a_run_tool_without_allow_run_says_how_to_start_the_server_with_it(name: str) -> None:
     tools = ToolServer(allow_run=False)
 
-    for name in ("run_start", "run_cancel"):
-        refused = answer(tools, name, handle="x")["refusal"]
-        assert refused["code"] == "E_USAGE"
-        assert refused["exit_code"] == 2
+    refused = answer(tools, name, handle="x")["refusal"]
+
+    assert (refused["code"], refused["exit_code"], refused["message"]) == (
+        "E_USAGE",
+        EXIT_USAGE,
+        WITHOUT_ALLOW_RUN.format(tool=name),
+    )
+
+
+def test_a_tool_that_does_not_exist_is_named_as_such() -> None:
+    refused = answer(ToolServer(allow_run=False), "made_up_tool_a")["refusal"]
+
+    assert (refused["code"], refused["message"]) == ("E_USAGE", "no tool named 'made_up_tool_a'")
 
 
 def test_the_run_methods_refuse_without_allow_run_even_when_called_directly() -> None:
     tools = ToolServer(allow_run=False)
 
-    with pytest.raises(Refusal) as raised:
+    with pytest.raises(Refusal) as start:
         tools.run_start(sides=["new=cmd:true", "old=cmd:false"])
+    with pytest.raises(Refusal) as cancel:
+        tools.run_cancel(handle="made-up-handle-a")
 
-    assert raised.value.code == "E_USAGE"
+    assert (start.value.code, start.value.message) == (
+        "E_USAGE",
+        WITHOUT_ALLOW_RUN.format(tool="run_start"),
+    )
+    assert (cancel.value.code, cancel.value.message) == (
+        "E_USAGE",
+        WITHOUT_ALLOW_RUN.format(tool="run_cancel"),
+    )
 
 
 def test_a_refusal_is_an_answer_with_code_exit_code_scope_and_message() -> None:

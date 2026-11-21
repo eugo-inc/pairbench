@@ -18,12 +18,15 @@ from typing import Any
 
 import pytest
 
+from .conftest import documents
+
 LICENCE_HEADER = (
     "# SPDX-License-Identifier: Apache-2.0",
     "# Copyright (c) 2026, Eugo, Inc.",
 )
 SOURCE_FILES = (
     "src/pairbench/mcp/__init__.py",
+    "src/pairbench/mcp/library.py",
     "src/pairbench/mcp/server.py",
     "tools/launch_cost.py",
     "tools/hash_inputs.py",
@@ -1180,8 +1183,47 @@ def _first_block_after(text: str, heading: str) -> list[str]:
     return [line.split(" # ", 1)[0].strip() for line in block.splitlines() if line.strip()]
 
 
+# A step that makes a Python environment, with the interpreter it names.
+MAKES_AN_ENVIRONMENT = re.compile(r"(?<![\w./-])(python[\w.]*)\s+-m\s+venv\b")
+# The interpreter a guide names for that step: the command a Python 3 install provides on
+# Linux and macOS, where a plain python command may be missing.
+ENVIRONMENT_PYTHON = "python3"
+SET_UP_GUIDES = ("AGENTS.md", "CONTRIBUTING.md")
+
+
+def test_every_guide_makes_the_environment_with_python3(repo_root: Path) -> None:
+    named: dict[str, list[str]] = {}
+    for path in documents(repo_root):
+        text = path.read_text(encoding="utf-8")
+        found = [match.group(1) for match in MAKES_AN_ENVIRONMENT.finditer(text)]
+        if found:
+            named[path.relative_to(repo_root).as_posix()] = found
+
+    assert {name: named.get(name) for name in SET_UP_GUIDES} == {
+        name: [ENVIRONMENT_PYTHON] for name in SET_UP_GUIDES
+    }
+    assert {
+        name: found for name, found in named.items() if set(found) != {ENVIRONMENT_PYTHON}
+    } == {}
+
+
+# pairbench started as a module, which runs on the reader's own machine and not inside a side.
+STARTS_PAIRBENCH = re.compile(r"(?<![\w./-])(python[\w.]*)\s+-m\s+pairbench\b")
+
+
+def test_every_page_starts_pairbench_as_a_module_with_python3(repo_root: Path) -> None:
+    named: dict[str, list[str]] = {}
+    for path in documents(repo_root):
+        text = path.read_text(encoding="utf-8")
+        found = [match.group(1) for match in STARTS_PAIRBENCH.finditer(text)]
+        if any(interpreter != ENVIRONMENT_PYTHON for interpreter in found):
+            named[path.relative_to(repo_root).as_posix()] = found
+
+    assert named == {}
+
+
 def test_the_contributing_guide_runs_every_check_agents_md_runs(repo_root: Path) -> None:
-    setup = ("python -m venv ", ". .venv/", "pip install ")
+    setup = ("python3 -m venv ", ". .venv/", "pip install ")
     checks = [
         line
         for line in _first_block_after(
