@@ -164,7 +164,10 @@ Numbers in this example are made up.
   its credentials hidden, line by line:
   each such value is replaced by `<hidden>` before hashing, so a guess at it cannot be
   checked against a hash, and two sides or captures that differ only in such a value have
-  the same hash. The case patterns of the config are in `provenance.config_sha256` as typed,
+  the same hash. A file side is the exception: its `files_sha256` and its fingerprint cover
+  each result file as it is, a secret in a case id included, and its fingerprint covers the
+  absolute path of each file, as the
+  [known limits](../../SECURITY.md#known-limits-of-the-hashes) say. The case patterns of the config are in `provenance.config_sha256` as typed,
   as the [known limits](../../SECURITY.md#known-limits-of-the-shown-command) say. Hosts and ordinary values are hashed as they are, and so is a path but for
   its random-looking parts. Two sides whose specs differ only in a value hidden for its shape,
   or in what a hidden credential value holds besides the credential itself, as

@@ -280,7 +280,9 @@ narrower there: an address keeps its host in the hashes. A value in any other fo
 hashes as typed, and someone who knows the rest of the command can confirm a guess at it by
 hashing the guess. The case patterns of the config, given with `--case` or as `cases.primary`
 or `cases.groups`, are in the hash of the config as typed, as the
-[known limits](../../SECURITY.md#known-limits-of-the-shown-command) say.
+[known limits](../../SECURITY.md#known-limits-of-the-shown-command) say. A file side's result
+files are the exception: its fingerprint covers each file as it is, as the
+[known limits of the hashes](../../SECURITY.md#known-limits-of-the-hashes) say.
 
 **What the hash of an `identify` output hides.** An `identify` command prints what tells one
 build of a side from another, so its output is hashed with only its credentials hidden, line by
@@ -313,7 +315,17 @@ before a host is hidden up to the `@`, and the text before its user and after it
 as where pytest joins it to another value with `-`: `test_db[bob:made-up@db.example:5432-ro]`
 shows `test_db[bob:<hidden>@db.example:5432-ro]`, and `test_db[{"dsn":"bob:made-up@db.example"}]`
 shows `test_db[{"dsn":"bob:<hidden>@db.example"}]`; such a password holds no `@`, quote or angle
-bracket. In a part that also gives a credential-like name a value with `=` after the host, the
+bracket. It is hidden with no user before its `:` too, as an address with no user name writes
+it: `test_db[:made-up@db.example:6379]` shows `test_db[:<hidden>@db.example:6379]`. A `:`
+written as `%3A` is part of the user name, as it is in an address, so
+`test_db[bob%3Amade-up@db.example]` shows as written. A password that starts with a `:` is
+hidden with no user before it (`test_db[::made-up@db.example:6379]` shows
+`test_db[:<hidden>@db.example:6379]`), but shows after a user, as a `::` joins the parts of a
+name: `test_db[bob::made-up@db.example:6379]` shows as written, as the
+[known limits](../../SECURITY.md#known-limits-of-the-shown-command) say. An image tag written
+before a host with no user is hidden as such a password too: `test_tag[:latest@registry.example:5000]` shows
+`test_tag[:<hidden>@registry.example:5000]`, as the
+[known limits](../../SECURITY.md#known-limits-of-the-shown-command) say. In a part that also gives a credential-like name a value with `=` after the host, the
 password before the host shows, as the
 [known limits](../../SECURITY.md#known-limits-of-the-shown-command) say. A credential-like name glued to its value with `:` loses the value the same way
 (`test_db[token:made-up]` shows `test_db[token:<hidden>]`), also after another name's `:` or
@@ -361,7 +373,10 @@ also last in a group of short options (`watch -tc`), so the word after it is the
 `watch -c 'API_KEY=VALUE&&./bench-old'` shows `watch -c 'API_KEY=<hidden>&&./bench-old'`. The
 `-c` of `su`, `runuser`, `flock`, `script` and `fish` counts last in a group of short options
 too: `script -qc 'API_KEY=VALUE&&./bench-old'` shows
-`script -qc 'API_KEY=<hidden>&&./bench-old'`. The
+`script -qc 'API_KEY=<hidden>&&./bench-old'`. The action of a shell's `trap`, its first
+argument after any `--`, is a shell text too, as the shell runs it when a signal comes:
+`sh -c "trap 'PGPASSWORD=VALUE psql -h db.example' EXIT"` shows
+`sh -c 'trap '"'"'PGPASSWORD=<hidden> psql -h db.example'"'"' EXIT'`. The
 text of `env -S` is no shell text, as `env` splits it into words and starts no shell, and nor
 is the command of `watch -x` or `--exec`, `hyperfine -N` or `--shell none`, or `parallel -q` or
 `--quote`, which they run with no shell: `env -S 'tool --api-key=VALUE&&./bench-old'` shows
@@ -568,7 +583,9 @@ operators and all, as the first form below says (`tool 'DB_PASSWORD=a b; ls'` sh
   variable may stand on a line of its own, with the `.` at the end of a line or at the start of
   the next: `$token = 'made' .`, then `$x .` and `'...'` on the lines after it, hides all three.
   It may be an element of an array or a hash, with `->` or none: `$token = 'made' . $a[0] .
-  '...'` hides all of it, as `$x->[0]`, `$h{a}` and `$x['k']` there do. So is a here-document
+  '...'` hides all of it, as `$x->[0]`, `$h{a}` and `$x['k']` there do. Its name may name
+  its package, as Perl writes it: `$token = 'made' . $::x . '...'` hides all of it, as
+  `$Foo::x` and `$Foo::Bar::x` there do. So is a here-document
   joined with `.`: `$token = 'a' . <<'EOT'` hides the lines up to `EOT`. A join after a call,
   a constant, an array such as `@x` or a numbered variable such as `$1`, and a here-document
   joined after an element of an array, are not read with the value, so what follows shows, as
@@ -648,11 +665,11 @@ after it stays shown:
   (`sh`, `bash`, `dash`, `zsh`, `ksh`, `mksh`, `ash`, `yash` or `fish`: `SHELLS`) runs after a
   group of options that holds `c` anywhere, also with other options or `--` after it
   (`sh -ce`, `bash -xc`, `sh -c -- TEXT`, `bash -c -e TEXT`); the remote command of `ssh`,
-  after its host; the commands of `hyperfine` and `watch`, of `parallel` up to `:::`, `:::+`,
-  `::::` or `::::+`, and of `tmux` after `new`, `new-session`, `new-window`, `neww`,
-  `split-window`, `splitw`, `respawn-window`, `respawnw`, `respawn-pane` or `respawnp`
-  (`COMMAND_TEXT_RUNNERS`); and the value of `gcloud ... --command`, of `env -S` or
-  `--split-string`, of `-s`, `--setup`, `-p`, `--prepare`, `-C`, `--conclude`, `-c`,
+  after its host; the action of a shell's `trap`, its first argument after any `--`; the
+  commands of `hyperfine` and `watch`, of `parallel` up to `:::`, `:::+`, `::::` or `::::+`,
+  and of `tmux` after `new`, `new-session`, `new-window`, `neww`, `split-window`, `splitw`,
+  `respawn-window`, `respawnw`, `respawn-pane` or `respawnp` (`COMMAND_TEXT_RUNNERS`); and the
+  value of `gcloud ... --command`, of `env -S` or `--split-string`, of `-s`, `--setup`, `-p`, `--prepare`, `-C`, `--conclude`, `-c`,
   `--cleanup` or `--reference` of `hyperfine`, also in a group after its `-N`, `-i` or `-S`
   (`-NpTEXT`) and wherever `hyperfine` starts a command in the words of `ssh`, `watch` or
   `parallel`, which a shell runs once they are joined: first, or after a separator, after the
@@ -799,7 +816,13 @@ one of the reserved words that a command follows, as in `{ eval ...; }` or
 `if true; then eval ...; fi`, after a line continuation, or in a command substitution, a
 process substitution or a subshell, is read the same way:
 `sh -c 'x=$(eval "PGPASSWORD=VALUE psql -h db.example")'` shows
-`sh -c 'x=$(eval "PGPASSWORD=<hidden> psql -h db.example")'`. A command substitution inside
+`sh -c 'x=$(eval "PGPASSWORD=<hidden> psql -h db.example")'`. So is an `eval` that `builtin`,
+`command` or `coproc` runs, also after the `-p` or `--` of `command` or the `--` of `builtin`
+and in the group or subshell that `coproc` runs (`coproc NAME { eval ...; }`), one in the
+action of a `trap`, and one written in quotes or with a backslash, as a shell reads
+`\eval`, `"eval"` and `'eval'` as `eval`:
+`sh -c 'command -p eval "redis-cli -a VALUE PING"'` shows
+`sh -c 'command -p eval "redis-cli -a <hidden> PING"'`. A command substitution inside
 double quotes is read as the shell text it is too, so a value in escaped double quotes there
 is hidden and the program after it stays:
 `sh -c 'x="$(eval "PGPASSWORD=\"VALUE\" psql -h db.example")"'` shows

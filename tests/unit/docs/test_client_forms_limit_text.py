@@ -6,7 +6,8 @@ A client's options and command are read where a word names a client the config r
 lists. A client named through a variable, an alias or a shell function, or one the reference
 does not list, is read as any program is; a command given in an option of ``ssh``, or sent by
 ``--cluster call`` to each node, is not read as a client's command; and a word in the
-``$'...'`` quotes of a shell is not read as a password rule. The security policy lists each
+``$'...'`` quotes of a shell is not read as a shell reads it: not as a client's option, a
+password rule, a client's command or the text of an ``eval``. The security policy lists each
 among the known limits of the shown command with its advice, which says to give a client the
 config reference does not list its password with ``--pass``, and the forms the limits name as
 hidden stay hidden.
@@ -44,16 +45,25 @@ SSH_OPTION_OR_CLUSTER_CALL = (
     "program hides, such as `--password password`, is hidden in the value of an option of `ssh`."
 )
 ANSI_C_QUOTES = (
-    "**A password rule in `$'...'` quotes.** A word in the `$'...'` quotes of a shell is not read "
-    "as a rule of `ACL SETUSER`, so in a shell text, as in "
-    "`redis-cli ACL SETUSER app on $'>password'` after `bash -c`, the password shows. In plain "
-    "quotes, as in `redis-cli ACL SETUSER app on '>password'`, it is hidden."
+    "**A word in `$'...'` quotes.** A shell reads a word in `$'...'` quotes with its backslash "
+    "escapes turned into the characters they stand for; the shown command does not read such a "
+    "word as the shell does. So in a shell text after `bash -c`, a client's password option in "
+    "them, as in `redis-cli $'-a' password PING`, a rule of `ACL SETUSER`, as in "
+    "`redis-cli ACL SETUSER app on $'>password'`, a client's command, as in "
+    "`memtier_benchmark --command $'AUTH password'`, and the text of an `eval`, as in "
+    "`eval $'memtier_benchmark --command \\'AUTH password\\''` or "
+    "`eval $'true\\nredis-cli -a password PING'`, show the password. In plain quotes, as in "
+    "`redis-cli '-a' password PING`, `redis-cli ACL SETUSER app on '>password'`, "
+    "`memtier_benchmark --command 'AUTH password'` or "
+    "`eval 'memtier_benchmark --command \"AUTH password\"'`, it is hidden, and so is a password "
+    "that is itself the word in `$'...'` quotes, as in `redis-cli -a $'password' PING`."
 )
 ADVICE = (
     "Name a client by its own name where its command starts, give a client the config reference "
     "does not list its password with `--pass` or through `launch.env_pass`, give `ssh` its remote "
     "command after the host, give the client of `--cluster call` its password with `-a`, and "
-    "write a password rule in plain quotes."
+    "write a client's option, command or password rule and the text of an `eval` in plain quotes "
+    "rather than in `$'...'` quotes."
 )
 # Each limit's examples, which the shown command and the hash show as typed.
 SHOWN_WHOLE = (
@@ -77,6 +87,10 @@ SHOWN_WHOLE = (
     ),
     ("valkey-cli", "--cluster", "call", "made-up-host:7000", "AUTH", "password"),
     ("bash", "-c", "redis-cli ACL SETUSER app on $'>password'"),
+    ("bash", "-c", "redis-cli $'-a' password PING"),
+    ("bash", "-c", "memtier_benchmark --command $'AUTH password'"),
+    ("bash", "-c", "eval $'memtier_benchmark --command \\'AUTH password\\''"),
+    ("bash", "-c", "eval $'true\\nredis-cli -a password PING'"),
 )
 # The forms the limits and their advice name as hidden, and what the shown command shows.
 HIDDEN = (
@@ -100,6 +114,22 @@ HIDDEN = (
     (
         ("bash", "-c", "redis-cli ACL SETUSER app on '>password'"),
         "bash -c 'redis-cli ACL SETUSER app on '\"'\"'><hidden>'\"'\"''",
+    ),
+    (
+        ("bash", "-c", "redis-cli '-a' password PING"),
+        "bash -c 'redis-cli '\"'\"'-a'\"'\"' <hidden> PING'",
+    ),
+    (
+        ("bash", "-c", "memtier_benchmark --command 'AUTH password'"),
+        "bash -c 'memtier_benchmark --command '\"'\"'AUTH <hidden>'\"'\"''",
+    ),
+    (
+        ("bash", "-c", "eval 'memtier_benchmark --command \"AUTH password\"'"),
+        "bash -c 'eval '\"'\"'memtier_benchmark --command \"AUTH <hidden>\"'\"'\"''",
+    ),
+    (
+        ("bash", "-c", "redis-cli -a $'password' PING"),
+        "bash -c 'redis-cli -a <hidden> PING'",
     ),
 )
 

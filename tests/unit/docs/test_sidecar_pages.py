@@ -124,7 +124,7 @@ SHOWN_KEYS = {
 SHOWN_PARTS = (
     "keeps its sidecar private as long as no shared file shows each of the path's other parts: "
     "the results show the last part of a path at most, but a case whose id is "
-    "`made-up-client run` shows both words and lets that path pass."
+    "`made-up-folder run` shows both words and lets that path pass."
 )
 # The shown command hides each `--set` value, so the policy says what that does to the sidecar.
 SET_VALUES = (

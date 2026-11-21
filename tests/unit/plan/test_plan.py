@@ -240,7 +240,10 @@ def test_a_serving_experiment_plans_eight_rounds_without_the_control() -> None:
     assert plan.launches == 34
     text = format_plan(plan, experiment)
     assert "# server starts: 34 (every launch starts the server)\n" in text
-    assert "# verdict: reachable; 8 of 8 rounds must agree for one primary case\n" in text
+    assert (
+        "# verdict: reachable; 8 of 8 rounds must agree for one primary case when none tie "
+        "(a tie is not counted)\n"
+    ) in text
     assert "at most 6 primary cases can get a verdict at 8 rounds" in text
     assert "--rounds 16" in text
 
@@ -474,7 +477,10 @@ def test_the_plan_text_is_a_header_then_the_table() -> None:
         "# balance new / new~same: new first in 8, new~same first in 8, "
         "positions differ by 0 in sum"
     ) in header
-    assert "# verdict: reachable; 13 of 16 rounds must agree for one primary case" in header
+    assert (
+        "# verdict: reachable; 13 of 16 rounds must agree for one primary case when none tie "
+        "(a tie is not counted)"
+    ) in header
     assert any("fixed after warm-up" in line for line in header)
     assert (
         "# the round count of 16 holds for up to 102 primary cases; more raise it after warm-up"
@@ -486,10 +492,13 @@ def test_the_plan_text_is_a_header_then_the_table() -> None:
     assert "# sides differ in: new: argv" in header
 
 
-def test_the_plan_text_of_quick_says_every_round_must_agree() -> None:
+def test_the_plan_text_of_quick_says_every_untied_round_must_agree() -> None:
     experiment = _experiment(quick=True)
     text = format_plan(build_plan(experiment), experiment)
-    assert "# verdict: reachable; 8 of 8 rounds must agree for one primary case\n" in text
+    assert (
+        "# verdict: reachable; 8 of 8 rounds must agree for one primary case when none tie "
+        "(a tie is not counted)\n"
+    ) in text
     assert "# primary cases: at most 6 primary cases can get a verdict at 8 rounds\n" in text
 
 

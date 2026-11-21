@@ -1798,7 +1798,8 @@ def fingerprint_of(identity: Mapping[str, Any], launch: Mapping[str, Any]) -> st
     output of the ``identify`` command as ``hashed_output`` reads it, so two
     sides that differ only in such a secret have one fingerprint. The rest of
     the identity, the names of passed variables, the mounts and the limits
-    are hashed as they are.
+    are hashed as they are; so are a file side's result files, whose
+    absolute paths and SHA-256 over the bytes as read its identity holds.
     """
     return sha256_hex(canonical_json(fingerprint_inputs(identity, launch)))
 
@@ -1812,9 +1813,11 @@ def fingerprint_inputs(identity: Mapping[str, Any], launch: Mapping[str, Any]) -
     side's program, cut to its last part as ``public_path`` cuts a path and
     as the look-up line of a plan shows it, and the image's entrypoint and
     command an image side records (``IMAGE_ENTRYPOINT_KEY``), which are left
-    out. So the fingerprint names no folder of the machine: one program in
-    two folders, with the same bytes and the same typed arguments, is one
-    side. The launch
+    out. So the fingerprint names no folder of a command side's program:
+    one program in two folders, with the same bytes and the same typed
+    arguments, is one side. A file side's identity keeps the absolute path
+    of each of its result files and the hash of the file as read, so its
+    fingerprint covers both. The launch
     settings are read as ``_hashed_launch`` says: the entrypoint and the
     arguments as one argument list, and the value of each credential-like
     variable hidden. Hiding the result a second time changes nothing.
@@ -5105,12 +5108,13 @@ _CASE_PATH = re.compile(
 _CASE_PART = re.compile(r"""[^\s\[\](){},;/]+""")
 # A password before a host, written without a scheme, as one part of a case id:
 # ``bob:VALUE@db.example`` and ``bob:VALUE@db.example:5432``. The user is a name of letters,
-# digits, ``_``, ``.``, ``+`` and ``-``, the password does not start with ``:``, so
-# ``pkg::name@v2`` is no such form, and the host is a name of letters, digits, ``.`` and
-# ``-`` that starts with a letter or a digit and holds a ``.`` or is followed by a port, so
-# ``python:3.12@slim`` names no host.
+# digits, ``_``, ``.``, ``+`` and ``-``, or none, as an address with no user name writes it
+# (``:VALUE@db.example:6379``). After a user the password does not start with ``:``, so
+# ``Module::Name@1.23`` is no such form; with no user it may (``::VALUE@db.example:6379``). The
+# host is a name of letters, digits, ``.`` and ``-`` that starts with a letter or a digit and
+# holds a ``.`` or is followed by a port, so ``python:3.12@slim`` names no host.
 _CASE_HOST_PASSWORD = re.compile(
-    r"""([\w.+-]+:)(?!:)[^@]+"""
+    r"""([\w.+-]+:(?!:)|:)[^@]+"""
     r"""(@[A-Za-z0-9][A-Za-z0-9-]*(?:(?:\.[A-Za-z0-9-]*)+(?::[0-9]*)?|:[0-9]+))"""
 )
 # The ``@`` and the host of a password before a host inside a part of a case id, with text
@@ -5123,8 +5127,10 @@ _CASE_HOST_AT = re.compile(
     r"""@[A-Za-z0-9][\w-]*(?:(?:\.[\w-]*)+(?::[0-9]+(?!\w))?|:[0-9]+(?!\w))"""
 )
 # The user of such a password: a run of letters, digits, ``_``, ``.``, ``+``, ``%`` and ``-``
-# that no such character or ``:`` comes right before, then one ``:``.
-_CASE_HOST_USER = re.compile(r"""(?<![\w.+%:-])[\w.+%-]+:(?!:)""")
+# that no such character or ``:`` comes right before, then one ``:`` that no ``:`` follows; or
+# an empty user, a ``:`` alone where none of them comes right before, which a ``:`` may follow,
+# as a password after an empty user may start with one.
+_CASE_HOST_USER = re.compile(r"""(?<![\w.+%:-])(?:[\w.+%-]+:(?!:)|:)""")
 # What a password before a host may hold: no ``@``, white space, quote or angle bracket.
 _CASE_HOST_PASSWORD_STOP = frozenset("@\"'<> \t\r\n")
 # A name or an option glued to its value by ``:`` in one part of a case id: ``token:VALUE``,
@@ -5458,7 +5464,11 @@ def _case_secrets_hidden(case: str) -> str:
     ``<hidden>``. A part that is a password before a host, written without
     a scheme (``_CASE_HOST_PASSWORD``), loses the password:
     ``bench[bob:V@db.example:5432]`` shows
-    ``bench[bob:<hidden>@db.example:5432]``, and so does a part with text
+    ``bench[bob:<hidden>@db.example:5432]``, also with no user before the
+    ``:`` (``bench[:V@db.example:6379]`` shows
+    ``bench[:<hidden>@db.example:6379]``, and with a password that starts
+    with a ``:``: ``bench[::V@db.example:6379]`` shows
+    ``bench[:<hidden>@db.example:6379]``), and so does a part with text
     before the user or after the host (``_case_host_passwords_hidden``), up
     to the ``@``: ``test_db[bob:V@db.example:5432-ro]`` shows
     ``test_db[bob:<hidden>@db.example:5432-ro]``. A part that glues a
@@ -5501,7 +5511,9 @@ def _case_host_passwords_hidden(part: str) -> str:
     ``dsn=bob:VALUE@db.example`` and ``bob:VALUE@db.example?sslmode=require``
     keep their quotes, their name and their query. The password runs back
     from the ``@`` over what a password may hold to the first user before it
-    (``_CASE_HOST_USER``), so a user with ``%40`` keeps it and
+    (``_CASE_HOST_USER``), which may be empty (``":VALUE@db.example"``), and
+    then the password may start with a ``:`` (``"::VALUE@db.example"``), so a
+    user with ``%40`` keeps it and
     ``db:bob:VALUE@db.example`` hides ``bob:VALUE``. A host with no user and
     password before it is left as it is. The text between two ``@`` is read
     back once, so a long part is read in linear time.
@@ -6390,8 +6402,12 @@ _COMMAND_SEPARATOR = re.compile(r"(?<![<>])&(?!>)|[;|()`]")
 
 
 def _client_named(plain: str) -> str:
-    """Return the client a word names, after any command separator and path, or ``""``."""
-    last = _COMMAND_SEPARATOR.split(plain)[-1].lstrip("$")
+    """Return the client a word names, after any command separator and path, or ``""``.
+
+    A backslash in the name is taken off, as a shell takes it off: ``\\redis-cli`` names
+    ``redis-cli``.
+    """
+    last = _COMMAND_SEPARATOR.split(plain)[-1].lstrip("$").replace("\\", "")
     name = last.rpartition("/")[2]
     return name if name in CLIENT_PASSWORD_OPTIONS else ""
 
@@ -6613,9 +6629,13 @@ _SSH_VALUE_OPTIONS: Final = tuple(f"-{letter}" for letter in "BbcDEeFIiJLlmOoPpQ
 # of a new or respawned session, window or pane. Each runs its commands in a shell but where
 # its manual names a way to run them with none: ``watch -x`` / ``--exec``, ``hyperfine -N`` /
 # ``--shell=none``, ``parallel -q`` / ``--quote``, and ``tmux`` given a command as several
-# arguments (tmux(1) at tag 3.5a: a single argument is passed to ``/bin/sh -c``).
+# arguments (tmux(1) at tag 3.5a: a single argument is passed to ``/bin/sh -c``). A shell's
+# ``trap`` runs its action, its first argument after any ``--``, as a shell text when a
+# signal comes (POSIX ``trap``); the signal names after it are read as texts too, and they
+# hold nothing to hide.
 COMMAND_TEXT_RUNNERS: Final[Mapping[str, TextRunner]] = {
     "ssh": TextRunner(takes_value=_SSH_VALUE_OPTIONS, before=1, rest=True),
+    "trap": TextRunner(),
     "hyperfine": TextRunner(
         takes_value=("-S", "--shell"),
         no_shell=("-N", "--shell=none", "-Snone"),
@@ -8856,8 +8876,15 @@ def _backquote_escaped(text: str) -> str:
 _SUBSHELL_CLOSERS: Final = ")`"
 
 
-# The words that run ``eval`` as the builtin it is, before it: ``builtin eval``, ``command eval``.
-_EVAL_RUNNERS: Final = ("builtin", "command")
+# The words that run the command after them, ``eval`` among them, as it is: ``builtin eval``,
+# ``command eval`` and ``coproc eval``, each with the options it takes before that command
+# and runs it with (``command -p``, ``command --``, ``builtin --``), and the ``{`` that opens
+# the group ``coproc`` runs (``coproc { eval ...; }``).
+_EVAL_RUNNERS: Final[Mapping[str, tuple[str, ...]]] = {
+    "builtin": ("--",),
+    "command": ("-p", "--"),
+    "coproc": ("{",),
+}
 
 
 def _evaluated(
@@ -8869,10 +8896,15 @@ def _evaluated(
     its escapes read (``_shell_unquoted``), and runs what it joined as a
     shell text: ``eval 'tool --command '\\''AUTH VALUE'\\'''`` and ``eval tool
     --command \\'AUTH VALUE\\'`` both run ``tool --command 'AUTH VALUE'``. It
-    may stand after ``builtin`` or ``command`` (``_EVAL_RUNNERS``), also
-    right after the ``(`` that opens a subshell (``(eval 'tool ...')``), and
-    a ``--`` right after it ends its options and is none of its words. Its
-    words run up to the operator, line break or comment that ends its
+    may stand after any run of ``builtin``, ``command`` and ``coproc``, each
+    with the options it runs a command with (``_EVAL_RUNNERS``: ``command -p
+    eval``, ``builtin -- eval``, ``builtin command eval``), in the group or
+    the subshell that ``coproc`` runs, with the coprocess's name before it or
+    none (``coproc NAME { eval ...; }``, ``coproc (eval ...)``), also right after
+    the ``(`` that opens a subshell (``(eval 'tool ...')``), and it may be
+    quoted or escaped, as a shell reads ``\\eval``, ``"eval"`` and ``'eval'``
+    as ``eval``; a ``--`` right after it ends its options and is none of its
+    words. Its words run up to the operator, line break or comment that ends its
     command, or up to the ``)`` or backquote that closes it
     (``_subshell_closed``), which is shown after them as typed. When some
     word of them is quoted or escaped and the text they run hides a value,
@@ -8890,10 +8922,19 @@ def _evaluated(
     text is shown as ``HIDDEN``.
     """
     first = at
-    name = tokens[first].group(0).lstrip("(")
-    if name in _EVAL_RUNNERS and first + 1 < len(tokens):
+    name = _shell_unquoted(tokens[first].group(0).lstrip("("))
+    options: tuple[str, ...] = ()
+    while (name in _EVAL_RUNNERS or name in options) and first + 1 < len(tokens):
+        options = _EVAL_RUNNERS.get(name, options)
+        if (
+            name == "coproc"
+            and first + 2 < len(tokens)
+            and tokens[first + 2].group(0).startswith(("{", "("))
+        ):
+            # The name of the coprocess, before the group or subshell it runs.
+            first += 1
         first += 1
-        name = tokens[first].group(0)
+        name = _shell_unquoted(tokens[first].group(0).lstrip("("))
     if name != "eval" or _breaks_line(text[tokens[at].end() : tokens[first].start()]):
         return None
     begin = first + 1
@@ -9683,10 +9724,12 @@ _CODE_BARE = re.compile(r"""(?:\\[\s\S]|;++(?=\S)|[^\s'",;(\[\\)\]}])+""")
 # ``.`` or none, or a line break before or after it: a name, a quote, a backquote or another
 # variable (``$x.q{...}``, ``$x . '...'``, ``$x.$y``, ``$x .`` and then ``'...'`` on the next
 # line). Its ``$`` may have a backslash before it, as a shell writes it inside double quotes
-# (``\$x.'...'``), and an element of an array or a hash may follow its name, with ``->`` or
-# none (``$a[0]``, ``$x->[0]``, ``$x['k']``, ``$h{a}``).
+# (``\$x.'...'``), its name may name its package with ``::``, as Perl does (``$::x``,
+# ``$Foo::x``, ``$Foo::Bar::x``), and an element of an array or a hash may follow its name,
+# with ``->`` or none (``$a[0]``, ``$x->[0]``, ``$x['k']``, ``$h{a}``).
 _CODE_JOINED_VARIABLE = re.compile(
-    r"""\\?\$[A-Za-z_][A-Za-z0-9_]*(?:(?:->)?(?:\[[^\]\n]*\]|\{[^}\n]*\}))*"""
+    r"""\\?\$(?:::)?[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*"""
+    r"""(?:(?:->)?(?:\[[^\]\n]*\]|\{[^}\n]*\}))*"""
     r"""(?=(?:[ \t]*\\?\r?\n)*[ \t]*\.(?:[ \t]*\\?\r?\n)*[ \t]*(?:[A-Za-z_$'"`]|\\\$))"""
 )
 _OPENING: Final[Mapping[str, str]] = {")": "(", "]": "[", "}": "{"}
@@ -9768,11 +9811,11 @@ _TAB_OR_SPACE_RUN = re.compile(r"[ \t]*")
 # blanks, as in ``"a" "b"`` of Python and C, or ``.`` or ``..``, with blanks around it or
 # not, as in ``"a" . "b"`` of Perl and PHP, before a quote, a backquote or a prefixed string,
 # and ``.`` before a quote-like word of Perl or Ruby too, as in ``'a' . q{...}``, before
-# a variable of Perl or PHP, as in ``'a' . $x . '...'``, or before a here-document of Perl
-# or PHP, as in ``'a' . <<'EOT'`` and ``'a' . <<<EOT``.
+# a variable of Perl or PHP, as in ``'a' . $x . '...'`` and ``'a' . $::x . '...'``, or
+# before a here-document of Perl or PHP, as in ``'a' . <<'EOT'`` and ``'a' . <<<EOT``.
 _CODE_STRING_JOIN = re.compile(
     r"""(?:[ \t]*\.\.?[ \t]*(?=(?:q[qwr]?|%[qQ]?)[ \t]*[^\w\s\\])|"""
-    r"""[ \t]*\.[ \t]*(?=\\?\$[A-Za-z_{]|<<<?[-~]?[ \t]*\\?['"]?[A-Za-z_])|"""
+    r"""[ \t]*\.[ \t]*(?=\\?\$(?:::)?[A-Za-z_{]|<<<?[-~]?[ \t]*\\?['"]?[A-Za-z_])|"""
     r"""(?:[ \t]*\.\.?[ \t]*|[ \t]+)(?=""" + _STRING_PREFIX + r"""?['"`]))"""
 )
 # The same across the end of a line, in the text of a program: ``.``, ``..`` or ``+`` at the
@@ -9784,7 +9827,8 @@ _CODE_LINE_JOIN = re.compile(
     r"""(?:[ \t]*(?:\.\.?|\+)(?:[ \t]*\\?\r?\n)+[ \t]*"""
     r"""|(?:[ \t]*\\?\r?\n)+[ \t]*(?:\.\.?|\+)(?:(?:[ \t]*\\?\r?\n)+[ \t]*|[ \t]*)"""
     r"""|(?:[ \t]*\\\r?\n)+[ \t]*)"""
-    r"""(?=""" + _STRING_PREFIX + r"""?['"`]|(?:q[qwr]?|%[qQ]?)[ \t]*[^\w\s\\]|\\?\$[A-Za-z_{])"""
+    r"""(?=""" + _STRING_PREFIX + r"""?['"`]|(?:q[qwr]?|%[qQ]?)[ \t]*[^\w\s\\]"""
+    r"""|\\?\$(?:::)?[A-Za-z_{])"""
 )
 _CLOSING: Final[Mapping[str, str]] = {"(": ")", "[": "]", "{": "}"}
 

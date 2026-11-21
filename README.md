@@ -71,7 +71,7 @@ Example output (made-up identities, shortened):
 # rounds: requested auto, planned 16
 # launches: 82 (16 rounds of 5, and 2 warm-up launches)
 # balance pip / conda: pip first in 8, conda first in 8, positions differ by 0 in sum
-# verdict: reachable; 13 of 16 rounds must agree for one primary case
+# verdict: reachable; 13 of 16 rounds must agree for one primary case when none tie (a tie is not counted)
 # side pip: identified (image_id=sha256:aaaa..., digests=sha256:bbbb...)
 # side conda: identified (image_id=sha256:cccc..., digests=sha256:dddd...)
 ```

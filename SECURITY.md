@@ -40,6 +40,9 @@ shows of each side and of the config, `argv_sha256`, `args_sha256`, `identify_sh
 such value is replaced by `<hidden>` before hashing, so a guess at it cannot be checked
 against a hash. The case patterns of the config are the exception the
 [known limits](#known-limits-of-the-shown-command) name: `config_sha256` takes them as typed.
+A file side's `fingerprint` is the other exception: it covers each of the side's result files
+as it is, a secret in a case id the file holds included, as the
+[known limits of the hashes](#known-limits-of-the-hashes) say.
 The output of a side's `identify` command is read line by line for its credentials
 only: a checksum, a build id or another long value it prints is in the hash as printed, since
 it is what tells one build of a side from another. A
@@ -166,8 +169,9 @@ of names are not read as you may mean them:
   `perl -e 'my $token = "made" . $a[0] . <<EOT;'` with `password` and `EOT` on the lines after
   it, or after a variable that stands on a line of its own or has no blanks around its `.`, is
   not read with the value, so its lines show. In PHP, after an element of an object's property,
-  such as `$o->p[0]` or `$this->cfg["k"]`, an element of a static property, such as `C::$p[0]`,
-  or a property of an element, such as `$o["k"]->p`, the string joined to it shows:
+  such as `$o->p[0]` or `$this->cfg["k"]`, a static property or an element of one, such as
+  `C::$p` or `C::$p[0]`, or a property of an element, such as `$o["k"]->p`, the string joined
+  to it shows:
   `php -r '$token = "made" . $o->p[0] . "password";'` shows
   `php -r '$token = "<hidden> . "password";'`. So does a string joined after a call, a
   constant, an array or a numbered variable, such as `f()`, `getenv("X")`, `PHP_EOL`, `@x` or
@@ -298,10 +302,18 @@ of names are not read as you may mean them:
   `made-up-tool '--execute=redis-cli -a password PING'` shows whole. Give such a text as the
   next argument: `made-up-tool --execute 'redis-cli -a password PING'` shows
   `made-up-tool --execute 'redis-cli -a <hidden> PING'`.
-- **A password rule in `$'...'` quotes.** A word in the `$'...'` quotes of a shell is not read
-  as a rule of `ACL SETUSER`, so in a shell text, as in
-  `redis-cli ACL SETUSER app on $'>password'` after `bash -c`, the password shows. In plain
-  quotes, as in `redis-cli ACL SETUSER app on '>password'`, it is hidden.
+- **A word in `$'...'` quotes.** A shell reads a word in `$'...'` quotes with its backslash
+  escapes turned into the characters they stand for; the shown command does not read such a
+  word as the shell does. So in a shell text after `bash -c`, a client's password option in
+  them, as in `redis-cli $'-a' password PING`, a rule of `ACL SETUSER`, as in
+  `redis-cli ACL SETUSER app on $'>password'`, a client's command, as in
+  `memtier_benchmark --command $'AUTH password'`, and the text of an `eval`, as in
+  `eval $'memtier_benchmark --command \'AUTH password\''` or
+  `eval $'true\nredis-cli -a password PING'`, show the password. In plain quotes, as in
+  `redis-cli '-a' password PING`, `redis-cli ACL SETUSER app on '>password'`,
+  `memtier_benchmark --command 'AUTH password'` or
+  `eval 'memtier_benchmark --command "AUTH password"'`, it is hidden, and so is a password
+  that is itself the word in `$'...'` quotes, as in `redis-cli -a $'password' PING`.
 - **A host or a user written without a scheme.** The host and the user part of an address are
   hidden only after a scheme such as `https://`. A host or a user written without one is read
   as an ordinary value and shows as typed, after an option of one letter or a long option
@@ -331,7 +343,14 @@ of names are not read as you may mean them:
   joins two values with a dash, shows `query[bench:<hidden>@db.example:5432-ro]`; such a
   password holds no `@`, quote or angle bracket), and a long random-looking value
   (`query[EXAMPLE7qQ7xK2mP9vL4nR8tW3yZ6bC1dF5gH0jS2kEAw]` shows `query[<hidden>]`). A
-  credential-like name glued to its value with a colon loses the value too
+  password before a host is hidden with no user before its colon too, as an address with no
+  user name writes it (`query[:made-up@db.example:6379]` shows
+  `query[:<hidden>@db.example:6379]`), but a colon written as `%3A` is part of the user name,
+  as it is in an address, so `query[bob%3Amade-up@db.example]` shows as written. A password
+  before a host that starts with a colon is hidden with no user before it
+  (`query[::made-up@db.example:6379]` shows `query[:<hidden>@db.example:6379]`), but shows
+  after a user, as a `::` joins the parts of a name: `query[bob::made-up@db.example:6379]`
+  shows as written. A credential-like name glued to its value with a colon loses the value too
   (`query[token:made-up]` shows `query[token:<hidden>]`), also after another name, after the
   dash that joins two values and in quotes, as JSON writes a key
   (`query[5432-password:made-up]` shows `query[5432-password:<hidden>]`, and
@@ -390,6 +409,44 @@ of names are not read as you may mean them:
   `test_db[bob:password@db.example:5432?sslmode=require&token=<hidden>]`, and the password
   shows too where pytest joins such a name and its value to the host with `-`, as in
   `test_db[bob:password@db.example:5432-token=made-up]`.
+- **A tag before a host in a case id.** A word after a `:`, with an `@` and a host that holds a
+  dot or is followed by a port after it, is read as a password before a host, a tag or a version
+  as much as a password, as an address with no user name writes one, so an image tag written
+  that way is hidden: `test_tag[:latest@registry.example:5000]` shows
+  `test_tag[:<hidden>@registry.example:5000]`, and so does
+  `test_tag[:stable@registry.example:5000]`, so two such ids of one launch read the same and are
+  refused with `E_USAGE`. Two such ids in different launches, or on different sides, are read as
+  one case, as an id whose secret alone differs from one launch or side to the next is, so the
+  rounds of both tags count toward one verdict. A name before the `:` is read as the user
+  (`test_tag[app:latest@registry.example:5000]` shows
+  `test_tag[app:<hidden>@registry.example:5000]`). Name such a case as an image reference
+  writes it, the registry first (`test_tag[registry.example:5000/app:latest]`), or with no `@`
+  and host after the tag (`test_tag[app:latest]`): written either way, `latest` and `stable`
+  show as written and stay two cases while the image's name is not credential-like. A
+  credential-like name glued to its value with `:` loses the value, an image's name too:
+  `test_tag[auth:latest]` shows `test_tag[auth:<hidden>]`, and
+  `test_tag[registry.example:5000/api-key:latest]` shows
+  `test_tag[registry.example:5000/api-key:<hidden>]`, though a tag that is a whole number right
+  after a `/` shows, as a benchmark's named argument does
+  (`test_tag[registry.example:5000/api-key:3]`). Join the tag of such an image to its name with
+  `-` (`test_tag[auth-latest]`), which shows as written.
+- **A password that starts with a `:` before a host after a user in a case id.** A `::` joins
+  the parts of a name, as in `test_dep[Module::Name@1.23]`, so a password before a host that
+  starts with a `:` shows where a letter, a digit, `_`, `.`, `+`, `%` or `-` stands right
+  before it, as a user or a value that pytest joins to it with `-` does:
+  `test_db[bob::made-up@db.example:6379]` and `test_db[5432-::made-up@db.example:6379]` show as
+  written. With nothing of that kind before it, such a password is hidden:
+  `test_db[::made-up@db.example:6379]` shows `test_db[:<hidden>@db.example:6379]`. So is a name
+  that starts with `::` before an `@` and a host or a version that holds a dot:
+  `test_dep[::Name@1.23]` shows `test_dep[:<hidden>@1.23]`, so two such ids that differ only in
+  that name are refused with `E_USAGE` in one launch and read as one case across launches or
+  sides.
+- **A password before a host written in another form in a case id.** A password before a host
+  is hidden where the id writes it as `user:password@host`, with a host that holds a dot or is
+  followed by a port right after the `@`. Written another way, it shows as written: with a `/`
+  between the user and the password (`test_db[bob/made-up@db.example:1521/orcl]`), with the
+  host in brackets (`test_db[bob:made-up@[::1]:6379]`), or with the host in a pair of
+  parentheses after the name of a network (`test_db[bob:made-up@tcp(db.example:3306)/app]`).
 - **A case pattern in the hash of the config.** The hash of the config, `config_sha256`, takes
   its case patterns, given with `--case` or as `cases.primary` or `cases.groups`, as typed. The
   shown command hides a credential in such a pattern, as `--case 'test_api[token:made-up]'`
@@ -411,9 +468,11 @@ and join nothing to a credential's value in code. Name a client by its own name 
 command starts, give a client the config
 reference does not list its password with `--pass` or through `launch.env_pass`, give `ssh` its
 remote command after the host, give the client of `--cluster call` its password with `-a`, and
-write a password rule in plain quotes. Write an option of `parallel` or `watch` glued to its
+write a client's option, command or password rule and the text of an `eval` in plain quotes
+rather than in `$'...'` quotes. Write an option of `parallel` or `watch` glued to its
 value (`-j2`, `--jobs=2`). In a case id, keep a password before a host out of a part that gives
-a credential a value, and write a case pattern as the results show the case
+a credential a value, write the colon before such a password as a colon rather than as
+`%3A`, and write a case pattern as the results show the case
 (`--case 'test_api[token:<hidden>]'`) or with a `*` in place of the secret
 (`--case 'test_api*'`).
 
@@ -430,6 +489,15 @@ fingerprint covers its identity the same way, such as its command as typed and t
 its `identify` command; of its executable it covers the last part of the path, not the folder.
 To avoid it, keep such values out of the side's command: run it from a neutral folder, and pass
 values to it through `launch.env_pass`, which no hash covers.
+
+A file side's identity shows the SHA-256 of each result file the side reads, `files_sha256`,
+taken over the file as it is, and its fingerprint covers those hashes and the absolute path of
+each file. So a secret that a result file holds, such as a password in a case id that the
+results show hidden, is in both hashes, and the same files in two folders give two
+fingerprints: two exports that differ only in such a password give two values of
+`files_sha256` and two fingerprints. A reader who has the rest of such a file can confirm a
+guessed value by hashing the guess. Keep secrets out of the names a benchmark tool writes into
+its result files, as hyperfine's `--command-name` gives a case a name of your choosing.
 
 A line of an `identify` output that gives a name a version, two numbers or more joined by dots
 after a colon and nothing else, is read as a package's version whatever the name, so
@@ -459,10 +527,10 @@ exactly, never by its shape and never as a part of a longer value:
   texts or keys or of a line of `results.md`; a published hash is such a value.
 - **Neutral places**: the neutral places `/work`, `/home/user` and `/usr/local/bin/python3`.
   A neutral place passes only as itself; a path under one passes only when a shared file shows
-  each of its other parts as a whole word. So a run made in `/work/made-up-client/run`, or one
+  each of its other parts as a whole word. So a run made in `/work/made-up-folder/run`, or one
   whose command names a file in a folder of its own under `/home/user`, keeps its sidecar
   private as long as no shared file shows each of the path's other parts: the results show the
-  last part of a path at most, but a case whose id is `made-up-client run` shows both words and
+  last part of a path at most, but a case whose id is `made-up-folder run` shows both words and
   lets that path pass.
 - **Schema ids and keys**: the sidecar's schema id, and a key that the sidecar, a side's
   identity, its launch or the config schema is written with, at the place it is written for;

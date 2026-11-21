@@ -82,6 +82,11 @@ CASE_TYPED = (
     "BM_Hash/key:3",
     # A double colon, which gives no value.
     "query[Token::Kind]",
+    # A colon written as ``%3A``, which is part of the user name, as it is in an address.
+    "query[bob%3Amade-up@db.example]",
+    # A password before a host that starts with a colon after a user, read as part of a name
+    # that ``::`` joins.
+    "query[bob::made-up@db.example:6379]",
 )
 # A case id a driver reads that shows other than written, and what it shows: a path cut, the
 # user part of an address hidden, and each secret form the shown command hides hidden.
@@ -94,6 +99,9 @@ CASE_CHANGED = (
     # The same password with text after the host, as pytest joins two values with a dash.
     ("query[bench:made-up@db.example:5432-ro]", "query[bench:<hidden>@db.example:5432-ro]"),
     (f"query[{RANDOM_KEY}]", "query[<hidden>]"),
+    # The same password with no user before its colon, and one that starts with a colon.
+    ("query[:made-up@db.example:6379]", "query[:<hidden>@db.example:6379]"),
+    ("query[::made-up@db.example:6379]", "query[:<hidden>@db.example:6379]"),
     # A credential-like name glued to its value with a colon, and the token after a scheme word.
     ("query[token:made-up]", "query[token:<hidden>]"),
     ("query[5432-password:made-up]", "query[5432-password:<hidden>]"),
@@ -117,6 +125,11 @@ CASE_ENDS = ("/", ",", ";")
 # The mark a password before a host ends at, which the item names twice: the hidden part runs
 # up to the `@` before the host, and such a password holds no `@`.
 CASE_HOST_MARKS = ("@", "@")
+# The spelling of a colon the item says is read as part of the user name.
+CASE_USER_MARKS = ("%3A",)
+# The mark the item says joins the parts of a name, so a password that starts with a colon shows
+# after a user.
+CASE_NAME_JOINS = ("::",)
 # A case named after its command, and the name it is given.
 CASE_COMMANDS = (("curl https://db.example/x", "curl https://<hidden>/x"),)
 # A case id in rows given from outside, kept as written.
@@ -270,6 +283,8 @@ def test_the_case_item_gives_each_case_id_of_the_rows_and_no_other(repo_root: Pa
         *CASE_PERCENT,
         *CASE_PERCENT_LEADS,
         *CASE_COMMAND_NAMES,
+        *CASE_USER_MARKS,
+        *CASE_NAME_JOINS,
         "E_USAGE",
     ]
 

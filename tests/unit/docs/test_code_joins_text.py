@@ -5,9 +5,9 @@
 The page lists a raw string of C++ with a prefix before its ``R`` among the strings a mark
 of its own opens, and says that a variable joined with ``.`` and no blanks, one whose ``$``
 a backslash escapes in a shell text, one on a line of its own, an element of an array or a
-hash, and a here-document joined with ``.`` are part of the value. Each example, with a
-made-up value where the page writes ``...``, is hidden whole in the shown command and in the
-hash.
+hash, one named with its package, and a here-document joined with ``.`` are part of the
+value. Each example, with a made-up value where the page writes ``...``, is hidden whole in
+the shown command and in the hash.
 """
 
 from __future__ import annotations
@@ -32,8 +32,9 @@ JOINS = (
     "the start of the next: `$token = 'made' .`, then `$x .` and `'...'` on the lines after it, "
     "hides all three. It may be an element of an array or a hash, with `->` or none: "
     "`$token = 'made' . $a[0] . '...'` hides all of it, as `$x->[0]`, `$h{a}` and `$x['k']` "
-    "there do. So is a here-document joined with `.`: `$token = 'a' . <<'EOT'` hides the lines "
-    "up to `EOT`."
+    "there do. Its name may name its package, as Perl writes it: "
+    "`$token = 'made' . $::x . '...'` hides all of it, as `$Foo::x` and `$Foo::Bar::x` there do. "
+    "So is a here-document joined with `.`: `$token = 'a' . <<'EOT'` hides the lines up to `EOT`."
 )
 # A made-up value for the ``...`` of each example.
 VALUE = "kiwi7mango42"
@@ -54,6 +55,9 @@ EXAMPLES: dict[str, list[str]] = {
     "$x->[0]": ["perl", "-e", "$token = 'made' . $x->[0] . '...'; run_old()"],
     "$h{a}": ["perl", "-e", "$token = 'made' . $h{a} . '...'; run_old()"],
     "$x['k']": ["php", "-r", "$token = 'made' . $x['k'] . '...'; run_old();"],
+    "$token = 'made' . $::x . '...'": ["perl", "-e", "$token = 'made' . $::x . '...'; run_old()"],
+    "$Foo::x": ["perl", "-e", "$token = 'made' . $Foo::x . '...'; run_old()"],
+    "$Foo::Bar::x": ["perl", "-e", "$token = 'made' . $Foo::Bar::x . '...'; run_old()"],
 }
 
 

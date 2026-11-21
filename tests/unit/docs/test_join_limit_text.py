@@ -5,12 +5,12 @@
 A credential's value joined with ``.`` is hidden with the plain variables and strings joined
 to it, but a here-document of Perl joined after an element of an array, or after a variable on
 a line of its own or with no blanks around its ``.``, keeps its lines; in PHP the string joined
-after an element of an object's property, an element of a static property or a property of an
-element shows; and so does a string joined after a call, a constant, an array or a numbered
-variable. The security policy lists these among the known limits of the shown command with the
-advice to join nothing to a credential's value in code, and the config reference, which says a
-joined variable is part of the value, points at them. The same joins around a plain variable
-are hidden whole.
+after an element of an object's property, a static property or an element of one, or a
+property of an element shows; and so does a string joined after a call, a constant, an array or
+a numbered variable. The security policy lists these among the known limits of the shown
+command with the advice to join nothing to a credential's value in code, and the config
+reference, which says a joined variable is part of the value, points at them. The same joins
+around a plain variable are hidden whole.
 """
 
 from __future__ import annotations
@@ -31,8 +31,9 @@ LIMIT = (
     "an element of an array, as in `perl -e 'my $token = \"made\" . $a[0] . <<EOT;'` with "
     "`password` and `EOT` on the lines after it, or after a variable that stands on a line of its "
     "own or has no blanks around its `.`, is not read with the value, so its lines show. In PHP, "
-    'after an element of an object\'s property, such as `$o->p[0]` or `$this->cfg["k"]`, an '
-    "element of a static property, such as `C::$p[0]`, or a property of an element, such as "
+    'after an element of an object\'s property, such as `$o->p[0]` or `$this->cfg["k"]`, a '
+    "static property or an element of one, such as `C::$p` or `C::$p[0]`, or a property of an "
+    "element, such as "
     '`$o["k"]->p`, the string joined to it shows: '
     '`php -r \'$token = "made" . $o->p[0] . "password";\'` shows '
     '`php -r \'$token = "<hidden> . "password";\'`. So does a string joined after a call, a '
@@ -61,6 +62,7 @@ PHP_EXAMPLE = (
 # The PHP forms the limit names.
 PHP_SHOWN = (
     '$token = "made" . $this->cfg["k"] . "password";',
+    '$token = "made" . C::$p . "password";',
     '$token = "made" . C::$p[0] . "password";',
     '$token = "made" . $o["k"]->p . "password";',
 )

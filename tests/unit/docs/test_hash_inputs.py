@@ -991,7 +991,7 @@ OTHER_USER = "markeruser-b"
         ("PGHOST=db7", "holds the host name db7"),
         ("ip-192-0-2-9", "holds the host name ip-192-0-2-9"),
         ("connect ip-192-0-2-9", "holds the host name ip-192-0-2-9"),
-        ("db7.madeup-corp.com", "holds the host name db7.madeup-corp.com"),
+        ("db7.example.com", "holds the host name db7.example.com"),
         ("0xc0000209", "holds the address of the host 0xc0000209"),
         # A host glued to a short host option, an address written as four hexadecimal
         # numbers, and names with a number that no public technical word of their family has.
@@ -1003,13 +1003,14 @@ OTHER_USER = "markeruser-b"
         ("cu7", "holds the host name cu7"),
         ("py4", "holds the host name py4"),
         ("tf3", "holds the host name tf3"),
-        # A whole name written with the dot that ends it, a name under a country's domain,
-        # tags with a number their family does not have, a name and a number in a text, after
-        # = or in quotes after a short host option, and an address written as one decimal
-        # number, as four numbers of which some are octal, or with underscores in a name.
-        ("db7.madeup-corp.net.", "holds the host name db7.madeup-corp.net"),
-        ("db7.madeup-corp.tw", "holds the host name db7.madeup-corp.tw"),
-        ("db7.madeup-corp.lv", "holds the host name db7.madeup-corp.lv"),
+        # A whole name written with the dot that ends it, names under two letters as a
+        # country's domain is written (codes no country is given: zz, qz), tags with a number
+        # their family does not have, a name and a number in a text, after = or in quotes after
+        # a short host option, and an address written as one decimal number, as four numbers of
+        # which some are octal, or with underscores in a name.
+        ("db7.example.net.", "holds the host name db7.example.net"),
+        ("db7.example.zz", "holds the host name db7.example.zz"),
+        ("db7.example.qz", "holds the host name db7.example.qz"),
         ("cuda01", "holds the host name cuda01"),
         ("rocm6", "holds the host name rocm6"),
         ("sm900", "holds the host name sm900"),
@@ -1057,8 +1058,8 @@ OTHER_USER = "markeruser-b"
         "a-name-shaped-as-an-interpreter-tag",
         "a-name-shaped-as-a-tensor-float-type",
         "a-whole-name-with-its-ending-dot",
-        "a-name-under-a-country-domain",
-        "a-name-of-three-parts-under-any-country-domain",
+        "a-name-under-two-letters-no-country-is-given",
+        "a-name-of-three-parts-under-any-two-letters",
         "a-cuda-tag-with-a-leading-zero",
         "a-rocm-tag-of-one-digit",
         "a-compute-capability-tag-of-a-wrong-number",
@@ -2282,12 +2283,12 @@ PRIVATE_ROWS = {
     # the workload (the results show its last part only), as a mount, and left by its dots.
     "a-made-up-folder-under-work-as-the-working-folder": (
         None,
-        _with_setting(WORKDIR, "launch.workdir=/work/made-up-client/run"),
+        _with_setting(WORKDIR, "launch.workdir=/work/made-up-folder/run"),
         1,
     ),
     "a-made-up-folder-under-work-in-the-workload": (
         None,
-        (*SHOWCASE[:-3], "echo", "/work/made-up-client/data"),
+        (*SHOWCASE[:-3], "echo", "/work/made-up-folder/data"),
         1,
     ),
     "a-made-up-folder-under-the-neutral-home-in-the-workload": (
@@ -2297,12 +2298,12 @@ PRIVATE_ROWS = {
     ),
     "a-made-up-folder-under-work-as-a-mount": (
         None,
-        (*SHOWCASE[:-4], "--set", 'launch.mounts=["/work/made-up-client"]', *SHOWCASE[-4:]),
+        (*SHOWCASE[:-4], "--set", 'launch.mounts=["/work/made-up-folder"]', *SHOWCASE[-4:]),
         1,
     ),
     "a-made-up-folder-under-work-left-by-its-dots": (
         None,
-        _with_setting(WORKDIR, "launch.workdir=/work/made-up-client/../published"),
+        _with_setting(WORKDIR, "launch.workdir=/work/made-up-folder/../published"),
         1,
     ),
     # The shown command hides each `--set` value, and a memory cap is of no kind that passes.
@@ -2315,7 +2316,7 @@ PRIVATE_ROWS = {
     # last part, work, and no shared file shows the folder.
     "a-made-up-folder-before-work-left-by-its-dots": (
         None,
-        (*SHOWCASE[:-3], "echo", "/made-up-client/../work"),
+        (*SHOWCASE[:-3], "echo", "/made-up-folder/../work"),
         1,
     ),
 }
@@ -2960,14 +2961,14 @@ def test_a_key_of_the_results_and_each_of_its_words_are_shown(writer: ModuleType
 
 @pytest.mark.parametrize(
     ("cases", "hidden"),
-    [([{"id": "made-up-client run"}], []), ([{"id": "run"}], ["/work/made-up-client/run"])],
+    [([{"id": "made-up-folder run"}], []), ([{"id": "run"}], ["/work/made-up-folder/run"])],
     ids=["a-case-shows-each-other-part", "the-results-show-the-last-part-only"],
 )
 def test_a_path_under_a_neutral_place_passes_once_the_results_show_its_other_parts(
     writer: ModuleType, cases: list[dict[str, str]], hidden: list[str]
 ) -> None:
     results = {"sides": [{"name": "a"}], "cases": cases}
-    sidecar = {"schema": SCHEMA, "sides": {"a": {"argv_sha256": ["/work/made-up-client/run"]}}}
+    sidecar = {"schema": SCHEMA, "sides": {"a": {"argv_sha256": ["/work/made-up-folder/run"]}}}
 
     assert writer.hidden_values(results, "", sidecar) == hidden
 

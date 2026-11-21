@@ -40,8 +40,10 @@ takes `a` on one side and `b` on the other, the measured ratio is `(a + c) / (b 
 pairbench gives a loud note for every `wall` case of a command side or a Python environment
 side whose median is less than the launch-cost median divided by `launch_cost.note_share`.
 The default share is 0.01, a chosen number: the note appears when the cost is more than one
-percent of the value. With a launch-cost median of 0.0005 s, a `wall` case with a median of
-0.04 s gets the note and one with 0.06 s does not. It is a note, never a refusal.
+percent of the value. It is a note, never a refusal.
+
+An example with made-up numbers, not a measured launch cost: with a launch-cost median of
+0.0005 s, a `wall` case with a median of 0.04 s gets the note and one with 0.06 s does not.
 
 Not affected, and given no note:
 

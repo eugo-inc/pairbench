@@ -145,7 +145,7 @@ pairbench plan [the flags of run] -- WORKLOAD...
 
 Takes every flag of [`run`](#run) and prints the plan: the lineup, the rounds requested and
 planned, the launches, the balance of every pair, whether a verdict is reachable and how many
-rounds must agree, the estimated duration when known, the cost of the positive control and of
+rounds must agree when none tie, the estimated duration when known, the cost of the positive control and of
 the explain step, and a tab-separated table with the columns `round pos name side twin_of`.
 It creates no folder, takes no lock, starts no container and pulls nothing. It exits 0, or
 with the code of a refusal it can find without launching anything.

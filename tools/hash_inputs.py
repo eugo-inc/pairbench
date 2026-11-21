@@ -34,7 +34,7 @@ value:
   ``/usr/local/bin/python3`` (``NEUTRAL_PLACES``). A neutral place passes only as itself; a
   path under one passes only when a shared file shows each of its other parts as a whole word.
   Its ``.`` and ``..`` parts are read to find the place it is under and need not be shown, so
-  ``/work/./published`` passes when ``published`` is shown, ``/work/made-up-client/..`` does
+  ``/work/./published`` passes when ``published`` is shown, ``/work/made-up-folder/..`` does
   not, and ``/work/../srv`` is under no neutral place. A text that holds a space, a ``:`` or
   another character a path ends at is several values and no place;
 * **Schema ids and keys**: the sidecar's schema id, and a key the sidecar, an identity, a
@@ -497,9 +497,9 @@ def neutral_place(text: str, shown: Collection[str] = ()) -> bool:
     ``/workspace`` is not under ``/work``, a longer folder name that starts with ``user`` is not
     under ``/home/user``, and a path whose ``..`` leaves ``/work`` for another folder is under
     neither. Each part of the text as written, other than ``.``, ``..`` and the place's own
-    leading parts, must be in ``shown``: ``/work`` passes, ``/work/made-up-client/run`` passes
-    only when both ``made-up-client`` and ``run`` are shown, and so does
-    ``/work/made-up-client/../run``. A text that holds a character a path ends at (a space,
+    leading parts, must be in ``shown``: ``/work`` passes, ``/work/made-up-folder/run`` passes
+    only when both ``made-up-folder`` and ``run`` are shown, and so does
+    ``/work/made-up-folder/../run``. A text that holds a character a path ends at (a space,
     ``:``, ``,``, ``=`` and the like) is several values, not one place: ``/work/a:/srv/b`` is
     no neutral place.
     """

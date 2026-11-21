@@ -174,7 +174,9 @@ def _significant(p: float, tests: int, rule: Rule) -> bool:
 def rounds_to_agree(rounds: int, tests: int, rule: Rule) -> int | None:
     """Return how many of ``rounds`` rounds must agree for a verdict, or ``None`` when none can.
 
-    The sign test is exact and two-sided. Under a rule that corrects the
+    The count is for rounds of which none tie. A tie is not a trial of the sign test, so where
+    some rounds tie, the count is taken over the rounds that do not tie. The sign test is exact
+    and two-sided. Under a rule that corrects the
     p-value, the first of ``tests`` tests must be significant at ``alpha``
     divided by ``tests``. A rule that fixes the fewest rounds also needs that
     many.
@@ -573,7 +575,10 @@ def _verdict_lines(experiment: Experiment, rule: Rule, rounds: int) -> list[str]
             "every verdict is NO VERDICT (too_few_rounds)"
         )
     else:
-        verdict = f"verdict: reachable; {agree} of {rounds} rounds must agree for one primary case"
+        verdict = (
+            f"verdict: reachable; {agree} of {rounds} rounds must agree for one primary case "
+            "when none tie (a tie is not counted)"
+        )
     most = most_primary_cases(rounds, tests, rule)
     if most is None:
         cases = "primary cases: any number can get a verdict at this round count"

@@ -827,6 +827,42 @@ def test_the_backquote_example_of_the_section_is_what_the_code_shows_and_hashes(
     assert model.hashed_argv(args) == shlex.split(shown)
 
 
+# Where the section says the runners of an ``eval`` and the action of a ``trap`` are read, and
+# its example of each, as it writes them typed and as the code shows and hashes them.
+RUNNER_SENTENCES = (
+    "So is an `eval` that `builtin`, `command` or `coproc` runs, also after the `-p` or `--` of "
+    "`command` or the `--` of `builtin` and in the group or subshell that `coproc` runs "
+    "(`coproc NAME { eval ...; }`), one in the action of a `trap`, and one written in quotes "
+    "or with a backslash, as a shell reads `\\eval`, `\"eval\"` and `'eval'` as `eval`:",
+    "The action of a shell's `trap`, its first argument after any `--`, is a shell text too, as "
+    "the shell runs it when a signal comes:",
+    "the action of a shell's `trap`, its first argument after any `--`;",
+)
+RUNNER_EXAMPLES = (
+    (
+        "sh -c 'command -p eval \"redis-cli -a VALUE PING\"'",
+        "sh -c 'command -p eval \"redis-cli -a <hidden> PING\"'",
+    ),
+    (
+        "sh -c \"trap 'PGPASSWORD=VALUE psql -h db.example' EXIT\"",
+        "sh -c 'trap '\"'\"'PGPASSWORD=<hidden> psql -h db.example'\"'\"' EXIT'",
+    ),
+)
+
+
+@pytest.mark.parametrize(("typed", "shown"), RUNNER_EXAMPLES)
+def test_each_eval_runner_and_trap_example_of_the_section_is_what_the_code_shows_and_hashes(
+    repo_root: Path, typed: str, shown: str
+) -> None:
+    args = shlex.split(typed.replace("VALUE", "zqm-made-up"))
+    text = section(repo_root)
+
+    assert [sentence for sentence in RUNNER_SENTENCES if sentence not in text] == []
+    assert f"`{typed}` shows `{shown}`" in text
+    assert model.public_command(args) == shown
+    assert model.hashed_argv(args) == shlex.split(shown)
+
+
 def test_the_section_says_where_else_an_eval_is_read_and_what_a_line_continuation_joins(
     repo_root: Path,
 ) -> None:
