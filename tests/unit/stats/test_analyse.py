@@ -18,6 +18,7 @@ import pytest
 import pairbench
 from pairbench.errors import Refusal
 from pairbench.model import (
+    NOTE_TWIN_DIFFERS,
     NOTE_WITNESS_UNDECIDED,
     STRICT,
     Capture,
@@ -35,8 +36,10 @@ from pairbench.model import (
     PositiveControl,
     Results,
     Rule,
+    SameVsSame,
     Side,
     Source,
+    TwinCheck,
     combine_hashes,
 )
 from pairbench.results import load_schema
@@ -1098,6 +1101,151 @@ def test_a_side_that_differs_from_its_twin_is_noted() -> None:
     got = analyse(capture(value=lopsided))
     twins = [n for n in got.notes if n.code == "twin_differs"]
     assert [n.message.split(" ")[0] for n in twins] == ["new", "old"]
+
+
+def lopsided_twins(entry: str, case: str, round_: int, u: float) -> float:
+    """Every twin reads 1/16 above its side in every round: p = 2/65536 for each side."""
+    side = 2.0 if entry.startswith("new") else 1.0
+    return side * 1.0625 if entry.endswith("~same") else side
+
+
+def twin_check_of(check: TwinCheck) -> tuple[str, int, int, int, float | None, float | None]:
+    return (
+        check.side,
+        check.n_rounds,
+        check.n_better,
+        check.n_worse,
+        check.p_raw,
+        check.p_corrected,
+    )
+
+
+# The note of a side that is one of two sides tested; 2 * 2/65536 written to
+# three significant digits.
+TWIN_NOTE_OF_TWO = (
+    "{side} differs from an identical copy of itself more often than chance across its "
+    "primary cases (p = 6.1e-05, corrected for testing 2 sides at once): the machine or the "
+    "order is biasing the run"
+)
+TWIN_NOTE_OF_ONE = (
+    "new differs from an identical copy of itself more often than chance across its primary "
+    "cases (p = 3.05e-05, one side tested): the machine or the order is biasing the run"
+)
+# 24 rounds better and 8 worse over 32 pooled rounds: 2 * (C(32,0) + ... + C(32,8)) / 2**32.
+P_8_OF_32 = 30066346 / 2**32
+
+
+def test_each_side_gets_one_twin_check_corrected_across_the_sides() -> None:
+    got = analyse(capture(value=lopsided_twins))
+    assert [twin_check_of(c) for c in got.twin_checks] == [
+        ("new", 16, 16, 0, 2 / 65536, 4 / 65536),
+        ("old", 16, 16, 0, 2 / 65536, 4 / 65536),
+    ]
+    assert [(r.side, r.p_raw) for r in got.same_vs_same] == [
+        ("new", 2 / 65536),
+        ("old", 2 / 65536),
+    ]
+    document = json.loads(json.dumps(got.to_json()))
+    assert document["twin_checks"] == [
+        {
+            "side": side,
+            "n_rounds": 16,
+            "n_better": 16,
+            "n_worse": 0,
+            "p_raw": 2 / 65536,
+            "p_corrected": 4 / 65536,
+        }
+        for side in ("new", "old")
+    ]
+    assert list(document)[list(document).index("same_vs_same") + 1] == "twin_checks"
+    assert Results.from_json(document).twin_checks == got.twin_checks
+
+
+def test_a_document_written_without_twin_checks_reads_as_holding_none() -> None:
+    document = analyse(capture(value=lopsided_twins)).to_json()
+    del document["twin_checks"]
+    assert Results.from_json(document).twin_checks == ()
+
+
+def test_a_twin_row_has_no_corrected_p_value() -> None:
+    assert [f.name for f in dataclasses.fields(SameVsSame)] == [
+        "side",
+        "case",
+        "ratio",
+        "floor",
+        "p_raw",
+        "n",
+        "unit",
+    ]
+    row = {"side": "new", "case": "matmul", "ratio": 1.0, "floor": 0.0, "p_raw": 1.0, "n": 16}
+    assert SameVsSame.from_json(row).to_json() == {**row, "unit": "fraction"}
+
+
+def test_the_twin_note_names_the_side_its_corrected_p_value_and_how_many_sides_it_covers() -> None:
+    got = analyse(capture(value=lopsided_twins))
+    assert [n.message for n in got.notes if n.code == NOTE_TWIN_DIFFERS] == [
+        TWIN_NOTE_OF_TWO.format(side="new"),
+        TWIN_NOTE_OF_TWO.format(side="old"),
+    ]
+    one = analyse(capture(value=lopsided_twins, twinned=("new",)))
+    assert [twin_check_of(c) for c in one.twin_checks] == [("new", 16, 16, 0, 2 / 65536, 2 / 65536)]
+    assert [n.message for n in one.notes if n.code == NOTE_TWIN_DIFFERS] == [TWIN_NOTE_OF_ONE]
+
+
+def twin_of_old_in_round_one(entry: str, case: str, round_: int, u: float) -> float:
+    """As lopsided_twins, but the twin of old reads 0 after round 1: no usable value there."""
+    if entry == "old~same" and round_ > 1:
+        return 0.0
+    return lopsided_twins(entry, case, round_, u)
+
+
+def test_the_twin_note_counts_only_the_sides_that_have_a_p_value() -> None:
+    # Old is scored in one round only and has no p-value, so new is the one
+    # side tested and its p-value is not corrected.
+    got = analyse(capture(value=twin_of_old_in_round_one))
+    assert [twin_check_of(c) for c in got.twin_checks] == [
+        ("new", 16, 16, 0, 2 / 65536, 2 / 65536),
+        ("old", 1, 1, 0, None, None),
+    ]
+    assert [n.message for n in got.notes if n.code == NOTE_TWIN_DIFFERS] == [TWIN_NOTE_OF_ONE]
+
+
+def twin_of_new_alike_in_two_rounds(entry: str, case: str, round_: int, u: float) -> float:
+    """As lopsided_twins, but the twin of new reads as new in rounds 1 and 2: those rounds tie."""
+    if entry == "new~same" and round_ <= 2:
+        return 2.0
+    return lopsided_twins(entry, case, round_, u)
+
+
+def test_a_twin_check_counts_its_tied_rounds_among_the_rounds_scored() -> None:
+    # New ties its twin in rounds 1 and 2 and leans one way in the other 14:
+    # 16 rounds scored, 14 better, none worse, p = 2/16384. Old leans one way
+    # in all 16, so its p-value is the smaller and doubles to 4/65536.
+    got = analyse(capture(value=twin_of_new_alike_in_two_rounds))
+    assert [twin_check_of(c) for c in got.twin_checks] == [
+        ("new", 16, 14, 0, 2 / 16384, 2 / 16384),
+        ("old", 16, 16, 0, 2 / 65536, 4 / 65536),
+    ]
+    document = json.loads(json.dumps(got.to_json()))
+    assert [(c["side"], c["n_rounds"]) for c in document["twin_checks"]] == [
+        ("new", 16),
+        ("old", 16),
+    ]
+
+
+def test_pooled_captures_give_one_twin_check_per_side_over_every_round() -> None:
+    a = capture(capture_id="synthetic-a", seed=1, value=lopsided_twins)
+    b = capture(capture_id="synthetic-b", seed=2, value=known)
+    got = analyse([a, b])
+    assert got.run.pooled is True
+    assert [twin_check_of(c) for c in got.twin_checks] == [
+        ("new", 32, 24, 8, P_8_OF_32, 2 * P_8_OF_32),
+        ("old", 32, 24, 8, P_8_OF_32, 2 * P_8_OF_32),
+    ]
+    assert [n.message.split(" ")[0] for n in got.notes if n.code == NOTE_TWIN_DIFFERS] == [
+        "new",
+        "old",
+    ]
 
 
 def test_the_launch_cost_note_converts_the_unit_and_skips_image_sides() -> None:

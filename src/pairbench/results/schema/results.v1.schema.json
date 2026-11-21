@@ -50,6 +50,13 @@
         "$ref": "#/$defs/SameVsSame"
       }
     },
+    "twin_checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TwinCheck"
+      },
+      "description": "One combined check per side that has a twin, which decides the note twin_differs. A document written without twin_checks reads as holding none, and pairbench report --format json then gives an empty list."
+    },
     "controls": {
       "$ref": "#/$defs/Controls"
     },
@@ -1834,6 +1841,53 @@
       "required": [
         "name",
         "version"
+      ],
+      "additionalProperties": false
+    },
+    "TwinCheck": {
+      "type": "object",
+      "description": "A side compared with its own twin over its primary cases combined. In each round the score is the median over the primary cases on which the side and its twin both have a finite value above zero: each gives the log of the side's value over its twin's, turned so that a positive score means the side looks better by the case's better direction; an odd number of such cases gives the log in the middle and an even number the mean of the two in the middle; a round with no such case is not scored, and a score of zero is a tie. The note twin_differs is given for a side whose p_corrected lies below 0.05. A difference on one case alone still shows in same_vs_same with its own p_raw; in a side with three or more primary cases it moves a round of the combined check only when other primary cases lean the same way.",
+      "properties": {
+        "side": {
+          "type": "string"
+        },
+        "n_rounds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The rounds scored."
+        },
+        "n_better": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The rounds whose score lies above zero: the side looks better than its twin."
+        },
+        "n_worse": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The rounds whose score lies below zero."
+        },
+        "p_raw": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "The exact two-sided sign test of n_better against n_worse, ties dropped. Null when at most one round was scored."
+        },
+        "p_corrected": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "p_raw corrected with Holm's method across the sides of the run whose p_raw is not null. Null where p_raw is null."
+        }
+      },
+      "required": [
+        "side",
+        "n_rounds",
+        "n_better",
+        "n_worse",
+        "p_raw",
+        "p_corrected"
       ],
       "additionalProperties": false
     }

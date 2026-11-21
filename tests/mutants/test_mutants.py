@@ -48,6 +48,8 @@ REQUIRED_TITLES = (
     "skip the hand-back of a stopped serving launch",
     "skip the hand-back of a serving start cut short",
     "publish a sidecar that cannot be shared",
+    "judge the twin note on the uncorrected p-value of a side",
+    "score a twin round by the mean of its primary cases",
 )
 
 
@@ -64,10 +66,19 @@ MUTANTS = load("mutants").MUTANTS
 RUNNER = load("run_mutants")
 
 
-def test_the_list_holds_about_thirty_changes_with_unique_ids() -> None:
+# The list holds from FEWEST to MOST changes.
+FEWEST = 25
+MOST = 45
+
+
+def test_the_list_holds_from_twenty_five_to_forty_five_changes_with_unique_ids() -> None:
     ids = [m.id for m in MUTANTS]
     assert len(ids) == len(set(ids))
-    assert 25 <= len(ids) <= 35
+    assert FEWEST <= len(ids) <= MOST
+
+
+def test_the_bound_on_the_list_leaves_room_for_the_next_change() -> None:
+    assert len(MUTANTS) < MOST
 
 
 @pytest.mark.parametrize("title", REQUIRED_TITLES)

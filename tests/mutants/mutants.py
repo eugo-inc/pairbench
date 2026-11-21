@@ -399,4 +399,23 @@ MUTANTS: tuple[Mutant, ...] = (
             "test_publish_mode_copies_the_three_shared_files_and_keeps_a_private_sidecar_in_the_run"
         ),
     ),
+    Mutant(
+        id="M34",
+        title="judge the twin note on the uncorrected p-value of a side",
+        file="src/pairbench/stats/rules.py",
+        old="            if check.p_corrected is not None and check.p_corrected < TWIN_NOTE_ALPHA",
+        new="            if check.p_raw is not None and check.p_raw < TWIN_NOTE_ALPHA",
+        test=(
+            "tests/unit/stats/test_rules.py::"
+            "test_rounds_whose_combined_score_is_zero_are_ties_and_dropped"
+        ),
+    ),
+    Mutant(
+        id="M35",
+        title="score a twin round by the mean of its primary cases",
+        file="src/pairbench/stats/rules.py",
+        old="            sign = _median_sign(terms)",
+        new="            sign = _round_sign(terms)",
+        test="tests/unit/stats/test_rules.py::test_a_round_is_scored_by_the_median_of_its_primary_cases",
+    ),
 )

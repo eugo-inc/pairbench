@@ -14651,6 +14651,40 @@ class SameVsSame(_Model):
 
 
 @dataclass(frozen=True)
+class TwinCheck(_Model):
+    """A side compared with its own twin over its primary cases combined.
+
+    In each round the side's score is the median over the primary cases on
+    which the side and its twin both have a finite value above zero: each
+    gives the log of the side's value over its twin's, turned so that a
+    positive score means the side looks better by the case's better
+    direction. An odd number of cases gives the log in the middle and an even
+    number the mean of the two in the middle, so one case gives its own log
+    and two give their mean. ``n_rounds`` counts the rounds scored,
+    ``n_better`` and ``n_worse`` the rounds whose score lies above and below
+    zero; a score of zero is a tie. ``p_raw`` is the exact sign test of those
+    rounds, ``None`` when at most one round was scored. ``p_corrected`` is
+    ``p_raw`` corrected with Holm's method across the sides of the run that
+    have one, and ``None`` where ``p_raw`` is; the note ``twin_differs`` is
+    given for a side whose ``p_corrected`` lies below 0.05.
+    """
+
+    OPTIONAL: ClassVar[frozenset[str] | None] = frozenset()
+    LIMITS: ClassVar[Mapping[str, Mapping[str, Any]]] = {
+        "n_rounds": {"minimum": 0},
+        "n_better": {"minimum": 0},
+        "n_worse": {"minimum": 0},
+    }
+
+    side: str
+    n_rounds: int
+    n_better: int
+    n_worse: int
+    p_raw: float | None
+    p_corrected: float | None
+
+
+@dataclass(frozen=True)
 class RefusalEntry(_Model):
     """A refusal as a results document lists it."""
 
@@ -14924,11 +14958,22 @@ class Results(_Model):
     document, the files under ``profiles/`` and the report page alone.
 
     ``launch_cost`` is ``None``, and its key absent from the written
-    document, when no cost of a launch was measured.
+    document, when no cost of a launch was measured. ``twin_checks`` holds
+    one combined check per side that has a twin; a document written without
+    it reads as holding none.
     """
 
     OPTIONAL: ClassVar[frozenset[str] | None] = frozenset(
-        {"energy", "controls", "launch_cost", "env_pad", "series", "plots", "diagnostics"}
+        {
+            "energy",
+            "controls",
+            "launch_cost",
+            "env_pad",
+            "series",
+            "plots",
+            "diagnostics",
+            "twin_checks",
+        }
     )
 
     tool: Tool
@@ -14941,6 +14986,7 @@ class Results(_Model):
     cases: tuple[Case, ...] = ()
     comparisons: tuple[Comparison, ...] = ()
     same_vs_same: tuple[SameVsSame, ...] = ()
+    twin_checks: tuple[TwinCheck, ...] = ()
     controls: Controls = field(default_factory=Controls)
     launch_cost: LaunchCost | None = None
     env_pad: EnvPad = field(default_factory=EnvPad)
@@ -15502,6 +15548,7 @@ __all__ = [
     "Tool",
     "TopFunction",
     "TopObject",
+    "TwinCheck",
     "Witness",
     "canonical_json",
     "case_folder_word",

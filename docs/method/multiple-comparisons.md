@@ -43,7 +43,12 @@ Known answers, checked by `pairbench selftest`:
 The **family** is every comparison of a subject with the baseline on a primary case that has
 a p-value. Outside it:
 
-- comparisons of a side with its own twin;
+- comparisons of a side with its own twin. For the note that a side differs from its own
+  twin, each side gets one combined check across its primary cases, and the checks of the
+  sides form a family of their own, corrected together with the same method and kept in
+  `twin_checks`; at 8 rounds the note comes only when every untied round of the side leans
+  the same way. Each same-against-same row, in `same_vs_same`, keeps its own uncorrected
+  p-value;
 - secondary cases, which are graded with their uncorrected p-value and never change the exit
   code;
 - the positive control.

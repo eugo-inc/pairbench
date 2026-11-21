@@ -422,6 +422,16 @@ _EXAMPLE_RESULTS: dict[str, Any] = {
     "same_vs_same": [
         {"side": "new", "case": "matmul", "ratio": 1.004, "floor": 0.004, "p_raw": 0.80, "n": 16}
     ],
+    "twin_checks": [
+        {
+            "side": "new",
+            "n_rounds": 16,
+            "n_better": 7,
+            "n_worse": 9,
+            "p_raw": 0.80,
+            "p_corrected": 0.80,
+        }
+    ],
     "controls": {
         "positive": {
             "status": "ok",
@@ -471,7 +481,15 @@ _EXAMPLE_RESULTS: dict[str, Any] = {
 }
 
 # The keys of a results document that may be absent, beside those of a comparison.
-_OPTIONAL_RESULTS_KEYS = ("controls", "launch_cost", "env_pad", "series", "plots", "diagnostics")
+_OPTIONAL_RESULTS_KEYS = (
+    "controls",
+    "launch_cost",
+    "env_pad",
+    "series",
+    "plots",
+    "diagnostics",
+    "twin_checks",
+)
 
 _EXAMPLE_DIAGNOSTICS: dict[str, Any] = {
     "schema": "pairbench/diagnostics/v1",

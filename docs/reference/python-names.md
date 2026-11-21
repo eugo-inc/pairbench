@@ -1223,6 +1223,7 @@ class Results:
     cases: tuple[Case, ...] = ()
     comparisons: tuple[Comparison, ...] = ()
     same_vs_same: tuple[SameVsSame, ...] = ()
+    twin_checks: tuple[TwinCheck, ...] = ()
     controls: Controls = field(default_factory=Controls)
     launch_cost: LaunchCost | None = None
     env_pad: EnvPad = field(default_factory=EnvPad)
@@ -1249,7 +1250,9 @@ a shared-object name or a call stack: those are held by the diagnostics
 document, the files under `profiles/` and the report page alone.
 
 `launch_cost` is `None`, and its key absent from the written
-document, when no cost of a launch was measured.
+document, when no cost of a launch was measured. `twin_checks` holds
+one combined check per side that has a twin; a document written without
+it reads as holding none.
 
 #### <span id="pairbench.Results.to_json"></span>`Results.to_json`
 

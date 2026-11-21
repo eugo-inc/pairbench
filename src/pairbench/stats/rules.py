@@ -43,6 +43,7 @@ import dataclasses
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from fractions import Fraction
 from typing import Literal
 
 from pairbench.model import (
@@ -78,8 +79,9 @@ from pairbench.stats.signtest import sign_test
 
 # The outcomes the table gives that are verdicts. The downgrades act on these.
 VERDICT_OUTCOMES: frozenset[str] = frozenset({"better", "worse", "higher", "lower", "tie"})
-# A side whose comparison with its own twin has an uncorrected p-value below
-# this gets a loud note.
+# A side whose combined check against its own twin has a p-value below
+# this, once corrected with Holm's method across the sides of the run that
+# have one, gets a loud note.
 TWIN_NOTE_ALPHA = 0.05
 # One side running first more than this many times as often as the other
 # downgrades a verdict.
@@ -267,6 +269,35 @@ class TwinRow:
 
 
 @dataclass(frozen=True)
+class TwinSideCheck:
+    """A side compared with its own twin over its primary cases combined, round by round.
+
+    In each round the side's score is the median over the primary cases on
+    which the side and its twin both have a finite value above zero: each
+    gives the log of the side's value over its twin's, turned so that a
+    positive score means the side looks better by the case's better
+    direction. An odd number of cases gives the log in the middle and an even
+    number the mean of the two in the middle, so one case gives its own log
+    and two give their mean. ``n_rounds`` counts the rounds scored,
+    ``n_better`` and ``n_worse`` the rounds whose score lies above and below
+    zero; a score of zero is a tie. The order of the cases and the sign of a
+    score are found exactly, so swapping a side and its twin in one round
+    turns that round's score the other way and leaves the others, and
+    swapping them in every round swaps ``n_better`` and ``n_worse``.
+    ``p_raw`` is the exact sign test of those rounds, ``None`` when at most
+    one round was scored; ``p_corrected`` is ``p_raw`` corrected with Holm's
+    method across the sides that have one.
+    """
+
+    side: str
+    n_rounds: int
+    n_better: int
+    n_worse: int
+    p_raw: float | None
+    p_corrected: float | None = None
+
+
+@dataclass(frozen=True)
 class Grading:
     """Every comparison of an experiment, graded, and what the notes of the results need.
 
@@ -275,6 +306,8 @@ class Grading:
     subjects times the number of primary cases, the ``m`` of the fewest
     rounds that can give a verdict; ``needed`` is that fewest number.
     ``busy`` says more than half of the rounds were disturbed.
+    ``twin_checks`` holds one combined check per side that has a twin, in
+    the order of ``Grid.twins``.
     """
 
     comparisons: tuple[Graded, ...]
@@ -283,13 +316,18 @@ class Grading:
     tests: int
     needed: int
     busy: bool = False
+    twin_checks: tuple[TwinSideCheck, ...] = ()
 
-    def twin_differs(self) -> tuple[TwinRow, ...]:
-        """Return the twin comparisons whose uncorrected p-value lies below 0.05."""
+    def twin_family_size(self) -> int:
+        """Return the number of sides the correction of the twin note covers."""
+        return sum(1 for check in self.twin_checks if check.p_raw is not None)
+
+    def twin_differs(self) -> tuple[TwinSideCheck, ...]:
+        """Return the sides whose combined check has a corrected p-value below 0.05."""
         return tuple(
-            row
-            for row in self.same_vs_same
-            if row.p_raw is not None and row.p_raw < TWIN_NOTE_ALPHA
+            check
+            for check in self.twin_checks
+            if check.p_corrected is not None and check.p_corrected < TWIN_NOTE_ALPHA
         )
 
     def provisional(self) -> bool:
@@ -688,6 +726,7 @@ def grade(
         tests=tests,
         needed=needed,
         busy=busy,
+        twin_checks=_twin_checks(grid),
     )
 
 
@@ -712,6 +751,120 @@ def _twin_rows(grid: Grid, rule: Rule, floor_set: _Floors) -> tuple[TwinRow, ...
                 TwinRow(side=side, case=case.id, ratio=stat.ratio, floor=stat.value, p_raw=p, n=n)
             )
     return tuple(rows)
+
+
+def _scorable(value: float) -> bool:
+    """Say whether a value can enter a round's score: a finite number above zero."""
+    return math.isfinite(value) and value > 0.0
+
+
+# A float's fraction from math.frexp, times this, is a whole number.
+_FRACTION_SCALE = float(2**53)
+
+
+def _product(numbers: list[int]) -> int:
+    """Multiply whole numbers in pairs, so that a long list stays quick to multiply."""
+    while len(numbers) > 1:
+        paired = [a * b for a, b in zip(numbers[::2], numbers[1::2], strict=False)]
+        if len(numbers) % 2:
+            paired.append(numbers[-1])
+        numbers = paired
+    return numbers[0] if numbers else 1
+
+
+def _round_sign(terms: Sequence[tuple[float, float, str]]) -> int:
+    """Return the sign of the mean of the turned logs of the ``(side, twin, better)`` values given.
+
+    ``_median_sign`` hands it the middle value of a round, or its two middle
+    values, so the sign is that of the round's median. The sign of the mean
+    is that of the product of the turned quotients against 1: ``twin / side``
+    where lower is better, ``side / twin`` where higher is. Each value is
+    split into a whole number and a power of two, and the products are
+    compared exactly, so swapping a side and its twin gives the opposite sign
+    and a product of exactly 1 is a tie.
+    """
+    tops: list[int] = []
+    bottoms: list[int] = []
+    exponent = 0
+    for side, twin, better in terms:
+        top, bottom = (side, twin) if better == "higher" else (twin, side)
+        top_fraction, top_exponent = math.frexp(top)
+        bottom_fraction, bottom_exponent = math.frexp(bottom)
+        tops.append(int(top_fraction * _FRACTION_SCALE))
+        bottoms.append(int(bottom_fraction * _FRACTION_SCALE))
+        exponent += top_exponent - bottom_exponent
+    above, below = _product(tops), _product(bottoms)
+    if exponent >= 0:
+        above <<= exponent
+    else:
+        below <<= -exponent
+    return (above > below) - (above < below)
+
+
+def _turned(term: tuple[float, float, str]) -> Fraction:
+    """Return the turned quotient of a ``(side, twin, better)`` value, exactly.
+
+    It is ``twin / side`` where lower is better and ``side / twin`` where
+    higher is, so it lies above 1 when the side looks better.
+    """
+    side, twin, better = term
+    top, bottom = (side, twin) if better == "higher" else (twin, side)
+    return Fraction(top) / Fraction(bottom)
+
+
+def _median_sign(terms: list[tuple[float, float, str]]) -> int:
+    """Return the sign of the median turned log of a round's ``(side, twin, better)`` values.
+
+    The values are put in order by their exact turned quotients. An odd
+    number of them gives the sign of the one in the middle, and an even
+    number the sign of the mean of the two in the middle. Swapping a side and
+    its twin turns every quotient over and reverses the order, so the same
+    values lie in the middle and the sign is the opposite.
+    """
+    ordered = sorted(terms, key=_turned)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return _round_sign(ordered[middle : middle + 1])
+    return _round_sign(ordered[middle - 1 : middle + 1])
+
+
+def _twin_checks(grid: Grid) -> tuple[TwinSideCheck, ...]:
+    """Check each side against its twin over its primary cases combined, then correct.
+
+    A round is scored by the median of the turned logs of the primary cases
+    with a better direction on which both have a usable value; a round with
+    none is not scored. The p-values of the sides that have one are
+    corrected together with Holm's method.
+    """
+    judged = [c for c in grid.cases if c.primary and c.better in ("lower", "higher")]
+    checks: list[TwinSideCheck] = []
+    for side, twin in grid.twins.items():
+        scored = better = worse = 0
+        for r in grid.rounds:
+            terms: list[tuple[float, float, str]] = []
+            for case in judged:
+                s = grid.of(side, case.id).get(r)
+                t = grid.of(twin, case.id).get(r)
+                if s is not None and t is not None and _scorable(s) and _scorable(t):
+                    terms.append((s, t, case.better))
+            if not terms:
+                continue
+            scored += 1
+            sign = _median_sign(terms)
+            if sign > 0:
+                better += 1
+            elif sign < 0:
+                worse += 1
+        # One round gives no p-value, as for a comparison.
+        p = sign_test(worse, better).p if scored > 1 else None
+        checks.append(
+            TwinSideCheck(side=side, n_rounds=scored, n_better=better, n_worse=worse, p_raw=p)
+        )
+    tested = [i for i, check in enumerate(checks) if check.p_raw is not None]
+    adjusted = holm([p for p in (checks[i].p_raw for i in tested) if p is not None])
+    for i, p_corrected in zip(tested, adjusted, strict=True):
+        checks[i] = dataclasses.replace(checks[i], p_corrected=p_corrected)
+    return tuple(checks)
 
 
 def _with_sensitivity(

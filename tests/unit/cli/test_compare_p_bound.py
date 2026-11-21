@@ -73,5 +73,10 @@ def drifting_twin(entry: str, case: str, round_: int, u: float) -> float:
 def test_the_note_of_a_twin_that_differs_says_the_bound() -> None:
     results = pairbench.analyse(synthetic_capture(drifting_twin, rounds=ROUNDS))
     notes = [n.message for n in results.notes if n.code == NOTE_TWIN_DIFFERS]
-    assert notes
-    assert all(f"more often than chance (p {BOUND})" in message for message in notes)
+    assert len(notes) == 2
+    words = (
+        f"more often than chance across its primary cases (p {BOUND}, corrected for testing "
+        "2 sides at once)"
+    )
+    assert all(words in message for message in notes)
+    assert all("p = 0" not in message for message in notes)

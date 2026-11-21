@@ -79,6 +79,7 @@ from pairbench.model import (
     Series,
     Side,
     Tool,
+    TwinCheck,
     Verdict,
     Witness,
     canonical_json,
@@ -1610,18 +1611,26 @@ def _grading_notes(grading: Grading, floors: Floors | None) -> list[Note]:
                 "floors, and the missing one adds nothing to the bar",
             )
         )
-    for row in grading.twin_differs():
-        # twin_differs gives only rows with a p-value.
-        assert row.p_raw is not None
+    tested = _twin_plain(grading.twin_family_size())
+    for check in grading.twin_differs():
+        # twin_differs gives only sides with a corrected p-value.
+        assert check.p_corrected is not None
         out.append(
             Note(
                 code=NOTE_TWIN_DIFFERS,
-                message=f"{row.side} differs from an identical copy of itself on {row.case} "
-                f"more often than chance ({p_equation(row.p_raw, '.3g')}): the machine or the "
-                "order is biasing the run",
+                message=f"{check.side} differs from an identical copy of itself more often "
+                f"than chance across its primary cases ({p_equation(check.p_corrected, '.3g')}, "
+                f"{tested}): the machine or the order is biasing the run",
             )
         )
     return out
+
+
+def _twin_plain(family_size: int) -> str:
+    """Say how many sides the p-value of the twin note is corrected for."""
+    if family_size == 1:
+        return "one side tested"
+    return f"corrected for testing {family_size} sides at once"
 
 
 # ---------------------------------------------------------------------------
@@ -1728,6 +1737,17 @@ def analyse_captures(
                 unit=rule.unit,
             )
             for row in grading.same_vs_same
+        ),
+        twin_checks=tuple(
+            TwinCheck(
+                side=check.side,
+                n_rounds=check.n_rounds,
+                n_better=check.n_better,
+                n_worse=check.n_worse,
+                p_raw=check.p_raw,
+                p_corrected=check.p_corrected,
+            )
+            for check in grading.twin_checks
         ),
         controls=Controls(positive=control),
         launch_cost=first.launch_cost,

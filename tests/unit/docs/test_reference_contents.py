@@ -30,6 +30,7 @@ from pairbench.model import (
     FILE_REPORT,
     FILE_RESULTS,
     ServeSpec,
+    TwinCheck,
     validate_side_name,
 )
 from pairbench.results import load_schema
@@ -41,6 +42,8 @@ from pairbench.sides.serve import (
     phase_case,
     phase_patterns,
 )
+from pairbench.stats import holm, sign_test
+from pairbench.stats.rules import TWIN_NOTE_ALPHA, _round_sign
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -274,6 +277,219 @@ def test_the_skill_says_which_p_value_grades_a_better_or_worse_case() -> None:
     assert "`p_source` is `raw`" in row
 
 
+def test_the_pages_say_the_twin_note_comes_from_one_combined_check_per_side() -> None:
+    noise = " ".join(_read("docs/method/noise-floor.md").split())
+    assert (
+        "Each side with a twin gets one combined check against it, kept in `twin_checks`" in noise
+    )
+    assert "corrected together with [Holm's method](multiple-comparisons.md)" in noise
+    assert "`twin_differs`" in noise
+    family = " ".join(
+        _section(_read("docs/method/multiple-comparisons.md"), "## What the family is").split()
+    )
+    assert "each side gets one combined check across its primary cases" in family
+    assert "`twin_checks`" in family
+    controls = " ".join(_read("docs/method/instrument-controls.md").split())
+    assert "in one combined check per side corrected for the number of sides tested" in controls
+    skill = _read("skills/pairbench/references/results.md")
+    assert "the correction for testing every side that has a twin" in _row(skill, "`twin_checks[]`")
+    assert "uncorrected p-value" in _row(skill, "`same_vs_same[].p_raw`")
+    notes = _row(skill, "`notes[]`")
+    assert "`twin_differs` when a side's combined check has a corrected p-value below 0.05" in notes
+    schema_page = " ".join(_read("docs/reference/results-schema.md").split())
+    assert "`twin_checks[]` holds one combined check per side that has a twin" in schema_page
+
+
+def test_the_noise_floor_page_says_how_many_untied_rounds_the_twin_note_needs() -> None:
+    # The page's numbers, from the sign test and the correction the check uses.
+    five, six, seven, eight = (sign_test(0, n).p for n in (5, 6, 7, 8))
+    assert five == 1 / 16 >= TWIN_NOTE_ALPHA > six == 1 / 32
+    assert holm([seven, six]) == [4 / 128, 4 / 128]
+    assert holm([six, six]) == [1 / 16, 1 / 16]
+    assert holm([eight] * 6)[0] < TWIN_NOTE_ALPHA <= holm([eight] * 7)[0] == 14 / 256
+    noise = " ".join(_read("docs/method/noise-floor.md").split())
+    assert (
+        "The smallest p-value of a side over `n` untied rounds is `2 / 2^n`, below 0.05 only"
+        " from 6 untied rounds on, and the correction never lowers it, so no side gets the note"
+        " with fewer than 6." in noise
+    )
+    assert (
+        "The correction multiplies the smallest p-value of the run by the number of sides"
+        " tested, the next smallest by one fewer, and so on, and never makes a corrected"
+        " p-value smaller than the one before it, so a side gets the note only when every side"
+        " with a smaller p-value gets it too." in noise
+    )
+    assert (
+        "With two sides tested, the side with the smaller p-value needs at least 7 untied"
+        " rounds, and the other can get the note with 6 that all lean one way when the first"
+        " gets it too: 7 of 7 and 6 of 6 both give a corrected p-value of 4/128, about 0.031."
+        in noise
+    )
+    assert (
+        "At 8 rounds, the serving default, it can reach at most 6 sides: with 7 sides tested,"
+        " even a side with 8 of 8 gets a corrected p-value of at least 14/256, about 0.055."
+        in noise
+    )
+    assert "at least 7 when two are" not in noise
+
+
+def test_the_pages_say_at_eight_rounds_the_twin_note_needs_every_untied_round_to_agree() -> None:
+    noise = " ".join(_read("docs/method/noise-floor.md").split())
+    assert (
+        "At 8 rounds the note comes only when every round of the side that is not a tie leans"
+        " the same way" in noise
+    )
+    assert "8 of 8 give a corrected p-value of 4/256, about 0.016" in noise
+    assert (
+        "7 one way and 1 the other never give the note: their raw p-value is 18/256, about"
+        " 0.07, and the correction never makes a p-value smaller (it gives 36/256, about 0.14,"
+        " when the other side's p-value is no smaller)" in noise
+    )
+    assert (
+        "as a verdict at 8 rounds comes only when every round that is not a tie agrees (all 8"
+        " when none tie)." in noise
+    )
+    assert "needs all 8 rounds to agree" not in noise
+    # 7 rounds that agree and 1 tie give 2/128 by themselves; 7 one way and 1 the other 18/256.
+    assert sign_test(0, 7).p == 2 / 128 < TWIN_NOTE_ALPHA
+    assert sign_test(1, 7).p == 18 / 256
+    assert (
+        "the note means that all of a side's untied rounds agreed, and its absence says nothing"
+        " more" in noise
+    )
+    family = " ".join(
+        _section(_read("docs/method/multiple-comparisons.md"), "## What the family is").split()
+    )
+    assert "at 8 rounds the note comes only when every untied round of the side leans" in family
+    skill = _read("skills/pairbench/references/results.md")
+    assert "at 8 rounds, the serving default, the note needs every untied round" in _row(
+        skill, "`twin_checks[]`"
+    )
+
+
+def test_the_noise_floor_page_says_the_sign_of_a_round_is_found_exactly() -> None:
+    noise = " ".join(_read("docs/method/noise-floor.md").split())
+    assert "The cases are put in order by their turned quotients, compared exactly" in noise
+    assert (
+        "the sign of a score is found exactly, from whether the middle quotient, or the product"
+        " of the two middle quotients, is above, below or equal to 1" in noise
+    )
+    assert (
+        "Swapping a side and its twin in one round turns each of its quotients over, so the same"
+        " cases lie in the middle: that round turns the other way and the others stay as they"
+        " were." in noise
+    )
+
+
+MEDIAN_WORDS = (
+    "is the median over the primary cases on which the side and its twin both have a finite"
+    " value above zero",
+    "gives the log in the middle",
+    "an even number the mean of the two in the middle",
+)
+
+
+def test_the_twin_check_docstring_and_schema_text_say_a_round_is_scored_by_the_median() -> None:
+    doc = " ".join((TwinCheck.__doc__ or "").split())
+    text = load_schema("results")["$defs"]["TwinCheck"]["description"]
+    assert [words for words in MEDIAN_WORDS if words not in doc] == []
+    assert [words for words in MEDIAN_WORDS if words not in text] == []
+    assert text.endswith(
+        "in a side with three or more primary cases it moves a round of the combined check only"
+        " when other primary cases lean the same way."
+    )
+
+
+def test_the_round_sign_docstring_says_it_signs_the_middle_of_a_round() -> None:
+    doc = " ".join((_round_sign.__doc__ or "").split())
+    assert doc.startswith(
+        "Return the sign of the mean of the turned logs of the ``(side, twin, better)`` values"
+        " given."
+    )
+    assert "the middle value of a round, or its two middle values" in doc
+    assert "so the sign is that of the round's median" in doc
+    assert "a round's score" not in doc
+
+
+def test_the_pages_say_what_the_twin_note_can_and_cannot_catch() -> None:
+    noise = " ".join(_read("docs/method/noise-floor.md").split())
+    assert (
+        "In each round the side's score is the median over its primary cases on which the side"
+        " and its twin both have a finite value above zero in that round." in noise
+    )
+    assert (
+        "An odd number of such cases gives the log in the middle, and an even number the mean of"
+        " the two logs in the middle, so one case gives its own log and two give their mean."
+        in noise
+    )
+    assert (
+        "What the note can catch: a bias that moves most primary cases of a side the same way"
+        in noise
+    )
+    assert (
+        "such a bias is caught whether or not one of the side's cases is much noisier than the"
+        " rest" in noise
+    )
+    assert (
+        "and more often still when one of its three cases is much noisier: a round then leans"
+        " with the bias mostly when both other cases do." in noise
+    )
+    assert (
+        "A side with three primary cases misses such a bias more often than one with more, as"
+        " the median of each round then rests on fewer cases. When the bias is large beside the"
+        " noise, so that a side with five or more primary cases rarely misses it, one with three"
+        " can miss it many times as often," in noise
+    )
+    assert "a little more often" not in noise
+    assert (
+        "It moves the median of a round only when other cases lean the same way by chance; with"
+        " an odd number of cases, at least half of the others." in noise
+    )
+    assert (
+        "It gives it more often the fewer primary cases the side has and the more rounds the run"
+        " has" in noise
+    )
+    assert "It still shows in the same-against-same table of the reports" in noise
+    assert (
+        "A side with one primary case is scored on that case alone, and one with two on their"
+        " mean, so there a difference on one case can give the note by itself." in noise
+    )
+    assert (
+        "A bias shared by half or fewer of the cases, two of five say, also moves a round only"
+        " when enough of the others lean the same way by chance" in noise
+    )
+    schema_page = " ".join(_read("docs/reference/results-schema.md").split())
+    assert (
+        "the rounds whose median turned log of side over twin across those cases says the side"
+        " looks better or worse" in schema_page
+    )
+    assert (
+        "where, in a side with three or more primary cases, it moves a round only when other"
+        " primary cases of the side lean the same way" in schema_page
+    )
+    skill = _read("skills/pairbench/references/results.md")
+    row = _row(skill, "`twin_checks[]`")
+    assert "each round scored by the median of their turned logs, side over twin" in row
+
+
+def test_the_noise_floor_page_says_a_difference_on_one_case_gives_the_note_less_often() -> None:
+    noise = " ".join(_read("docs/method/noise-floor.md").split())
+    assert (
+        "What it catches less often: a difference on one case alone, in a side with three or"
+        " more primary cases." in noise
+    )
+    assert (
+        "it gives the note less often than the same difference on every primary case of the"
+        " side would, in any run with enough untied rounds for the note." in noise
+    )
+    assert (
+        "so in a side with three primary cases and a long run it can give the note in most"
+        " runs." in noise
+    )
+    for words in ("seldom", "far less often", "a good share"):
+        assert words not in noise, words
+
+
 # --- the results example -----------------------------------------------------------
 
 # Fields the example on the schema page shows, by their place in the document.
@@ -284,6 +500,8 @@ SHOWN_FIELDS = (
     ("machine_state", "discard_sha256"),
     ("comparisons", 0, "sensitivity", "not_computed"),
     ("same_vs_same", 0, "unit"),
+    ("twin_checks", 0, "n_better"),
+    ("twin_checks", 0, "p_corrected"),
 )
 
 

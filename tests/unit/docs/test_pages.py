@@ -110,6 +110,49 @@ def test_every_guide_title_is_a_task_or_a_question(page: str) -> None:
     assert words.startswith(GUIDE_VERBS) or words.endswith("?")
 
 
+LIST_START = re.compile(r"^\s*1[.)]\s")
+NOT_PROSE = re.compile(r"^\s*(\||#|>|<)")
+
+
+def list_starts_inside_paragraphs(body: str) -> list[str]:
+    """The lines that a page shows as a new numbered list in the middle of a paragraph.
+
+    A line that opens with ``1.`` or ``1)`` right after a line of running text starts a
+    numbered list there, so a wrapped sentence must not put such a number at a line start.
+    """
+    found: list[str] = []
+    fenced = False
+    before = ""
+    for line in body.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            before = ""
+            continue
+        if fenced:
+            continue
+        if LIST_START.match(line) and before.strip() and NOT_PROSE.match(before) is None:
+            found.append(line.strip())
+        before = line
+    return found
+
+
+def test_the_list_finder_finds_a_number_at_the_start_of_a_wrapped_line() -> None:
+    wrapped = "- The quotient is above,\n  below or equal to\n  1. Swapping turns it over.\n"
+    item = "- The quotient is above, below or equal to\n  1) Swapping turns it over.\n"
+    listed = "Steps:\n\n1. Run it.\n2. Read it.\n\n| a |\n1. Run it.\n"
+
+    assert list_starts_inside_paragraphs(wrapped) == ["1. Swapping turns it over."]
+    assert list_starts_inside_paragraphs(item) == ["1) Swapping turns it over."]
+    assert list_starts_inside_paragraphs(listed) == []
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_no_wrapped_line_of_a_page_starts_a_numbered_list(page: str) -> None:
+    _, _, body = split_page(page)
+
+    assert list_starts_inside_paragraphs(body) == []
+
+
 def test_the_home_page_says_first_what_pairbench_is() -> None:
     _, _, body = split_page(HOME_PAGE)
     first = sentences(body.strip("\n").split("\n\n")[0])[0]

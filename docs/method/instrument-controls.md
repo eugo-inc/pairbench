@@ -15,7 +15,8 @@ Each run carries two controls of its own instrument:
 - **The negative control: twins.** Each side runs beside an identical copy of itself. Two
   identical things must read as equal. The gap between them is the
   [noise floor](noise-floor.md), and a side that differs from its own twin more often than
-  chance gets a loud note.
+  chance across its primary cases, in one combined check per side corrected for the number
+  of sides tested, gets a loud note.
 - **The positive control: `~twice`.** The baseline runs once more per round with twice the
   work. It must read as twice the value. A failed control voids every verdict of the run.
   See [positive control](positive-control.md).

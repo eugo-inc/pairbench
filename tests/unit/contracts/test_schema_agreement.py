@@ -355,6 +355,7 @@ def test_the_classes_of_the_results_document() -> None:
         "Sensitivity",
         "Series",
         "Tool",
+        "TwinCheck",
     ]
 
 
@@ -380,7 +381,16 @@ def test_the_record_types_of_a_capture() -> None:
 
 # Which keys may be absent when a document is read. Every other key is required.
 OPTIONAL_KEYS: dict[str, set[str]] = {
-    "Results": {"energy", "controls", "launch_cost", "env_pad", "series", "plots", "diagnostics"},
+    "Results": {
+        "energy",
+        "controls",
+        "launch_cost",
+        "env_pad",
+        "series",
+        "plots",
+        "diagnostics",
+        "twin_checks",
+    },
     "RunInfo": {"command"},
     "Comparison": {"statistic", "scale", "reasons"},
     "FloorPair": {"unit"},
@@ -643,6 +653,9 @@ LIMITS: dict[tuple[str, str, str], dict[str, Any]] = {
     ("results", "LaunchCost", "p75_s"): {"minimum": 0},
     ("results", "LaunchCost", "min_s"): {"minimum": 0},
     ("results", "ControlCase", "n_rounds"): {"minimum": 0},
+    ("results", "TwinCheck", "n_rounds"): {"minimum": 0},
+    ("results", "TwinCheck", "n_better"): {"minimum": 0},
+    ("results", "TwinCheck", "n_worse"): {"minimum": 0},
     ("results", "MachineState", "undecided_launches"): {"minimum": 0},
     ("results", "PositiveControl", "entry"): {"minLength": 1},
     ("results", "PositiveControl", "tolerance"): {"minimum": 0, "exclusiveMaximum": 0.5},

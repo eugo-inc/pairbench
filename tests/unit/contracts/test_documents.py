@@ -732,6 +732,7 @@ RESULTS_KEYS = [
     "cases",
     "comparisons",
     "same_vs_same",
+    "twin_checks",
     "controls",
     "launch_cost",
     "env_pad",

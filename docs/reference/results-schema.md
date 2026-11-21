@@ -79,6 +79,8 @@ Numbers in this example are made up.
                    "agrees": true, "not_computed": null}}],
  "same_vs_same": [{"side": "", "case": "", "ratio": 1.004, "floor": 0.004, "unit": "fraction",
                    "p_raw": 0.80, "n": 16}],
+ "twin_checks": [{"side": "", "n_rounds": 16, "n_better": 7, "n_worse": 9, "p_raw": 0.80,
+                  "p_corrected": 0.80}],
  "controls": {"positive": {"status": "ok", "entry": "old~twice", "via": "repeat",
    "tolerance": 0.1, "cases": [{"case": "", "expected": 2.0, "ratio": 2.01,
    "p_raw": 0.00003, "n_rounds": 16, "passed": true}]}},
@@ -113,6 +115,18 @@ Numbers in this example are made up.
   Python 3.11
   ([integer string conversion length limitation](https://docs.python.org/3.11/library/stdtypes.html#int-max-str-digits)),
   so a results file stays readable.
+- `same_vs_same[]` holds a side against its own twin on each case, with its own uncorrected
+  `p_raw`. A difference on one case shows here, and gives the loud note only through the
+  combined check below, where, in a side with three or more primary cases, it moves a round
+  only when other primary cases of the side lean the same way.
+- `twin_checks[]` holds one combined check per side that has a twin, across its primary
+  cases: `n_rounds` rounds scored, `n_better` and `n_worse` the rounds whose median turned
+  log of side over twin across those cases says the side looks better or worse, the sign
+  test's `p_raw`, and `p_corrected`, corrected with Holm's method across the sides that have
+  a p-value. Both are null for a side scored in at most one round. A side whose
+  `p_corrected` is below 0.05 gives the loud note `twin_differs`. A document written without
+  `twin_checks` reads as holding none, and `pairbench report --format json` then gives an
+  empty list. See the [noise floor](../method/noise-floor.md).
 - `run.command` is the command that was run, for the "how to reproduce" line of the reports.
   Side specs are hidden unless `report.include_image_refs` is on, which shows the spec of an
   image or serving side. The value of every `--set` is hidden whatever its key, and its key is
