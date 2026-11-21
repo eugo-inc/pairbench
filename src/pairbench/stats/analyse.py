@@ -18,6 +18,7 @@ given: the rounds of the second capture follow the last round of the first.
 from __future__ import annotations
 
 import re
+import shlex
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
@@ -102,10 +103,12 @@ from pairbench.model import (
     pooled_driver_info,
     pooled_driver_notes,
     public_command,
+    recorded_workload,
     sha256_hex,
     side_setup,
     undecided,
     verdict_word,
+    workload_difference,
 )
 from pairbench.stats.floor import FloorStat, median, pair_rounds, usable_ratio
 from pairbench.stats.rules import Graded, Grading, Grid, grade, is_significant
@@ -298,6 +301,37 @@ def _hidden_drift(first: Capture, other: Capture) -> list[str]:
     return sorted(found)
 
 
+def _check_workload(first: Capture, other: Capture) -> None:
+    """Refuse two captures whose shared workloads differ, naming the first argument that does.
+
+    The workloads are those each header's config records, compared as the
+    published hashes read them after the sides each capture records
+    (``workload_difference``): a difference only in a credential, or only in
+    a value hidden for its shape, is left to the checks after this one. The
+    message names the argument by its place and by the text the shown
+    command shows of it, never by a hidden value; when both show the same
+    text, the arguments differ in a part the shown command leaves out, as
+    the folders of a path.
+    """
+    found = workload_difference(first.header.config, other.header.config, first.sides, other.sides)
+    if found is None:
+        return
+    place, one, two = found
+    where = f"at its argument {place}"
+    if one == two:
+        where += ", in a part the shown command leaves out"
+    else:
+        shown = ["no argument" if text is None else shlex.quote(text) for text in (one, two)]
+        where += f": {shown[0]} against {shown[1]}"
+    raise _refuse(
+        "E_POOL_SIDE_DRIFT",
+        f"the workload differs between the captures {first.capture_id} and "
+        f"{other.capture_id} {where}",
+        captures=[first.capture_id, other.capture_id],
+        argument=place,
+    )
+
+
 def _check_working_folders(first: Capture, other: Capture) -> None:
     """Refuse two captures whose sides ran in two working folders, or that cannot tell.
 
@@ -355,7 +389,11 @@ def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: 
             "compares different sides",
         )
     sides = {s.name: s for s in first.sides}
-    for other in captures[1:]:
+    # The workload of each capture is compared with that of the first capture that records
+    # one, and its side setups with those of every capture before it, so a capture that
+    # records none, or only part of a setup, does not keep two others apart from each other.
+    shared = next((c for c in captures if recorded_workload(c.header.config) is not None), first)
+    for place, other in enumerate(captures[1:], start=1):
         theirs = {s.name: s for s in other.sides}
         if set(theirs) != set(sides) or any(
             _side_key(theirs[n]) != _side_key(sides[n]) for n in sides
@@ -365,6 +403,7 @@ def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: 
                 f"the captures {first.capture_id} and {other.capture_id} hold different sides",
                 captures=[first.capture_id, other.capture_id],
             )
+        _check_workload(shared, other)
         drifted = sorted(n for n in sides if theirs[n].fingerprint != sides[n].fingerprint)
         if drifted:
             raise _refuse(
@@ -373,15 +412,16 @@ def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: 
                 f"{first.capture_id} and {other.capture_id}",
                 sides=drifted,
             )
-        hidden = _hidden_drift(first, other)
-        if hidden:
-            raise _refuse(
-                "E_POOL_SIDE_DRIFT",
-                f"the setup of {', '.join(hidden)} differs between the captures "
-                f"{first.capture_id} and {other.capture_id} in a value the results hide",
-                sides=hidden,
-                captures=[first.capture_id, other.capture_id],
-            )
+        for earlier in captures[:place]:
+            hidden = _hidden_drift(earlier, other)
+            if hidden:
+                raise _refuse(
+                    "E_POOL_SIDE_DRIFT",
+                    f"the setup of {', '.join(hidden)} differs between the captures "
+                    f"{earlier.capture_id} and {other.capture_id} in a value the results hide",
+                    sides=hidden,
+                    captures=[earlier.capture_id, other.capture_id],
+                )
         _check_working_folders(first, other)
     cases = {c.id: c for c in first.cases}
     for other in captures[1:]:

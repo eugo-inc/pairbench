@@ -50,7 +50,7 @@ exits 0.
 | `E_POOL_SAME` | 6 | the same capture id, file path or file hash was given twice |
 | `E_POOL_IDENTICAL_ROWS` | 6 | two captures with different ids hold identical observation rows |
 | `E_POOL_TRUNCATED_COPY` | 6 | one capture's rows are a contiguous stretch of another's |
-| `E_POOL_SIDE_DRIFT` | 6 | a side's fingerprint, its recorded setup in more than a credential's value, or its working folder differs between captures |
+| `E_POOL_SIDE_DRIFT` | 6 | a side's fingerprint, its recorded setup in more than a credential's value, its working folder, or the shared workload in more than a credential's value differs between captures |
 | `E_POOL_CASES` | 6 | the case sets or units differ between captures |
 | `E_POOL_MACHINE` | 6 | the CPU or GPU identity differs between captures |
 | `E_POOL_MIXED_PURPOSE` | 6 | a capture of one side against its own twins is pooled with a comparison of sides |

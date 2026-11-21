@@ -33,7 +33,8 @@ zero, a failed positive control and others. See
 ## Can I pool two runs?
 
 Yes: `pairbench compare runA/capture.jsonl runB/capture.jsonl`. The runs must be of the same
-experiment on the same machine; the same capture twice and copies are refused.
+experiment on the same machine, with the same workload after `--` but for its credentials; the
+same capture twice and copies are refused.
 
 ## Can I run on a shared or busy machine?
 

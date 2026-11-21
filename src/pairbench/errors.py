@@ -165,8 +165,9 @@ CODES: Final[Mapping[str, Code]] = _table(
     Code(
         "E_POOL_SIDE_DRIFT",
         EXIT_ANALYSIS,
-        "a side's fingerprint, its recorded setup in more than a credential's value, or its "
-        "working folder differs between captures",
+        "a side's fingerprint, its recorded setup in more than a credential's value, its "
+        "working folder, or the shared workload in more than a credential's value differs "
+        "between captures",
     ),
     Code("E_POOL_CASES", EXIT_ANALYSIS, "the case sets or units differ between captures"),
     Code("E_POOL_MACHINE", EXIT_ANALYSIS, "the CPU or GPU identity differs between captures"),

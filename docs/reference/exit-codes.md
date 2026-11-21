@@ -71,7 +71,7 @@ pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage
 | `E_POOL_SAME` | 6 | the same capture id, file path or file hash was given twice |
 | `E_POOL_IDENTICAL_ROWS` | 6 | two captures with different ids hold identical observation rows |
 | `E_POOL_TRUNCATED_COPY` | 6 | one capture's rows are a contiguous stretch of another's, a torn last row included |
-| `E_POOL_SIDE_DRIFT` | 6 | a side's fingerprint, its recorded setup in more than a credential's value, or its working folder differs between captures |
+| `E_POOL_SIDE_DRIFT` | 6 | a side's fingerprint, its recorded setup in more than a credential's value, its working folder, or the shared workload in more than a credential's value differs between captures |
 | `E_POOL_CASES` | 6 | the case sets or units differ between captures |
 | `E_POOL_MACHINE` | 6 | the CPU or GPU identity differs between captures (allow with `--allow-mixed-machines`) |
 | `E_POOL_MIXED_PURPOSE` | 6 | a capture of one side against its own twins is pooled with a comparison of sides |
@@ -492,9 +492,24 @@ same fingerprint: each capture records a hash of the folder each side ran in, th
 for a side that runs on the host, and the message names the side and the two captures, never
 the folder. A capture that records no working folder for a side is not pooled with one that
 records it: the message says the folder could not be compared, and names the capture to run
-again.
+again. Two captures whose shared workloads, the arguments after `--` or `workload.argv`, differ are
+drift too, whatever the kind of their sides: `--size 10` against `--size 20`, an argument added,
+left out or moved, a value glued to its option (`--size=10` against `--size=20`, and also
+`--size=10` against `--size 10`), or a word inside a shell text such as
+`sh -c "bench --size 10"`. The workloads are compared as `provenance.config_sha256` hashes them:
+a difference only in a credential, such as the value of `--api-key` or a client's password
+option, pools, and so does a difference only in the value of an option whose name reads as a
+credential's, such as `--password-length 8` against `--password-length 12`, as the hash hides
+that value too; a difference only in a value hidden for its shape gives the hidden-value message
+above. The message names the first argument that differs, by its place and by the text the
+results show of it, such as
+`the workload differs between the captures A and B at its argument 4: 10 against 20`, with
+`no argument` for a workload that ends before that place; when both show the same text, as two
+paths in different folders do, it says the arguments differ in a part the shown command leaves
+out. A label such as `run.node_type` and a case selection are no part of the workload.
 
-**Fix.** Pool only captures of the same sides, or compare the captures one at a time.
+**Fix.** Pool only captures of the same sides and the same workload, or compare the captures one
+at a time.
 
 ### E_POOL_CASES
 

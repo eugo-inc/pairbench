@@ -188,8 +188,10 @@ When it writes results files or prints the results document, also those of a ref
 `compare` prints the `command_shown` note that `run` prints.
 
 Pooled captures must be of the same experiment: the same sides, each with the same kind,
-twin and control relation, fingerprint, recorded setup and working folder (`E_POOL_SIDE_DRIFT`), the same case set and units, a name that ends with a mark made
-again with the key of the first capture given (`E_POOL_CASES`), the same CPU and GPU identity unless `--allow-mixed-machines` is given
+twin and control relation, fingerprint, recorded setup and working folder, and the same shared
+workload but for its credentials (`E_POOL_SIDE_DRIFT`), the same case set and units, a name that ends
+with a mark made again with the key of the first capture given (`E_POOL_CASES`), the same CPU and GPU
+identity unless `--allow-mixed-machines` is given
 (`E_POOL_MACHINE`), and the same purpose (`E_POOL_MIXED_PURPOSE`). The same capture twice
 (`E_POOL_SAME`), identical rows (`E_POOL_IDENTICAL_ROWS`) and a copy torn from another
 capture (`E_POOL_TRUNCATED_COPY`) are refused. Which side is the baseline is set once for the

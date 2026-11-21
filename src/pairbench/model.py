@@ -12777,6 +12777,87 @@ def hidden_difference(one: Mapping[str, Any] | None, two: Mapping[str, Any] | No
     return _shape_only(shown, typed)
 
 
+def recorded_workload(config: Mapping[str, Any] | None) -> list[str] | None:
+    """Return the shared workload's arguments a recorded config holds, or ``None``.
+
+    A config with a ``workload`` table that names no arguments holds an empty
+    workload. A config with no ``workload`` table, as a header that records
+    no config, and arguments that are not a list of texts give ``None``:
+    there is no workload to compare.
+    """
+    plain = _encode(config) if isinstance(config, Mapping) else None
+    workload = plain.get("workload") if isinstance(plain, dict) else None
+    if not isinstance(workload, dict):
+        return None
+    argv = workload.get("argv")
+    if argv is None:
+        return []
+    return _texts(argv)
+
+
+def _shown_workload(
+    argv: Sequence[str], configs: Sequence[Mapping[str, Any]], recorded: Sequence[Side] = ()
+) -> list[str]:
+    """Return each argument of a workload as the shown command shows it, after every side.
+
+    The workload is read as ``public_command`` reads it, after what every
+    side of each of ``configs`` runs before it and after what each of the
+    ``recorded`` sides recorded its image runs before it, so a value any of
+    them hides is hidden. When the shown command does not give one text per
+    argument, every argument is shown as ``HIDDEN``.
+    """
+    sides: dict[str, Any] = {}
+    for k, config in enumerate(configs):
+        own = config.get("sides")
+        for name, side in own.items() if isinstance(own, Mapping) else ():
+            sides[f"{k}-{name}"] = side
+    command = public_command([WORKLOAD_SEPARATOR, *argv], config={"sides": sides}, sides=recorded)
+    words = shlex.split(command)[1:] if command is not None else []
+    return words if len(words) == len(argv) else [HIDDEN] * len(argv)
+
+
+def workload_difference(
+    one: Mapping[str, Any],
+    two: Mapping[str, Any],
+    one_sides: Sequence[Side] = (),
+    two_sides: Sequence[Side] = (),
+) -> tuple[int, str | None, str | None] | None:
+    """Return where the shared workloads of two recorded configs differ, or ``None``.
+
+    Each workload (``recorded_workload``) is read as the published hashes
+    read it under its own config and the sides its capture records
+    (``config_inputs``): alone, after what each side runs before it and
+    after what each recorded image side's image runs before it
+    (``one_sides``, ``two_sides``), with every recognised secret and every
+    value hidden for its shape hidden. The answer is the 1-based place of
+    the first argument at which the two readings differ, and the text the
+    shown command shows of that argument in each workload, read after the
+    sides of both configs and both captures; ``None`` stands for a workload
+    that has no argument there. Two texts alike say that the arguments
+    differ in a part the shown command leaves out, as the folders of a path.
+    Two workloads typed alike, two that differ only in a credential or in a
+    value hidden for its shape, and a config that holds no workload give
+    ``None``.
+    """
+    first, second = recorded_workload(one), recorded_workload(two)
+    if first is None or second is None or first == second:
+        return None
+    one, two = _encode(one), _encode(two)
+    readings = (_hashed_workload(first, one, one_sides), _hashed_workload(second, two, two_sides))
+    if readings[0] == readings[1]:
+        return None
+    place = next(
+        (k for k, (a, b) in enumerate(zip(*readings, strict=False)) if a != b),
+        min(len(r) for r in readings),
+    )
+    recorded = (*one_sides, *two_sides)
+    texts: list[str | None] = []
+    for argv in (first, second):
+        shown = _shown_workload(argv, (one, two), recorded)
+        texts.append(shown[place] if place < len(argv) else None)
+    return place + 1, texts[0], texts[1]
+
+
 # ---------------------------------------------------------------------------
 # The plan
 # ---------------------------------------------------------------------------
@@ -15616,6 +15697,7 @@ __all__ = [
     "ratio_fault",
     "raw_p_note",
     "record_from_json",
+    "recorded_workload",
     "redact_argv",
     "redact_env",
     "required_keys",
@@ -15633,4 +15715,5 @@ __all__ = [
     "undecided",
     "validate_side_name",
     "verdict_word",
+    "workload_difference",
 ]

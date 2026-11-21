@@ -174,7 +174,8 @@ Numbers in this example are made up.
   one side, compared because `--allow-identical` was given, get the note
   `sides_declared_identical`. A checksum, a build id or a
   version an `identify` command prints is in `identify_sha256` and the fingerprint, so captures
-  that differ in one are not pooled either. A value in a form the tool does not recognise is
+  that differ in one are not pooled either. Nor are captures whose shared workloads differ, read
+  as `provenance.config_sha256` reads them: a difference only in a credential pools. A value in a form the tool does not recognise is
   still in the hash, and someone who knows the rest of the command can confirm a guess at it
   by hashing the guess; give secrets to a side through the environment with `env_pass`, which
   no hash covers.
