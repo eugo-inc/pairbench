@@ -22,7 +22,10 @@ not check. It does not pretend the machine is empty.
 A check that cannot run has the status `unavailable` or `degraded`. Under `enforce` that is a
 refusal; under `warn` it is a loud note. It is never a pass. Every degraded, unavailable or
 failed check appears in three places: a line on standard error, a record in the capture, and
-`machine_state.degraded` in the results, with a footnote in every report.
+`machine_state.degraded` in the results, with a footnote in every report. The checks run once
+before the locks and once at the short re-check after them, and pooled results hold the checks
+of every capture, so an entry can be in the results more than once; a report says each entry
+once, and two entries of one check that differ in status or reason both appear.
 
 ## Quiet at the start is not quiet throughout
 

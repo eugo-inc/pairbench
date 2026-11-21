@@ -34,6 +34,7 @@ from pairbench.model import (
     STRICT,
     Case,
     Comparison,
+    Degraded,
     Diagnostics,
     Finding,
     Results,
@@ -452,13 +453,26 @@ def raw_p_fact(results: Results) -> str:
     return raw_p_note(results.rule, results.comparisons)
 
 
+def degraded_checks(results: Results) -> tuple[Degraded, ...]:
+    """Return the checks that did not pass, each entry once, in the order first seen.
+
+    A run checks the machine once before the locks and once at the short
+    recheck after them, and pooled results hold the checks of each capture,
+    so ``machine_state.degraded`` can hold one entry more than once. Entries
+    of one check that differ in status or reason are each kept; so are two
+    plug-in checks, which share the name ``plugin``.
+    """
+    return tuple(dict.fromkeys(results.machine_state.degraded))
+
+
 def footer(results: Results, comparisons: Sequence[Comparison]) -> list[str]:
     """Return the facts of the footer that is always printed, one sentence each.
 
     The test and the number of paired rounds; for a serving run, how often
     its round count catches a real difference; the family size in plain
     words; the rule; the machine state; the baseline; the state of the
-    positive control; every degraded check; a floor that was supplied,
+    positive control; every check that did not pass, each entry once
+    (``degraded_checks``); a floor that was supplied,
     provisional or one-sided; what the comparisons read without disturbed
     rounds; the launch-cost note when it applies; the driver and the tool
     versions; what the energy cases cover.
@@ -477,7 +491,7 @@ def footer(results: Results, comparisons: Sequence[Comparison]) -> list[str]:
     facts.append(f"Machine state: {results.machine_state.status}.")
     facts.append(f"Baseline: {baseline_name(results) or 'none'}.")
     facts.append(control_fact(results))
-    for check in results.machine_state.degraded:
+    for check in degraded_checks(results):
         facts.append(f"Check {check.name}: {check.status} ({check.message}).")
     facts.extend(floor_facts(comparisons))
     facts.extend(sensitivity_facts(results, comparisons))
@@ -526,6 +540,7 @@ __all__ = [
     "change_cell",
     "comparison_reason_words",
     "control_fact",
+    "degraded_checks",
     "diagnostics_file",
     "driver_fact",
     "energy_fact",

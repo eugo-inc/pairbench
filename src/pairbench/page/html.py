@@ -55,7 +55,12 @@ from pairbench.charts import (
     unit_of,
 )
 from pairbench.model import Comparison, Diagnostics, Results
-from pairbench.report import SECONDARY_P_FACT, comparison_reason_words, serving_odds_fact
+from pairbench.report import (
+    SECONDARY_P_FACT,
+    comparison_reason_words,
+    degraded_checks,
+    serving_odds_fact,
+)
 from pairbench.results.figures import floor_or, writable_percent
 
 # The line a page that holds the diagnostics document shows at its top.
@@ -374,7 +379,7 @@ def _footer(page: _Page, shown: Sequence[Comparison]) -> str:
         facts.append(f"Baseline: {baseline}.")
     control = results.controls.positive
     facts.append(f"Positive control: {control.status.replace('_', ' ')}.")
-    for degraded in results.machine_state.degraded:
+    for degraded in degraded_checks(results):
         facts.append(f"Check {degraded.name}: {degraded.status}: {degraded.message}")
     wanted = (model.NOTE_FLOOR_SUPPLIED, model.NOTE_FLOOR_PROVISIONAL, model.NOTE_LAUNCH_COST_SHARE)
     for note in results.notes:
