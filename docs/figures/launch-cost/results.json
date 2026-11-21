@@ -1,0 +1,1396 @@
+{
+  "schema": "pairbench/results/v1",
+  "tool": {
+    "name": "pairbench",
+    "version": "0.1.0"
+  },
+  "run": {
+    "id": "19573f6ddde1",
+    "started_at": "2026-11-19T21:06:11Z",
+    "finished_at": "2026-11-19T21:06:25Z",
+    "captures": [
+      {
+        "capture_id": "19573f6ddde1",
+        "sha256": "417a4766c351213abc81a441cb5b3f320708e57609031c8d9331c6a41c152a33",
+        "rounds": 16
+      }
+    ],
+    "pooled": false,
+    "command": "pairbench run --side 'default=cmd:<hidden>' --side 'nosite=cmd:<hidden>' --baseline default --gates warn --explain off --plots off --out pairbench-runs/launch-cost-20261119T210559Z-3003"
+  },
+  "rule": {
+    "name": "strict",
+    "fields": {
+      "name": "strict",
+      "scale": "ratio",
+      "floor_scope": "group",
+      "bar": "sum_of_both",
+      "bar_round_digits": null,
+      "require_both_floors": true,
+      "p_source": "corrected",
+      "alpha": 0.05,
+      "p_inclusive": false,
+      "gap_inclusive": false,
+      "tie": "inside_and_not_significant",
+      "min_rounds": null
+    },
+    "family_size": 1,
+    "plain": "one case tested"
+  },
+  "provenance": {
+    "machine": {
+      "os": "Debian GNU/Linux 13",
+      "arch": "aarch64",
+      "cpu_model": "CPU implementer 0x41 part 0xd4f",
+      "core_types": [
+        "arm-41-d4f"
+      ]
+    },
+    "gpu": [],
+    "engine": null,
+    "node_type": null,
+    "seeds": {
+      "driver": 1234
+    },
+    "config_sha256": "5fcc6f0c4bc25bf720492e4fc0a6e1b2c51f82f771ce012fddd369da3fbf532d",
+    "driver": {
+      "name": "wall",
+      "tool_versions": []
+    }
+  },
+  "sides": [
+    {
+      "name": "default",
+      "kind": "cmd",
+      "role": "baseline",
+      "twin_of": null,
+      "control_of": null,
+      "identity": {
+        "executable_sha256": "037790041b8d9793336e9c1884b85cf3252bd3f41e06b040e222f52fedcae65c",
+        "argv_sha256": "03096e63c77ca8850e31c273cb49cfdc0a7342956a8b3f4d49d0d2d05c93a7e9"
+      },
+      "fingerprint": "ef7c73adc246378ad07acac4b885aa81e8666b5a7736bb081dbe9991ebe0d69e",
+      "image_ref": null,
+      "driver": {
+        "name": "wall",
+        "tool_versions": []
+      }
+    },
+    {
+      "name": "default~same",
+      "kind": "cmd",
+      "role": "twin",
+      "twin_of": "default",
+      "control_of": null,
+      "identity": {
+        "executable_sha256": "037790041b8d9793336e9c1884b85cf3252bd3f41e06b040e222f52fedcae65c",
+        "argv_sha256": "03096e63c77ca8850e31c273cb49cfdc0a7342956a8b3f4d49d0d2d05c93a7e9"
+      },
+      "fingerprint": "ef7c73adc246378ad07acac4b885aa81e8666b5a7736bb081dbe9991ebe0d69e",
+      "image_ref": null,
+      "driver": {
+        "name": "wall",
+        "tool_versions": []
+      }
+    },
+    {
+      "name": "nosite",
+      "kind": "cmd",
+      "role": "subject",
+      "twin_of": null,
+      "control_of": null,
+      "identity": {
+        "executable_sha256": "037790041b8d9793336e9c1884b85cf3252bd3f41e06b040e222f52fedcae65c",
+        "argv_sha256": "b1287dbde4b57f8649875ac9761f97b66e4d06303b100ab807e5391ef5556ffe"
+      },
+      "fingerprint": "6ba3f014f93ada5f9ff80fc32fbe2830c7b947cb7bbdae94195092f47630f0d2",
+      "image_ref": null,
+      "driver": {
+        "name": "wall",
+        "tool_versions": []
+      }
+    },
+    {
+      "name": "nosite~same",
+      "kind": "cmd",
+      "role": "twin",
+      "twin_of": "nosite",
+      "control_of": null,
+      "identity": {
+        "executable_sha256": "037790041b8d9793336e9c1884b85cf3252bd3f41e06b040e222f52fedcae65c",
+        "argv_sha256": "b1287dbde4b57f8649875ac9761f97b66e4d06303b100ab807e5391ef5556ffe"
+      },
+      "fingerprint": "6ba3f014f93ada5f9ff80fc32fbe2830c7b947cb7bbdae94195092f47630f0d2",
+      "image_ref": null,
+      "driver": {
+        "name": "wall",
+        "tool_versions": []
+      }
+    },
+    {
+      "name": "default~twice",
+      "kind": "cmd",
+      "role": "control",
+      "twin_of": null,
+      "control_of": "default",
+      "identity": {
+        "executable_sha256": "037790041b8d9793336e9c1884b85cf3252bd3f41e06b040e222f52fedcae65c",
+        "argv_sha256": "03096e63c77ca8850e31c273cb49cfdc0a7342956a8b3f4d49d0d2d05c93a7e9"
+      },
+      "fingerprint": "ef7c73adc246378ad07acac4b885aa81e8666b5a7736bb081dbe9991ebe0d69e",
+      "image_ref": null,
+      "driver": {
+        "name": "wall",
+        "tool_versions": []
+      }
+    }
+  ],
+  "plan": {
+    "schedule": "rotate-reverse",
+    "rounds_requested": null,
+    "rounds_planned": 16,
+    "rounds_completed": 16,
+    "warmups": 1,
+    "launches": 82,
+    "explain_launches": 0
+  },
+  "machine_state": {
+    "status": "unknown",
+    "gates": [
+      {
+        "name": "cpus",
+        "mode": "warn",
+        "status": "pass"
+      },
+      {
+        "name": "quiet",
+        "mode": "warn",
+        "status": "pass"
+      },
+      {
+        "name": "census",
+        "mode": "warn",
+        "status": "unavailable"
+      },
+      {
+        "name": "cpus",
+        "mode": "warn",
+        "status": "pass"
+      },
+      {
+        "name": "quiet",
+        "mode": "warn",
+        "status": "pass"
+      },
+      {
+        "name": "census",
+        "mode": "warn",
+        "status": "unavailable"
+      }
+    ],
+    "degraded": [
+      {
+        "name": "census",
+        "status": "unavailable",
+        "message": "no container engine could be reached"
+      },
+      {
+        "name": "census",
+        "status": "unavailable",
+        "message": "no container engine could be reached"
+      }
+    ],
+    "discard_sha256": "76d1f9b8cd2dbbf9305f1a462a2569570bf9ae9839d00f3a67a704203edb87ff",
+    "undecided_launches": 0
+  },
+  "cases": [
+    {
+      "id": "wall",
+      "metric": "wall",
+      "unit": "s",
+      "better": "lower",
+      "kind": "time",
+      "primary": true,
+      "group": null
+    },
+    {
+      "id": "res/user",
+      "metric": "user",
+      "unit": "s",
+      "better": "none",
+      "kind": "other",
+      "primary": false,
+      "group": "res/user"
+    },
+    {
+      "id": "res/sys",
+      "metric": "sys",
+      "unit": "s",
+      "better": "none",
+      "kind": "other",
+      "primary": false,
+      "group": "res/sys"
+    },
+    {
+      "id": "res/cores",
+      "metric": "cores",
+      "unit": "cores",
+      "better": "none",
+      "kind": "other",
+      "primary": false,
+      "group": "res/cores"
+    },
+    {
+      "id": "res/rss_peak",
+      "metric": "rss_peak",
+      "unit": "bytes",
+      "better": "none",
+      "kind": "other",
+      "primary": false,
+      "group": "res/rss_peak"
+    },
+    {
+      "id": "res/ctx_voluntary",
+      "metric": "ctx_voluntary",
+      "unit": "count",
+      "better": "none",
+      "kind": "count",
+      "primary": false,
+      "group": "res/ctx_voluntary"
+    },
+    {
+      "id": "res/ctx_involuntary",
+      "metric": "ctx_involuntary",
+      "unit": "count",
+      "better": "none",
+      "kind": "count",
+      "primary": false,
+      "group": "res/ctx_involuntary"
+    },
+    {
+      "id": "res/faults_major",
+      "metric": "faults_major",
+      "unit": "count",
+      "better": "none",
+      "kind": "count",
+      "primary": false,
+      "group": "res/faults_major"
+    },
+    {
+      "id": "res/faults_minor",
+      "metric": "faults_minor",
+      "unit": "count",
+      "better": "none",
+      "kind": "count",
+      "primary": false,
+      "group": "res/faults_minor"
+    }
+  ],
+  "comparisons": [
+    {
+      "case": "wall",
+      "primary": true,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 16,
+      "n_lower": 16,
+      "n_higher": 0,
+      "subject_median": 0.011496457500000001,
+      "baseline_median": 0.013627802500000001,
+      "ratio": 0.8403947074801509,
+      "statistic": 0.8403947074801509,
+      "scale": "ratio",
+      "gap": 0.15960529251984912,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": {
+          "value": 0.004862845314230757,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.011138012676549701,
+          "outlier_rounds": [
+            11
+          ]
+        },
+        "baseline": {
+          "value": 0.0027993056767434688,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.018394326192173883,
+          "outlier_rounds": [
+            11
+          ]
+        },
+        "mode": "TWO-SIDED"
+      },
+      "bar": 0.007662150990974226,
+      "p_raw": 3.0517578125e-05,
+      "p_raw_fraction": [
+        2,
+        65536
+      ],
+      "p_corrected": 3.0517578125e-05,
+      "verdict": "FASTER",
+      "outcome": "better",
+      "reason": null,
+      "reasons": [],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": 0.8403947074801509,
+        "outcome": "better",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/user",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 16,
+      "n_lower": 14,
+      "n_higher": 2,
+      "subject_median": 0.009320499999999999,
+      "baseline_median": 0.0123845,
+      "ratio": 0.7497522593378041,
+      "statistic": 0.7497522593378041,
+      "scale": "ratio",
+      "gap": 0.2502477406621959,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": {
+          "value": 0.055926525069935895,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.28034019295492013,
+          "outlier_rounds": [
+            6
+          ]
+        },
+        "baseline": {
+          "value": 0.10149941473141322,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.22931909870934003,
+          "outlier_rounds": []
+        },
+        "mode": "TWO-SIDED"
+      },
+      "bar": 0.1574259398013491,
+      "p_raw": 0.004180908203125,
+      "p_raw_fraction": [
+        274,
+        65536
+      ],
+      "p_corrected": null,
+      "verdict": "LOWER",
+      "outcome": "lower",
+      "reason": null,
+      "reasons": [],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": 0.7497522593378041,
+        "outcome": "lower",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/sys",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 0,
+      "n_lower": 0,
+      "n_higher": 0,
+      "subject_median": 0.0020635000000000002,
+      "baseline_median": 0.0010465,
+      "ratio": null,
+      "statistic": null,
+      "scale": "ratio",
+      "gap": null,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": null,
+        "baseline": null,
+        "mode": "NONE"
+      },
+      "bar": null,
+      "p_raw": null,
+      "p_raw_fraction": null,
+      "p_corrected": null,
+      "verdict": "NO VERDICT",
+      "outcome": "no_verdict",
+      "reason": "nonpositive_value",
+      "reasons": [
+        "nonpositive_value"
+      ],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": null,
+        "outcome": "no_verdict",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/cores",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 16,
+      "n_lower": 13,
+      "n_higher": 3,
+      "subject_median": 0.9925923380926089,
+      "baseline_median": 0.993426980090798,
+      "ratio": 0.9987168233289623,
+      "statistic": 0.9987168233289623,
+      "scale": "ratio",
+      "gap": 0.0012831766710377224,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": {
+          "value": 0.0005614788483381261,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.001163989219818542,
+          "outlier_rounds": [
+            7
+          ]
+        },
+        "baseline": {
+          "value": 0.0003176277424028484,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.0012987910954984413,
+          "outlier_rounds": []
+        },
+        "mode": "TWO-SIDED"
+      },
+      "bar": 0.0008791065907409745,
+      "p_raw": 0.021270751953125,
+      "p_raw_fraction": [
+        1394,
+        65536
+      ],
+      "p_corrected": null,
+      "verdict": "LOWER",
+      "outcome": "lower",
+      "reason": null,
+      "reasons": [],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": 0.9987168233289623,
+        "outcome": "lower",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/rss_peak",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 0,
+      "n_lower": 0,
+      "n_higher": 0,
+      "subject_median": 49250304.0,
+      "baseline_median": 49250304.0,
+      "ratio": 1.0,
+      "statistic": 1.0,
+      "scale": "ratio",
+      "gap": 0.0,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": {
+          "value": 0.0,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.0,
+          "outlier_rounds": []
+        },
+        "baseline": {
+          "value": 0.0,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.0,
+          "outlier_rounds": []
+        },
+        "mode": "TWO-SIDED"
+      },
+      "bar": 0.0,
+      "p_raw": 1.0,
+      "p_raw_fraction": [
+        1,
+        1
+      ],
+      "p_corrected": null,
+      "verdict": "NO VERDICT",
+      "outcome": "no_verdict",
+      "reason": "zero_floor",
+      "reasons": [
+        "zero_floor"
+      ],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": 1.0,
+        "outcome": "no_verdict",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/ctx_voluntary",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 0,
+      "n_lower": 0,
+      "n_higher": 0,
+      "subject_median": 0.0,
+      "baseline_median": 0.0,
+      "ratio": null,
+      "statistic": null,
+      "scale": "ratio",
+      "gap": null,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": null,
+        "baseline": null,
+        "mode": "NONE"
+      },
+      "bar": null,
+      "p_raw": null,
+      "p_raw_fraction": null,
+      "p_corrected": null,
+      "verdict": "NO VERDICT",
+      "outcome": "no_verdict",
+      "reason": "nonpositive_value",
+      "reasons": [
+        "nonpositive_value"
+      ],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": null,
+        "outcome": "no_verdict",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/ctx_involuntary",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 0,
+      "n_lower": 0,
+      "n_higher": 0,
+      "subject_median": 0.0,
+      "baseline_median": 0.0,
+      "ratio": null,
+      "statistic": null,
+      "scale": "ratio",
+      "gap": null,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": null,
+        "baseline": null,
+        "mode": "NONE"
+      },
+      "bar": null,
+      "p_raw": null,
+      "p_raw_fraction": null,
+      "p_corrected": null,
+      "verdict": "NO VERDICT",
+      "outcome": "no_verdict",
+      "reason": "nonpositive_value",
+      "reasons": [
+        "nonpositive_value"
+      ],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": null,
+        "outcome": "no_verdict",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/faults_major",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 0,
+      "n_lower": 0,
+      "n_higher": 0,
+      "subject_median": 0.0,
+      "baseline_median": 0.0,
+      "ratio": null,
+      "statistic": null,
+      "scale": "ratio",
+      "gap": null,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": null,
+        "baseline": null,
+        "mode": "NONE"
+      },
+      "bar": null,
+      "p_raw": null,
+      "p_raw_fraction": null,
+      "p_corrected": null,
+      "verdict": "NO VERDICT",
+      "outcome": "no_verdict",
+      "reason": "nonpositive_value",
+      "reasons": [
+        "nonpositive_value"
+      ],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": null,
+        "outcome": "no_verdict",
+        "agrees": true,
+        "not_computed": null
+      }
+    },
+    {
+      "case": "res/faults_minor",
+      "primary": false,
+      "subject": "nosite",
+      "baseline": "default",
+      "n_rounds": 16,
+      "n_unpaired": 0,
+      "n_untied": 16,
+      "n_lower": 16,
+      "n_higher": 0,
+      "subject_median": 1018.0,
+      "baseline_median": 1159.0,
+      "ratio": 0.8783433994823123,
+      "statistic": 0.8783433994823123,
+      "scale": "ratio",
+      "gap": 0.12165660051768767,
+      "floor": {
+        "source": "twins",
+        "unit": "fraction",
+        "subject": {
+          "value": 0.000983284169124854,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.001963671593053875,
+          "outlier_rounds": []
+        },
+        "baseline": {
+          "value": 0.0,
+          "n": 16,
+          "provisional": false,
+          "spread": 0.0008620689655172153,
+          "outlier_rounds": []
+        },
+        "mode": "TWO-SIDED"
+      },
+      "bar": 0.000983284169124854,
+      "p_raw": 3.0517578125e-05,
+      "p_raw_fraction": [
+        2,
+        65536
+      ],
+      "p_corrected": null,
+      "verdict": "NO VERDICT",
+      "outcome": "no_verdict",
+      "reason": "zero_floor",
+      "reasons": [
+        "zero_floor"
+      ],
+      "order_split": [
+        8,
+        8
+      ],
+      "sensitivity": {
+        "rounds_set_aside": [],
+        "ratio": 0.8783433994823123,
+        "outcome": "no_verdict",
+        "agrees": true,
+        "not_computed": null
+      }
+    }
+  ],
+  "same_vs_same": [
+    {
+      "side": "default",
+      "case": "wall",
+      "ratio": 1.0027993056767435,
+      "floor": 0.0027993056767434688,
+      "p_raw": 0.454498291015625,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/user",
+      "ratio": 1.1014994147314132,
+      "floor": 0.10149941473141322,
+      "p_raw": 0.076812744140625,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/sys",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/cores",
+      "ratio": 1.0003176277424028,
+      "floor": 0.0003176277424028484,
+      "p_raw": 0.454498291015625,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/rss_peak",
+      "ratio": 1.0,
+      "floor": 0.0,
+      "p_raw": 1.0,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/ctx_voluntary",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/ctx_involuntary",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/faults_major",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "default",
+      "case": "res/faults_minor",
+      "ratio": 1.0,
+      "floor": 0.0,
+      "p_raw": 0.453125,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "wall",
+      "ratio": 1.0048628453142308,
+      "floor": 0.004862845314230757,
+      "p_raw": 0.076812744140625,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/user",
+      "ratio": 1.055926525069936,
+      "floor": 0.055926525069935895,
+      "p_raw": 0.454498291015625,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/sys",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/cores",
+      "ratio": 1.0005614788483381,
+      "floor": 0.0005614788483381261,
+      "p_raw": 0.454498291015625,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/rss_peak",
+      "ratio": 1.0,
+      "floor": 0.0,
+      "p_raw": 1.0,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/ctx_voluntary",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/ctx_involuntary",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/faults_major",
+      "ratio": null,
+      "floor": null,
+      "p_raw": null,
+      "n": 16,
+      "unit": "fraction"
+    },
+    {
+      "side": "nosite",
+      "case": "res/faults_minor",
+      "ratio": 1.0009832841691249,
+      "floor": 0.000983284169124854,
+      "p_raw": 0.3017578125,
+      "n": 16,
+      "unit": "fraction"
+    }
+  ],
+  "controls": {
+    "positive": {
+      "status": "ok",
+      "entry": "default~twice",
+      "via": "repeat",
+      "tolerance": 0.1,
+      "cases": [
+        {
+          "case": "wall",
+          "expected": 2.0,
+          "ratio": 1.9998954391370538,
+          "p_raw": 3.0517578125e-05,
+          "n_rounds": 16,
+          "passed": true
+        }
+      ]
+    }
+  },
+  "launch_cost": {
+    "command": "true",
+    "n": 20,
+    "median_s": 0.00037503449999999995,
+    "p25_s": 0.00035604325,
+    "p75_s": 0.000411577,
+    "min_s": 0.000339038
+  },
+  "env_pad": {
+    "varied": false,
+    "min": null,
+    "max": null
+  },
+  "series": [
+    {
+      "case": "wall",
+      "name": "default",
+      "values": [
+        0.013815195,
+        0.013616071,
+        0.013639534,
+        0.013552292,
+        0.013569569,
+        0.013710679,
+        0.013751679,
+        0.013720629,
+        0.013830791,
+        0.013952019,
+        0.013492074,
+        0.013689695,
+        0.013589059,
+        0.013461194,
+        0.013576429,
+        0.013553535
+      ],
+      "disturbed_rounds": []
+    },
+    {
+      "case": "wall",
+      "name": "default~same",
+      "values": [
+        0.013676983,
+        0.013534845,
+        0.013437101,
+        0.013563837,
+        0.013737916,
+        0.013673836,
+        0.013880734,
+        0.013680897,
+        0.013613503,
+        0.013550776,
+        0.014023797,
+        0.013777431,
+        0.01337319,
+        0.013443163,
+        0.013450422,
+        0.013688939
+      ],
+      "disturbed_rounds": []
+    },
+    {
+      "case": "wall",
+      "name": "nosite",
+      "values": [
+        0.011633544,
+        0.01162477,
+        0.011590474,
+        0.011523855,
+        0.011432796,
+        0.011527418,
+        0.011493196,
+        0.011443914,
+        0.011376851,
+        0.011706103,
+        0.011364155,
+        0.011499719,
+        0.011249973,
+        0.011291481,
+        0.011327312,
+        0.011524553
+      ],
+      "disturbed_rounds": []
+    },
+    {
+      "case": "wall",
+      "name": "nosite~same",
+      "values": [
+        0.011413531,
+        0.011663316,
+        0.011334767,
+        0.011402663,
+        0.011436041,
+        0.011526974,
+        0.011425964,
+        0.011412326,
+        0.011504371,
+        0.011549861,
+        0.011632741,
+        0.011391347,
+        0.011194674,
+        0.011244827,
+        0.01118509,
+        0.01146966
+      ],
+      "disturbed_rounds": []
+    }
+  ],
+  "plots": {
+    "status": "off",
+    "reason": null
+  },
+  "diagnostics": {
+    "status": "off",
+    "reason": null
+  },
+  "refusals": [],
+  "notes": [
+    {
+      "code": "launch_cost_share",
+      "message": "the median wall time of default, 0.0136 s, is less than 100 times the median cost of a launch, 0.000375 s: a cost that both sides pay alike moves a ratio toward 1; the lines driver times the work alone"
+    },
+    {
+      "code": "launch_cost_share",
+      "message": "the median wall time of nosite, 0.0115 s, is less than 100 times the median cost of a launch, 0.000375 s: a cost that both sides pay alike moves a ratio toward 1; the lines driver times the work alone"
+    }
+  ],
+  "plugins": {
+    "loaded": 0,
+    "failed": 0
+  },
+  "figures": {
+    "wall.nosite_vs_default.ratio": {
+      "value": 0.8403947074801509,
+      "text": "0.84x"
+    },
+    "wall.nosite_vs_default.statistic": {
+      "value": 0.8403947074801509,
+      "text": "0.84x"
+    },
+    "wall.nosite_vs_default.speedup": {
+      "value": 1.189917060518398,
+      "text": "1.19x"
+    },
+    "wall.nosite_vs_default.percent": {
+      "value": -15.960529251984912,
+      "text": "-16.0%"
+    },
+    "wall.nosite_vs_default.p": {
+      "value": 3.0517578125e-05,
+      "text": "3.1e-05"
+    },
+    "wall.nosite_vs_default.p_corrected": {
+      "value": 3.0517578125e-05,
+      "text": "3.1e-05"
+    },
+    "wall.nosite_vs_default.bar": {
+      "value": 0.007662150990974226,
+      "text": "±0.8%"
+    },
+    "wall.nosite_vs_default.floor_subject": {
+      "value": 0.004862845314230757,
+      "text": "0.5%"
+    },
+    "wall.nosite_vs_default.floor_baseline": {
+      "value": 0.0027993056767434688,
+      "text": "0.3%"
+    },
+    "wall.nosite_vs_default.n": {
+      "value": 16,
+      "text": "16"
+    },
+    "wall.nosite_vs_default.verdict": {
+      "value": "better",
+      "text": "FASTER"
+    },
+    "wall.nosite.median": {
+      "value": 0.011496457500000001,
+      "text": "0.0115 s"
+    },
+    "wall.default.median": {
+      "value": 0.013627802500000001,
+      "text": "0.0136 s"
+    },
+    "res/user.nosite_vs_default.ratio": {
+      "value": 0.7497522593378041,
+      "text": "0.75x"
+    },
+    "res/user.nosite_vs_default.statistic": {
+      "value": 0.7497522593378041,
+      "text": "0.75x"
+    },
+    "res/user.nosite_vs_default.percent": {
+      "value": -25.024774066219592,
+      "text": "-25.0%"
+    },
+    "res/user.nosite_vs_default.p": {
+      "value": 0.004180908203125,
+      "text": "0.0042"
+    },
+    "res/user.nosite_vs_default.bar": {
+      "value": 0.1574259398013491,
+      "text": "±15.7%"
+    },
+    "res/user.nosite_vs_default.floor_subject": {
+      "value": 0.055926525069935895,
+      "text": "5.6%"
+    },
+    "res/user.nosite_vs_default.floor_baseline": {
+      "value": 0.10149941473141322,
+      "text": "10.1%"
+    },
+    "res/user.nosite_vs_default.n": {
+      "value": 16,
+      "text": "16"
+    },
+    "res/user.nosite_vs_default.verdict": {
+      "value": "lower",
+      "text": "LOWER"
+    },
+    "res/user.nosite.median": {
+      "value": 0.009320499999999999,
+      "text": "0.00932 s"
+    },
+    "res/user.default.median": {
+      "value": 0.0123845,
+      "text": "0.0124 s"
+    },
+    "res/sys.nosite_vs_default.n": {
+      "value": 0,
+      "text": "0"
+    },
+    "res/sys.nosite_vs_default.verdict": {
+      "value": "no_verdict",
+      "text": "NO VERDICT"
+    },
+    "res/sys.nosite.median": {
+      "value": 0.0020635000000000002,
+      "text": "0.00206 s"
+    },
+    "res/sys.default.median": {
+      "value": 0.0010465,
+      "text": "0.00105 s"
+    },
+    "res/cores.nosite_vs_default.ratio": {
+      "value": 0.9987168233289623,
+      "text": "1.00x"
+    },
+    "res/cores.nosite_vs_default.statistic": {
+      "value": 0.9987168233289623,
+      "text": "1.00x"
+    },
+    "res/cores.nosite_vs_default.percent": {
+      "value": -0.12831766710377224,
+      "text": "-0.1%"
+    },
+    "res/cores.nosite_vs_default.p": {
+      "value": 0.021270751953125,
+      "text": "0.021"
+    },
+    "res/cores.nosite_vs_default.bar": {
+      "value": 0.0008791065907409745,
+      "text": "±0.1%"
+    },
+    "res/cores.nosite_vs_default.floor_subject": {
+      "value": 0.0005614788483381261,
+      "text": "0.1%"
+    },
+    "res/cores.nosite_vs_default.floor_baseline": {
+      "value": 0.0003176277424028484,
+      "text": "0.0%"
+    },
+    "res/cores.nosite_vs_default.n": {
+      "value": 16,
+      "text": "16"
+    },
+    "res/cores.nosite_vs_default.verdict": {
+      "value": "lower",
+      "text": "LOWER"
+    },
+    "res/cores.nosite.median": {
+      "value": 0.9925923380926089,
+      "text": "0.993 cores"
+    },
+    "res/cores.default.median": {
+      "value": 0.993426980090798,
+      "text": "0.993 cores"
+    },
+    "res/rss_peak.nosite_vs_default.ratio": {
+      "value": 1.0,
+      "text": "1.00x"
+    },
+    "res/rss_peak.nosite_vs_default.statistic": {
+      "value": 1.0,
+      "text": "1.00x"
+    },
+    "res/rss_peak.nosite_vs_default.percent": {
+      "value": 0.0,
+      "text": "0.0%"
+    },
+    "res/rss_peak.nosite_vs_default.p": {
+      "value": 1.0,
+      "text": "1.0"
+    },
+    "res/rss_peak.nosite_vs_default.bar": {
+      "value": 0.0,
+      "text": "±0.0%"
+    },
+    "res/rss_peak.nosite_vs_default.floor_subject": {
+      "value": 0.0,
+      "text": "0.0%"
+    },
+    "res/rss_peak.nosite_vs_default.floor_baseline": {
+      "value": 0.0,
+      "text": "0.0%"
+    },
+    "res/rss_peak.nosite_vs_default.n": {
+      "value": 0,
+      "text": "0"
+    },
+    "res/rss_peak.nosite_vs_default.verdict": {
+      "value": "no_verdict",
+      "text": "NO VERDICT"
+    },
+    "res/rss_peak.nosite.median": {
+      "value": 49250304.0,
+      "text": "49300000 bytes"
+    },
+    "res/rss_peak.default.median": {
+      "value": 49250304.0,
+      "text": "49300000 bytes"
+    },
+    "res/ctx_voluntary.nosite_vs_default.n": {
+      "value": 0,
+      "text": "0"
+    },
+    "res/ctx_voluntary.nosite_vs_default.verdict": {
+      "value": "no_verdict",
+      "text": "NO VERDICT"
+    },
+    "res/ctx_voluntary.nosite.median": {
+      "value": 0.0,
+      "text": "0 count"
+    },
+    "res/ctx_voluntary.default.median": {
+      "value": 0.0,
+      "text": "0 count"
+    },
+    "res/ctx_involuntary.nosite_vs_default.n": {
+      "value": 0,
+      "text": "0"
+    },
+    "res/ctx_involuntary.nosite_vs_default.verdict": {
+      "value": "no_verdict",
+      "text": "NO VERDICT"
+    },
+    "res/ctx_involuntary.nosite.median": {
+      "value": 0.0,
+      "text": "0 count"
+    },
+    "res/ctx_involuntary.default.median": {
+      "value": 0.0,
+      "text": "0 count"
+    },
+    "res/faults_major.nosite_vs_default.n": {
+      "value": 0,
+      "text": "0"
+    },
+    "res/faults_major.nosite_vs_default.verdict": {
+      "value": "no_verdict",
+      "text": "NO VERDICT"
+    },
+    "res/faults_major.nosite.median": {
+      "value": 0.0,
+      "text": "0 count"
+    },
+    "res/faults_major.default.median": {
+      "value": 0.0,
+      "text": "0 count"
+    },
+    "res/faults_minor.nosite_vs_default.ratio": {
+      "value": 0.8783433994823123,
+      "text": "0.88x"
+    },
+    "res/faults_minor.nosite_vs_default.statistic": {
+      "value": 0.8783433994823123,
+      "text": "0.88x"
+    },
+    "res/faults_minor.nosite_vs_default.percent": {
+      "value": -12.165660051768768,
+      "text": "-12.2%"
+    },
+    "res/faults_minor.nosite_vs_default.p": {
+      "value": 3.0517578125e-05,
+      "text": "3.1e-05"
+    },
+    "res/faults_minor.nosite_vs_default.bar": {
+      "value": 0.000983284169124854,
+      "text": "±0.1%"
+    },
+    "res/faults_minor.nosite_vs_default.floor_subject": {
+      "value": 0.000983284169124854,
+      "text": "0.1%"
+    },
+    "res/faults_minor.nosite_vs_default.floor_baseline": {
+      "value": 0.0,
+      "text": "0.0%"
+    },
+    "res/faults_minor.nosite_vs_default.n": {
+      "value": 16,
+      "text": "16"
+    },
+    "res/faults_minor.nosite_vs_default.verdict": {
+      "value": "no_verdict",
+      "text": "NO VERDICT"
+    },
+    "res/faults_minor.nosite.median": {
+      "value": 1018.0,
+      "text": "1020 count"
+    },
+    "res/faults_minor.default.median": {
+      "value": 1159.0,
+      "text": "1160 count"
+    },
+    "launch_cost.median": {
+      "value": 0.00037503449999999995,
+      "text": "0.000375 s"
+    },
+    "launch_cost.spread": {
+      "value": 5.553375000000001e-05,
+      "text": "5.55e-05 s"
+    }
+  },
+  "artifacts": {
+    "capture": "capture.jsonl",
+    "markdown": "results.md",
+    "plan": "plan.tsv",
+    "html": "report.html",
+    "diagnostics": null,
+    "charts": [],
+    "profiles": []
+  }
+}

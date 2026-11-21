@@ -1,0 +1,30 @@
+# A vendor's public PyTorch container against an official Python image with
+# PyTorch from pip. run.sh installs the pip side's PyTorch once into .deps/
+# and mounts this folder at /showcase, read-only, in every launch.
+
+[workload]
+argv = ["python", "/showcase/bench.py"]
+driver = "lines"
+
+[sides.pip]
+image = "python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+env = { PYTHONPATH = "/showcase/.deps/torch" }
+baseline = true
+
+[sides.vendor]
+image = "nvcr.io/nvidia/pytorch:26.10-py3@sha256:6d347d649d5dd108b4652f1b9cea6a3c859692ac408617a9108616da40e3da1f"
+
+[launch]
+gpus = "0"
+memory = "16g"
+# The vendor image sets this variable to 1; 0 on both sides gives the two
+# sides the same value.
+env = { PYTHONDONTWRITEBYTECODE = "1", TORCH_ALLOW_TF32_CUBLAS_OVERRIDE = "0" }
+identify = ["python", "-c", "import sys, torch; print(sys.version.split()[0], torch.__version__, torch.version.cuda, torch.backends.cudnn.version())"]
+
+[controls]
+positive_via = "factor"
+
+# The explain step is off, so a run makes only its measured rounds.
+[explain]
+mode = "off"

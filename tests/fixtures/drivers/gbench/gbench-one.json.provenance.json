@@ -1,0 +1,11 @@
+{
+  "generator": "tests/fixtures/_gen/drivers.py",
+  "seed": null,
+  "tool": "Google Benchmark",
+  "version": "1.8.3 (Ubuntu package libbenchmark-dev 1.8.3-3), built with g++ 13.3.0",
+  "synthetic": false,
+  "image": "ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5",
+  "workload": "the program GBENCH_PROGRAM of the generator, as bench.cc, compiled with g++ -O2 -std=c++17 bench.cc -lbenchmark -lpthread",
+  "command": "./bench --benchmark_min_time=0.05s --benchmark_filter=BM_vector_sum --benchmark_out=gbench-one.json --benchmark_out_format=json",
+  "replaced": "context.date, host_name, num_cpus, mhz_per_cpu, caches and load_avg replaced by made-up values"
+}

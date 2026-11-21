@@ -1,0 +1,11 @@
+{
+  "generator": "tests/fixtures/_gen/drivers.py",
+  "seed": null,
+  "tool": "pytest-benchmark",
+  "version": "5.3.1 (with pytest 9.2.0)",
+  "synthetic": false,
+  "image": "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b",
+  "workload": "the tests PYTEST_BENCHMARK_PROGRAM of the generator, as test_made_up.py",
+  "command": "python -m pytest -q -p no:cacheprovider test_made_up.py --benchmark-min-rounds=7 --benchmark-max-time=0.000001 --benchmark-warmup=off --benchmark-storage=file://storage --benchmark-save=made_up",
+  "replaced": "machine_info replaced by made-up values without a node name; datetime made up"
+}

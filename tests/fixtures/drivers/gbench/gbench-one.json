@@ -1,0 +1,47 @@
+{
+  "context": {
+    "date": "2000-01-01T00:00:00+00:00",
+    "host_name": "host-a",
+    "executable": "./bench",
+    "num_cpus": 4,
+    "mhz_per_cpu": 1000,
+    "cpu_scaling_enabled": false,
+    "caches": [],
+    "load_avg": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "library_build_type": "debug"
+  },
+  "benchmarks": [
+    {
+      "name": "BM_vector_sum/64",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "BM_vector_sum/64",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 3979588,
+      "real_time": 17.495510089350873,
+      "cpu_time": 17.495475411022447,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_sum/4096",
+      "family_index": 0,
+      "per_family_instance_index": 1,
+      "run_name": "BM_vector_sum/4096",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 63864,
+      "real_time": 1122.2796711441188,
+      "cpu_time": 1118.5414004760116,
+      "time_unit": "ns"
+    }
+  ]
+}

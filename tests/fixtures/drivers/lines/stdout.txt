@@ -1,0 +1,6 @@
+preparing: this line is ignored by the reader
+::pairbench:: {"case": "sort", "value": 0.0266009580809623}
+::pairbench:: {"case": "sum", "value": 2.200826071202755, "unit": "ms"}
+::pairbench:: {"case": "items_per_s", "value": 7518526.18959373, "unit": "items/s", "better": "higher"}
+::pairbench:: {"case": "items", "value": 200000, "unit": "count", "better": "none"}
+done: total 99911.471

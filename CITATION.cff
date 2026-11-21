@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use pairbench in your work, please cite it as below."
+title: "pairbench"
+abstract: >-
+  Paired benchmarking: alternating rounds, a measured noise floor, an exact
+  sign test with a correction for testing several cases, and a verdict per
+  case.
+type: software
+authors:
+  - name: "Eugo, Inc."
+version: "0.1.0"
+license: Apache-2.0
+repository-code: "https://github.com/eugo-inc/pairbench"
+url: "https://eugo.io/docs/pairbench/latest/"
+keywords:
+  - benchmark
+  - performance
+  - statistics
+  - containers

@@ -1,0 +1,187 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pairbench"
+version = "0.1.0"
+description = "Benchmark performance optimizations with statistics you can trust: paired, alternating runs with a measured noise floor and exact p-values. Compare container images, Python versions or inference servers on your own machine."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Eugo, Inc." }]
+keywords = [
+    "benchmarking",
+    "performance-testing",
+    "statistics",
+    "containers",
+    "docker",
+    "podman",
+    "llm-inference",
+    "gpu",
+    "mcp",
+    "ai-agents",
+    "performance",
+    "optimization",
+    "benchmark",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Benchmark",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+gpu = ["nvidia-ml-py"]
+# The tool server reads both layouts of the SDK: mcp.server.fastmcp.FastMCP in
+# the 1.x releases and mcp.server.mcpserver.MCPServer in the 2.x releases. The
+# lower bound is the oldest release its tests pass with; the upper bound is the
+# next major release.
+mcp = ["mcp>=1.21.1,<3"]
+llm = ["guidellm", "aiperf"]
+micro = ["pytest-benchmark"]
+plot = ["matplotlib>=3.7"]
+
+[project.urls]
+Documentation = "https://eugo.io/docs/pairbench/latest/"
+Changelog = "https://eugo.io/docs/pairbench/latest/changelog/"
+Issues = "https://github.com/eugo-inc/pairbench/issues"
+Source = "https://github.com/eugo-inc/pairbench"
+
+[project.scripts]
+pairbench = "pairbench.cli.main:main"
+
+# Built-in plug-ins register through the same groups as third-party ones.
+[project.entry-points."pairbench.side_kinds"]
+cmd = "pairbench.sides.command:CommandKind"
+image = "pairbench.sides.container:ImageKind"
+python = "pairbench.sides.pyenv:PythonKind"
+venv = "pairbench.sides.pyenv:VenvKind"
+conda = "pairbench.sides.pyenv:CondaKind"
+serve = "pairbench.sides.serve:ServeKind"
+file = "pairbench.sides.files:FileKind"
+
+[project.entry-points."pairbench.drivers"]
+wall = "pairbench.drivers.wall:WallDriver"
+lines = "pairbench.drivers.lines:LinesDriver"
+gbench = "pairbench.drivers.gbench:GbenchDriver"
+nvbench = "pairbench.drivers.nvbench:NvbenchDriver"
+pytest-benchmark = "pairbench.drivers.pytest_benchmark:PytestBenchmarkDriver"
+hyperfine = "pairbench.drivers.hyperfine:HyperfineDriver"
+perf = "pairbench.drivers.perf:PerfDriver"
+llama-bench = "pairbench.drivers.llama_bench:LlamaBenchDriver"
+guidellm = "pairbench.drivers.guidellm:GuidellmDriver"
+aiperf = "pairbench.drivers.aiperf:AiperfDriver"
+vllm-bench = "pairbench.drivers.vllm_bench:VllmBenchDriver"
+
+[project.entry-points."pairbench.capture_readers"]
+jsonl = "pairbench.capture.reader:JsonlReader"
+text = "pairbench.capture.text:TextReader"
+
+[project.entry-points."pairbench.gates"]
+cpus = "pairbench.gates.cpus:CpusGate"
+quiet = "pairbench.gates.quiet:QuietGate"
+census = "pairbench.gates.census:CensusGate"
+
+[project.entry-points."pairbench.rules"]
+strict = "pairbench.registry:StrictRule"
+
+[project.entry-points."pairbench.reporters"]
+terminal = "pairbench.report.terminal:TerminalReporter"
+markdown = "pairbench.report.markdown:MarkdownReporter"
+json = "pairbench.results.writer:JsonReporter"
+html = "pairbench.page.html:HtmlReporter"
+
+[project.entry-points."pairbench.launchers"]
+docker = "pairbench.sides.serve:DockerLauncher"
+podman = "pairbench.sides.serve:PodmanLauncher"
+host = "pairbench.sides.serve:HostLauncher"
+
+# Built files are listed explicitly so nothing else in the folder can ride along.
+# The wheel takes every file under src/pairbench, which includes py.typed and
+# the JSON Schemas under results/schema, and the agent skill under
+# skills/pairbench, which it carries as package data at pairbench/skill.
+[tool.hatch.build.targets.wheel]
+only-include = ["src/pairbench", "skills/pairbench"]
+# Notes and settings an agent may keep beside the source never ship.
+exclude = ["CLAUDE.md", ".claude"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+"skills/pairbench" = "pairbench/skill"
+
+# The source archive also walks only the paths it lists, so the checkout's
+# .claude/skills/pairbench link, which points into skills/pairbench, is never
+# walked and cannot stand in for the folder it points at.
+[tool.hatch.build.targets.sdist]
+only-include = ["src/pairbench", "skills/pairbench", "LICENSE", "NOTICE", "README.md", "pyproject.toml"]
+exclude = ["CLAUDE.md", ".claude"]
+
+# An editable install puts the source folder on the path.
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
+
+# What the tests, the lint and the type check need. The package itself needs nothing.
+[dependency-groups]
+test = ["pytest>=8", "jsonschema>=4.18"]
+lint = ["ruff", "mypy"]
+build = ["build", "hatchling"]
+dev = [{ include-group = "test" }, { include-group = "lint" }, { include-group = "build" }]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "-ra"]
+markers = [
+    "needs_engine(name): the test needs a container engine; without a name, any engine will do",
+    "needs_gpu: the test needs a GPU",
+    "needs_tool(name): the test needs the named external program on PATH",
+    "needs_plot: the test needs the plot extra",
+    "delivery: the test builds the wheel and runs the installed command",
+    "slow: the test takes more than a few seconds",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+# The page of Python names is written by tools/api_reference.py and must equal
+# what it writes, so the formatter leaves the code blocks of that page alone.
+extend-exclude = ["docs/reference/python-names.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pairbench"]
+
+# The stack sampler runs on the interpreter of a side, which may be as old as
+# Python 3.8, so it keeps the syntax and the typing names of that version and
+# calls zip() without the argument that version does not have.
+[tool.ruff.lint.per-file-ignores]
+"src/pairbench/diagnose/pysampler.py" = ["UP", "B905"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+files = ["src/pairbench"]
+warn_unreachable = false
+
+# Optional extras are imported only inside the function that needs them and
+# may be absent where the type check runs.
+[[tool.mypy.overrides]]
+module = ["pynvml", "pynvml.*", "mcp", "mcp.*", "guidellm", "guidellm.*", "aiperf", "aiperf.*", "pytest_benchmark", "pytest_benchmark.*", "matplotlib", "matplotlib.*"]
+ignore_missing_imports = true

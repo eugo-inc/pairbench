@@ -1,0 +1,22 @@
+# One image against itself. run.sh runs this experiment twice: once on a quiet
+# machine and once beside a second container of the same image that runs a
+# busy loop. This folder is mounted at /showcase, read-only, in every launch.
+
+[workload]
+argv = ["python", "/showcase/spin.py"]
+driver = "wall"
+
+[sides.first]
+image = "python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+baseline = true
+
+[sides.second]
+image = "python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+
+[launch]
+allow_identical = true
+memory = "1g"
+env = { PYTHONDONTWRITEBYTECODE = "1" }
+
+[gates]
+mode = "warn"

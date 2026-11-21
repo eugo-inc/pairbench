@@ -1,0 +1,12 @@
+{
+  "generator": "tests/fixtures/_gen/diagnose_perf.py",
+  "seed": null,
+  "tool": "perf",
+  "version": "perf version 6.12.117",
+  "synthetic": false,
+  "image": "debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2",
+  "command": "perf buildid-list of the same recording",
+  "workload": "the made-up Python workload of the generator, run by Python 3.13.5",
+  "environment": "--cap-add PERFMON and no other capability",
+  "replaced": "the build ids of the kernel's own objects replaced by zeros"
+}

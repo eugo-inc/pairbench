@@ -1,0 +1,13 @@
+# The images of this showcase, each pinned by the digest of its multi-platform
+# index, as the registry gave it for the tag. pairbench.toml names the same
+# references. The packages each side installs are pinned in run.sh.
+
+[sides.pip]
+image = "docker.io/library/python:3.13-slim"
+digest = "sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+packages = ["numpy==2.5.4 (pip, from PyPI)"]
+
+[sides.conda]
+image = "docker.io/condaforge/miniforge3:26.9.4-2"
+digest = "sha256:dfb274710eee2bb062c87b15c10fde6ea91f71b763796b5de489df87b08cf678"
+packages = ["python=3.13", "numpy=2.5.4 (conda, from conda-forge)"]

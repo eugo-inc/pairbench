@@ -1,0 +1,61 @@
+# An example GitHub Actions workflow for a slowdown check on each pull request.
+# It is a template for your own repository: it expects this folder's
+# pairbench.toml, run.sh and tests at showcases/pipeline-slowdown-check/, and the
+# library's source under src/, in both the base and the head. The library of
+# this showcase lives under revisions/ instead, so copy those files, put this
+# file in .github/workflows/, and change the paths to match.
+#
+# The job checks out the base of the pull request and its head side by side,
+# and compares them with pairbench. The job fails when a primary case of the
+# head is SLOWER than the base; UNRESOLVED and TIE pass. A shared runner is a
+# noisy machine: the twins measure that noise in the same run, so a noisy run
+# gives UNRESOLVED rather than a false SLOWER.
+
+name: slowdown check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  slowdown:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the head of the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: head
+
+      - name: Check out the base of the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install pairbench
+        run: python -m pip install pairbench
+
+      - name: Compare the base and the head
+        working-directory: head/showcases/pipeline-slowdown-check
+        run: >-
+          ./run.sh
+          --set 'sides.a.env.PYTHONPATH="/base/src:/showcase/.deps/pytest"'
+          --set 'sides.b.env.PYTHONPATH="/head/src:/showcase/.deps/pytest"'
+          --set "launch.mounts=[\"$PWD:/showcase:ro\", \"$GITHUB_WORKSPACE/base:/base:ro\", \"$GITHUB_WORKSPACE/head:/head:ro\"]"
+          --fail-on worse
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pairbench-results
+          path: |
+            head/showcases/pipeline-slowdown-check/pairbench-runs/*/results.json
+            head/showcases/pipeline-slowdown-check/pairbench-runs/*/results.md

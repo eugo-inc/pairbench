@@ -1,0 +1,10 @@
+{
+  "generator": "tests/fixtures/_gen/energy_smi.py",
+  "seed": null,
+  "tool": "nvidia-smi",
+  "version": "query format of the nvidia-smi documentation, change log up to v620",
+  "synthetic": true,
+  "source": "https://docs.nvidia.com/deploy/nvidia-smi/index.html",
+  "query": "timestamp,index,power.draw,temperature.gpu,clocks_throttle_reasons.active",
+  "options": "--format=csv,noheader,nounits -lms 200"
+}

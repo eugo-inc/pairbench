@@ -1,0 +1,264 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026, Eugo, Inc.
+"""``pairbench gate``: run one machine check on its own.
+
+``gate check --cpus LIST`` runs the CPU check on a pinned set: the core
+types of the set, and whether pinning can be done here. A check that
+passed prints its status on standard output; one that did not pass is
+refused under ``enforce`` (``E_GATE_FAILED`` or ``E_GATE_UNAVAILABLE``,
+exit 4) and its line is printed on standard error. ``gate wait-quiet --
+COMMAND`` runs the command once the machine is quiet and exits with the
+command's own exit code; when the machine does not become quiet in time
+the command is not run and the exit code is 4.
+
+Both read the settings ``run`` and ``plan`` read: the config file that
+``--config`` or ``PAIRBENCH_CONFIG`` names, the ``PAIRBENCH__`` variables
+and ``--set``, checked as strictly, so an unknown key is ``E_CONFIG``. A
+flag of the gate command wins over the file and the variables; a flag and
+``--set`` that give one key different values are refused, as ``run``
+refuses them.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import os
+import sys
+from collections.abc import Mapping
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Final
+
+from pairbench.cli.common import emit, print_note
+from pairbench.errors import EXIT_OK, Refusal
+
+if TYPE_CHECKING:
+    from pairbench.model import Experiment, LaunchSettings
+
+# The side the gate commands add to a config that declares none, so that the
+# config is read as strictly as run and plan read it. No check sees it.
+STAND_IN: Final = "gate"
+# The command a side table stands in with when it names no kind of side: run
+# takes the kind from --side, which the gate commands do not have.
+STAND_IN_COMMAND: Final[tuple[str, ...]] = ("true",)
+# The keys of a side table without a kind that the gate commands read.
+KINDLESS_KEYS: Final[tuple[str, ...]] = ("baseline", "launch")
+# The note of a config whose sides all are result files.
+NOTE_SHARED_SETTINGS: Final = "checks_use_shared_settings"
+
+
+def _config_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--config", metavar="FILE", help="the config file to read")
+    parser.add_argument(
+        "--set", action="append", default=[], dest="sets", metavar="KEY=VALUE", help="(repeat)"
+    )
+
+
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """The two forms: ``check --cpus LIST`` and ``wait-quiet -- COMMAND``."""
+    forms = parser.add_subparsers(dest="form", metavar="check|wait-quiet")
+    forms.required = True
+    check = forms.add_parser("check", help="the CPU check on a pinned set", allow_abbrev=False)
+    check.add_argument("--cpus", required=True, metavar="LIST", help="the CPUs to pin to")
+    check.add_argument("--allow-mixed-core-types", action="store_true")
+    check.add_argument("--json", action="store_true", help="print the check's record as JSON")
+    _config_arguments(check)
+    wait = forms.add_parser(
+        "wait-quiet",
+        help="run a command once the machine is quiet",
+        allow_abbrev=False,
+    )
+    _config_arguments(wait)
+
+
+def _experiment(
+    options: argparse.Namespace, flags: Mapping[str, Any] | None = None
+) -> tuple[Experiment, bool]:
+    """The experiment ``run`` would read, with the gate command's own flags in ``flags``.
+
+    The flags lay over the file and the variables, and a flag and ``--set``
+    that give one key different values are refused, as ``run`` refuses them.
+    The second value says whether the config declares a side; a config that
+    declares none is read with the stand-in side ``STAND_IN``. A side table
+    that names no kind of side, because ``run --side`` gives the kind, is
+    read as a command side with its ``baseline`` and ``launch`` keys; the
+    run that gives the kind reads the rest. A key in such a table that no
+    kind of side takes is ``E_CONFIG``, as ``run`` refuses it.
+    """
+    from pairbench import config
+    from pairbench.model import Experiment
+
+    path = Path(options.config) if options.config else None
+    data = config.resolve_config(path, flags=flags, sets=options.sets)
+    sides = data.get("sides")
+    declared = bool(sides)
+    if not declared:
+        data = {**data, "sides": {STAND_IN: {"cmd": list(STAND_IN_COMMAND)}}}
+    elif isinstance(sides, Mapping):
+        data = {
+            **data,
+            "sides": {name: _with_kind(str(name), table) for name, table in sides.items()},
+        }
+    return Experiment.from_json(data), declared
+
+
+def _with_kind(name: str, table: Any) -> Any:
+    """A side table as the gate commands read it: one without a kind stands in as a command.
+
+    Each key of a table without a kind is checked first against the keys
+    some kind of side takes, so a misspelt key is refused, not dropped; an
+    empty table under a misspelt name is refused too.
+    """
+    from pairbench.config import SIDE_KIND_KEYS, dict_leaves
+    from pairbench.model import CONFIG_KEYS
+
+    if not isinstance(table, Mapping) or any(key in table for key in SIDE_KIND_KEYS):
+        return table
+    dict_leaves({"sides": {name: table}})
+    known = {key.split(".")[2] for key in CONFIG_KEYS if key.startswith("sides.NAME.")}
+    unknown = [f"sides.{name}.{key}" for key in table if str(key) not in known]
+    if unknown:
+        raise Refusal("E_CONFIG", f"unknown config key: {', '.join(unknown)}")
+    kept = {key: table[key] for key in KINDLESS_KEYS if key in table}
+    return {**kept, "cmd": list(STAND_IN_COMMAND)}
+
+
+def _side_settings(
+    experiment: Experiment, launch: LaunchSettings, declared: bool
+) -> dict[str, LaunchSettings]:
+    """The launch settings of each side the config declares that launches, by name."""
+    from pairbench.model import KIND_FILE
+
+    if not declared:
+        return {}
+    return {s.name: launch.for_side(s) for s in experiment.sides if s.kind != KIND_FILE}
+
+
+def _checked_launch(experiment: Experiment, declared: bool) -> LaunchSettings:
+    """The shared launch settings the checks read, with the overrides of sides that launch.
+
+    A config whose sides are all result files launches nothing: the checks
+    use the shared settings alone, and a loud note says so.
+    """
+    from pairbench.model import KIND_FILE
+
+    launch = experiment.launch
+    if not declared:
+        return launch
+    launched = {s.name for s in experiment.sides if s.kind != KIND_FILE}
+    if not launched:
+        print_note(
+            NOTE_SHARED_SETTINGS,
+            "the sides of the config are result files, which launch nothing; the checks use "
+            "the shared launch settings",
+        )
+    overrides = {name: table for name, table in launch.overrides.items() if name in launched}
+    return dataclasses.replace(launch, overrides=overrides)
+
+
+def _machine(environ: dict[str, str]) -> tuple[bool, bool]:
+    """Whether the tool runs inside a container, and in an automated pipeline."""
+    from pairbench import api
+    from pairbench.api import MakeFacts, delegate
+
+    make_facts: MakeFacts = delegate("facts")
+    try:
+        record = make_facts().machine_record(gpus=None, node_type=None, environ=environ)
+        return bool(record.in_container), api.is_ci(environ)
+    except Exception:
+        return False, api.is_ci(environ)
+
+
+def check(options: argparse.Namespace) -> int:
+    """Run the CPU check on the set given, under ``enforce``."""
+    import json
+
+    from pairbench import registry
+    from pairbench.api import GateContext, gate_line
+    from pairbench.model import LaunchSettings
+
+    try:
+        LaunchSettings(cpus=options.cpus)
+    except ValueError as exc:
+        raise Refusal("E_USAGE", f"--cpus: {exc}") from None
+    # A range that runs backwards is malformed input, refused as the run
+    # refuses it, not a check that cannot run.
+    for part in options.cpus.split(","):
+        low, dash, high = part.strip().partition("-")
+        if dash and low.isdigit() and high.isdigit() and int(high) < int(low):
+            raise Refusal("E_USAGE", f"--cpus: the CPU range {part.strip()} runs backwards")
+    flags: dict[str, Any] = {"launch": {"cpus": options.cpus}}
+    if options.allow_mixed_core_types:
+        flags["gates"] = {"allow_mixed_core_types": True}
+    experiment, declared = _experiment(options, flags)
+    environ = dict(os.environ)
+    in_container, ci = _machine(environ)
+    launch = _checked_launch(experiment, declared)
+    ctx = GateContext(
+        mode="enforce",
+        gates=dataclasses.replace(experiment.gates, mode="enforce"),
+        launch=launch,
+        environ=environ,
+        in_container=in_container,
+        ci=ci,
+        note=print_note,
+        sides=_side_settings(experiment, launch, declared),
+    )
+    record = registry.gate("cpus").check(ctx)
+    if options.json:
+        emit(json.dumps(record.to_json(), indent=2))
+    elif record.status == "pass":
+        message = record.detail.get("message")
+        emit(f"check {record.name}: {record.status}" + (f": {message}" if message else ""))
+    if record.status != "pass":
+        print(gate_line(record), file=sys.stderr)
+        reason = message_of(record.detail)
+        if record.status == "fail":
+            raise Refusal("E_GATE_FAILED", f"check {record.name} failed: {reason}")
+        raise Refusal("E_GATE_UNAVAILABLE", f"check {record.name} could not run fully: {reason}")
+    return EXIT_OK
+
+
+def message_of(detail: Mapping[str, Any]) -> str:
+    """The one-line reason a check gave, or a plain word when it gave none."""
+    message = detail.get("message")
+    return message if isinstance(message, str) and message else "no reason given"
+
+
+def wait_quiet(options: argparse.Namespace) -> int:
+    """Wait for a quiet machine, then run the command once; its exit code is returned."""
+    from pairbench import registry
+    from pairbench.gates.quiet import wait_then_run
+
+    command = list(options.after or [])
+    if not command:
+        raise Refusal("E_USAGE", "gate wait-quiet needs a command after --")
+    experiment, declared = _experiment(options)
+    environ = dict(os.environ)
+    in_container, ci = _machine(environ)
+    launch = _checked_launch(experiment, declared)
+    gate: Any = registry.gate("quiet")
+    return wait_then_run(
+        command,
+        gates=experiment.gates,
+        launch=launch,
+        sides=_side_settings(experiment, launch, declared),
+        environ=environ,
+        in_container=in_container,
+        ci=ci,
+        gate=gate,
+        err=sys.stderr,
+        note=print_note,
+    )
+
+
+def command(options: argparse.Namespace) -> int:
+    """Run ``pairbench gate``."""
+    if options.form == "check":
+        if options.after is not None:
+            raise Refusal("E_USAGE", "gate check takes no command after --")
+        return check(options)
+    return wait_quiet(options)
+
+
+__all__ = ["add_arguments", "check", "command", "wait_quiet"]

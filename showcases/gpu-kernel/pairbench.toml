@@ -1,0 +1,23 @@
+# Two tags of the public CUDA development image. run.sh builds kernel_bench
+# once inside each image, with that image's own toolkit, into .build/, and
+# mounts this folder at /showcase, read-only, in every launch.
+
+[workload]
+driver = "nvbench"
+
+[sides.cuda1343]
+image = "nvidia/cuda:13.4.3-devel-ubuntu24.04@sha256:5626a7d0ecafe3e7c115a452f6b05f20f214f8509346196a7835b205dc5b7fd9"
+args = ["/showcase/.build/cuda1343/kernel_bench"]
+baseline = true
+
+[sides.cuda1350]
+image = "nvidia/cuda:13.5.0-devel-ubuntu24.04@sha256:d3fa71793540a2b76ab227ee00016e754da2758b7a51b49bc8a72543af5a8bc2"
+args = ["/showcase/.build/cuda1350/kernel_bench"]
+
+[launch]
+gpus = "0"
+memory = "8g"
+identify = ["nvcc", "--version"]
+
+[controls]
+positive_via = "factor"

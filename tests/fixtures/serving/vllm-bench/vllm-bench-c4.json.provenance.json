@@ -1,0 +1,12 @@
+{
+ "generator": "tests/fixtures/_gen/serving.py",
+ "seed": 1234,
+ "tool": "vllm bench serve",
+ "version": "the result fields of vLLM v0.33.0",
+ "synthetic": true,
+ "image": null,
+ "server": null,
+ "workload": null,
+ "command": "vllm bench serve --max-concurrency 4 --seed 1234 --save-result",
+ "replaced": "every value made up; the fields as https://github.com/vllm-project/vllm/blob/v0.33.0/vllm/benchmarks/serve.py saves them without --save-detailed"
+}

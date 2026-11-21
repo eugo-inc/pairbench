@@ -1,0 +1,1110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pairbench/capture/v1",
+  "title": "pairbench capture record",
+  "description": "One line of capture.jsonl. The record type is the value of \"t\".",
+  "type": "object",
+  "properties": {
+    "t": {
+      "enum": [
+        "header",
+        "machine",
+        "side",
+        "gate",
+        "lineup",
+        "cases",
+        "case_key",
+        "case_names",
+        "launch",
+        "obs",
+        "launch_cost",
+        "note",
+        "end"
+      ]
+    }
+  },
+  "required": [
+    "t"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "header"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/Header"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "machine"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/MachineRecord"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "side"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/Side"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "gate"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/GateRecord"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "lineup"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/Lineup"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "cases"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/CasesRecord"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "case_key"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/CaseKeyRecord"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "case_names"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/CaseNamesRecord"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "launch"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/Launch"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "obs"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/Observation"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "launch_cost"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/LaunchCost"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "note"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/Note"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "t": {
+            "const": "end"
+          }
+        },
+        "required": [
+          "t"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/End"
+      }
+    }
+  ],
+  "$defs": {
+    "Case": {
+      "type": "object",
+      "description": "One named measurement a launch produces.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "better": {
+          "enum": [
+            "lower",
+            "higher",
+            "none"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "time",
+            "rate",
+            "efficiency",
+            "count",
+            "other"
+          ]
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "metric",
+        "unit",
+        "better",
+        "kind",
+        "primary",
+        "group"
+      ],
+      "additionalProperties": false,
+      "not": {
+        "properties": {
+          "better": {
+            "const": "none"
+          },
+          "primary": {
+            "const": true
+          }
+        },
+        "required": [
+          "better",
+          "primary"
+        ]
+      }
+    },
+    "CaseKeyRecord": {
+      "type": "object",
+      "description": "The run's own random key for the marks it adds to case names whose cut dropped words. Written once, before the first case_names record; no setting gives it.",
+      "properties": {
+        "t": {
+          "const": "case_key"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "32 random bytes as 64 lowercase hex digits."
+        }
+      },
+      "required": [
+        "t",
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "CaseName": {
+      "type": "object",
+      "description": "The name a run gave to a case id that a side read, when the run cut or hid part of it.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The case id as the results show it: its absolute paths cut and its secrets hidden, with ' +' and 8 hex digits at its end (before a part a driver adds, such as '/cpu_time') when the cut dropped words that hold no '/'."
+        },
+        "side": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The side that read the id."
+        },
+        "tell_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The SHA-256 of what tells the case apart from ids cut alike: for a name with a mark, the words of its id that hold no '/', read with its secrets hidden and the folders of a path written with '%2F' cut; for any other name, the name. The mark is made from it with the run's key."
+        },
+        "hidden_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The SHA-256 of the id with its secrets hidden."
+        },
+        "read_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The SHA-256 of the id as read. The capture is private, like the command line it keeps."
+        }
+      },
+      "required": [
+        "name",
+        "side",
+        "tell_sha256",
+        "hidden_sha256",
+        "read_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "CaseNamesRecord": {
+      "type": "object",
+      "description": "Names a launch gave to case ids it cut or hid.",
+      "properties": {
+        "t": {
+          "const": "case_names"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaseName"
+          }
+        }
+      },
+      "required": [
+        "t",
+        "names"
+      ],
+      "additionalProperties": false
+    },
+    "CasesRecord": {
+      "type": "object",
+      "description": "Cases that were not known when the lineup record was written.",
+      "properties": {
+        "t": {
+          "const": "cases"
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Case"
+          }
+        }
+      },
+      "required": [
+        "t",
+        "cases"
+      ],
+      "additionalProperties": false
+    },
+    "CpuGroup": {
+      "type": "object",
+      "description": "A set of CPUs of one core type: the CPU list, the type key, the maximum frequency.",
+      "properties": {
+        "cpus": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "max_khz": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cpus",
+        "key",
+        "max_khz"
+      ],
+      "additionalProperties": false
+    },
+    "CpuRecord": {
+      "type": "object",
+      "description": "The CPU of the machine. ``cache_domains`` lists the CPUs that share a last-level cache.",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "identity": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CpuGroup"
+          }
+        },
+        "cache_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "model",
+        "identity",
+        "cache_domains"
+      ],
+      "additionalProperties": false
+    },
+    "DiscardThresholds": {
+      "type": "object",
+      "description": "The thresholds above which a witness marks a launch as disturbed.",
+      "properties": {
+        "max_busy_cores": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_gpu_other_processes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_gpu_throttle_events": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "max_busy_cores",
+        "max_gpu_other_processes",
+        "max_gpu_throttle_events"
+      ],
+      "additionalProperties": false
+    },
+    "End": {
+      "type": "object",
+      "description": "The last record of a capture. Without it the capture is incomplete.",
+      "properties": {
+        "t": {
+          "const": "end"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "failed",
+            "interrupted"
+          ]
+        },
+        "rounds_completed": {
+          "type": "integer"
+        },
+        "sha256_of_preceding": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "discard_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "t",
+        "status",
+        "rounds_completed",
+        "sha256_of_preceding"
+      ],
+      "additionalProperties": false
+    },
+    "EngineInfo": {
+      "type": "object",
+      "description": "A container engine's name and version.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "GateRecord": {
+      "type": "object",
+      "description": "The result of one machine check.",
+      "properties": {
+        "t": {
+          "const": "gate"
+        },
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "off",
+            "warn",
+            "enforce"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "degraded",
+            "unavailable"
+          ]
+        },
+        "detail": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "t",
+        "name",
+        "mode",
+        "status",
+        "detail"
+      ],
+      "additionalProperties": false
+    },
+    "GpuInfo": {
+      "type": "object",
+      "description": "A GPU's model and driver version.",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "driver": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "driver"
+      ],
+      "additionalProperties": false
+    },
+    "Header": {
+      "type": "object",
+      "description": "The first record of a capture.",
+      "properties": {
+        "t": {
+          "const": "header"
+        },
+        "capture_id": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "config": {
+          "type": "object"
+        },
+        "seeds": {
+          "type": "object"
+        },
+        "schema": {
+          "const": "pairbench/capture/v1"
+        }
+      },
+      "required": [
+        "t",
+        "capture_id",
+        "tool_version",
+        "started_at",
+        "argv",
+        "config",
+        "seeds",
+        "schema"
+      ],
+      "additionalProperties": false
+    },
+    "Launch": {
+      "type": "object",
+      "description": "One launch. A warm-up has round 0. ``pos`` is ``None`` when the order was not recorded.",
+      "properties": {
+        "t": {
+          "const": "launch"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "phase": {
+          "enum": [
+            "warmup",
+            "round"
+          ]
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pos": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "rc": {
+          "type": "integer"
+        },
+        "timing": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "witness": {
+          "type": "object"
+        },
+        "energy": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "tool_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        },
+        "env_pad": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "timed_out": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "t",
+        "seq",
+        "phase",
+        "round",
+        "pos",
+        "name",
+        "rc",
+        "timing",
+        "witness",
+        "energy"
+      ],
+      "additionalProperties": false
+    },
+    "LaunchCost": {
+      "type": "object",
+      "description": "What a launch costs before the workload does anything.",
+      "properties": {
+        "t": {
+          "const": "launch_cost"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+$"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "median_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p25_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p75_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "min_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "t",
+        "command",
+        "n",
+        "median_s",
+        "p25_s",
+        "p75_s",
+        "min_s"
+      ],
+      "additionalProperties": false
+    },
+    "Lineup": {
+      "type": "object",
+      "description": "The lineup, the planned rounds, the cases and the thresholds, written before round 1.",
+      "properties": {
+        "t": {
+          "const": "lineup"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "control": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "rounds": {
+          "type": "integer"
+        },
+        "schedule": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Case"
+          }
+        },
+        "discard_thresholds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiscardThresholds"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "t",
+        "names",
+        "rounds",
+        "schedule",
+        "cases",
+        "discard_thresholds"
+      ],
+      "additionalProperties": false
+    },
+    "MachineRecord": {
+      "type": "object",
+      "description": "The machine a capture was taken on.",
+      "properties": {
+        "t": {
+          "const": "machine"
+        },
+        "os": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "cpu": {
+          "$ref": "#/$defs/CpuRecord"
+        },
+        "gpu": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GpuInfo"
+          }
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "in_container": {
+          "type": "boolean"
+        },
+        "ci": {
+          "type": "boolean"
+        },
+        "node_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_cpus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d+(-\\d+)?(,\\d+(-\\d+)?)*$"
+        }
+      },
+      "required": [
+        "t",
+        "os",
+        "arch",
+        "cpu",
+        "gpu",
+        "engine",
+        "in_container",
+        "ci",
+        "node_type"
+      ],
+      "additionalProperties": false
+    },
+    "Note": {
+      "type": "object",
+      "description": "A loud note: a stable code and a plain-language message.",
+      "properties": {
+        "t": {
+          "const": "note"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "Observation": {
+      "type": "object",
+      "description": "One value of one case from one launch; ``seq`` names the launch.",
+      "properties": {
+        "t": {
+          "const": "obs"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pos": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "case": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        },
+        "n_inner": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reducer": {
+          "type": "string"
+        },
+        "suite": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "t",
+        "seq",
+        "round",
+        "pos",
+        "name",
+        "case",
+        "value",
+        "n_inner",
+        "reducer"
+      ],
+      "additionalProperties": false
+    },
+    "Side": {
+      "type": "object",
+      "description": "One thing being compared, or the twin of one.",
+      "properties": {
+        "t": {
+          "const": "side"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "subject",
+            "baseline",
+            "twin",
+            "control"
+          ]
+        },
+        "twin_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "control_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "spec": {
+          "type": "object"
+        },
+        "identity": {
+          "type": "object"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "workdir_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The SHA-256 of the working folder the side ran in: of its resolved path for a side that runs on the host, of the folder as typed for one that runs in a container. It is compared when captures are pooled and never shown. A capture without it records none."
+        }
+      },
+      "required": [
+        "t",
+        "name",
+        "kind",
+        "role",
+        "twin_of",
+        "spec",
+        "identity",
+        "fingerprint"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "twin"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "twin_of": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "twin_of"
+            ]
+          },
+          "else": {
+            "properties": {
+              "twin_of": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "control"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "control_of": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "control_of"
+            ]
+          },
+          "else": {
+            "properties": {
+              "control_of": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "minLength": 1
+            },
+            "kind": {
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": [
+                  "subject",
+                  "baseline"
+                ]
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "pattern": "^(?!\\.\\.?$)[^~=\\s]+$"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

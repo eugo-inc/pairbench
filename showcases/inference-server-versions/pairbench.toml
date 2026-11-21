@@ -1,0 +1,36 @@
+# Two release tags of the vLLM OpenAI-compatible server image, one small model
+# under the Apache-2.0 licence, and GuideLLM as the load tool. run.sh downloads
+# the model once into models/ and mounts that folder at /models, read-only.
+
+[workload]
+driver = "guidellm"
+argv = [
+  "--data", "kind=synthetic_text,prompt_tokens=256,output_tokens=128",
+  "--tokenizer", "kind=huggingface_auto,model=models/Qwen2.5-0.5B-Instruct",
+]
+levels = [1, 4, 16]
+level_kind = "concurrency"
+level_duration = "60s"
+
+[sides.old]
+baseline = true
+
+[sides.old.serve]
+image = "vllm/vllm-openai:v0.32.0@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34"
+args = ["/models/Qwen2.5-0.5B-Instruct", "--served-model-name", "qwen2.5-0.5b-instruct", "--seed", "0"]
+port = 8000
+model_name = "qwen2.5-0.5b-instruct"
+ready = { http = "/health", timeout = "15m" }
+
+[sides.new.serve]
+image = "vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e"
+args = ["/models/Qwen2.5-0.5B-Instruct", "--served-model-name", "qwen2.5-0.5b-instruct", "--seed", "0"]
+port = 8000
+model_name = "qwen2.5-0.5b-instruct"
+ready = { http = "/health", timeout = "15m" }
+
+[launch]
+gpus = "0"
+
+[energy]
+enabled = true

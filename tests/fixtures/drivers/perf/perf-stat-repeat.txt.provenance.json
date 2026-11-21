@@ -1,0 +1,12 @@
+{
+  "generator": "tests/fixtures/_gen/drivers.py",
+  "seed": null,
+  "tool": "perf",
+  "version": "perf version 6.12.117 (Debian package linux-perf 6.12.117-1)",
+  "synthetic": false,
+  "image": "debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2",
+  "workload": "a shell loop counting to a fixed number",
+  "environment": "--cap-add PERFMON and no other capability",
+  "command": "perf stat -x ';' -o perf-stat-repeat.txt -r 3 -e instructions,cycles,task-clock -- sh -c '<loop>'",
+  "replaced": "the start line replaced by a made-up date; every other line kept as perf printed it in the run: the counter values and their spread over the repeats, how long each counter ran and for what share of the run, the figures perf derives from them (such as instructions per cycle, GHz and CPUs utilized) and the PMU names (the Linux driver's generic names), since the per-PMU lines are what the driver reads"
+}

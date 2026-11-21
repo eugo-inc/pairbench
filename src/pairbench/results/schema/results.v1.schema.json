@@ -1,0 +1,1841 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pairbench/results/v1",
+  "title": "pairbench results document",
+  "type": "object",
+  "description": "The analysed output of one or more captures.",
+  "properties": {
+    "schema": {
+      "const": "pairbench/results/v1"
+    },
+    "tool": {
+      "$ref": "#/$defs/Tool"
+    },
+    "run": {
+      "$ref": "#/$defs/RunInfo"
+    },
+    "rule": {
+      "$ref": "#/$defs/RuleInfo"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "sides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ResultsSide"
+      }
+    },
+    "plan": {
+      "$ref": "#/$defs/PlanSummary"
+    },
+    "machine_state": {
+      "$ref": "#/$defs/MachineState"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Case"
+      }
+    },
+    "comparisons": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Comparison"
+      }
+    },
+    "same_vs_same": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SameVsSame"
+      }
+    },
+    "controls": {
+      "$ref": "#/$defs/Controls"
+    },
+    "launch_cost": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LaunchCost"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "env_pad": {
+      "$ref": "#/$defs/EnvPad"
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Series"
+      }
+    },
+    "plots": {
+      "$ref": "#/$defs/PlotsState"
+    },
+    "diagnostics": {
+      "$ref": "#/$defs/DiagnosticsState"
+    },
+    "refusals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RefusalEntry"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Loud notes, each with a stable code. Among them, sides_differ_in_hidden_value says two sides have the same fingerprint and differ only in a value the results hide, other than a credential's value, or in the working folder they run in; its message names both sides and never the value or the folder. sides_declared_identical says two sides that are one side were compared because identical sides were allowed.",
+      "items": {
+        "$ref": "#/$defs/Note"
+      }
+    },
+    "plugins": {
+      "$ref": "#/$defs/PluginCounts"
+    },
+    "figures": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Figure"
+      }
+    },
+    "artifacts": {
+      "$ref": "#/$defs/Artifacts"
+    },
+    "energy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EnergyInfo"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "tool",
+    "run",
+    "rule",
+    "provenance",
+    "sides",
+    "plan",
+    "machine_state",
+    "cases",
+    "comparisons",
+    "same_vs_same",
+    "refusals",
+    "notes",
+    "plugins",
+    "figures",
+    "artifacts"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "Artifacts": {
+      "type": "object",
+      "description": "The files of the run folder, as names relative to it.",
+      "properties": {
+        "capture": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "markdown": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plan": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "html": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diagnostics": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "charts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "capture",
+        "markdown",
+        "plan",
+        "profiles"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "properties": {
+            "capture": {
+              "if": {
+                "type": "string"
+              },
+              "then": {
+                "minLength": 1,
+                "not": {
+                  "pattern": "^[/~]|(^|/)\\.\\.(/|$)"
+                }
+              }
+            },
+            "markdown": {
+              "if": {
+                "type": "string"
+              },
+              "then": {
+                "minLength": 1,
+                "not": {
+                  "pattern": "^[/~]|(^|/)\\.\\.(/|$)"
+                }
+              }
+            },
+            "plan": {
+              "if": {
+                "type": "string"
+              },
+              "then": {
+                "minLength": 1,
+                "not": {
+                  "pattern": "^[/~]|(^|/)\\.\\.(/|$)"
+                }
+              }
+            },
+            "html": {
+              "if": {
+                "type": "string"
+              },
+              "then": {
+                "minLength": 1,
+                "not": {
+                  "pattern": "^[/~]|(^|/)\\.\\.(/|$)"
+                }
+              }
+            },
+            "diagnostics": {
+              "if": {
+                "type": "string"
+              },
+              "then": {
+                "minLength": 1,
+                "not": {
+                  "pattern": "^[/~]|(^|/)\\.\\.(/|$)"
+                }
+              }
+            },
+            "charts": {
+              "items": {
+                "if": {
+                  "type": "string"
+                },
+                "then": {
+                  "minLength": 1,
+                  "not": {
+                    "pattern": "^[/~]|(^|/)\\.\\.(/|$)"
+                  }
+                }
+              }
+            },
+            "profiles": {
+              "items": {
+                "if": {
+                  "type": "string"
+                },
+                "then": {
+                  "minLength": 1,
+                  "not": {
+                    "pattern": "^[/~]|(^|/)\\.\\.(/|$)"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "CaptureRef": {
+      "type": "object",
+      "description": "One capture a results document was computed from.",
+      "properties": {
+        "capture_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rounds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "capture_id",
+        "sha256",
+        "rounds"
+      ],
+      "additionalProperties": false
+    },
+    "Case": {
+      "type": "object",
+      "description": "One named measurement a launch produces.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "better": {
+          "enum": [
+            "lower",
+            "higher",
+            "none"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "time",
+            "rate",
+            "efficiency",
+            "count",
+            "other"
+          ]
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "metric",
+        "unit",
+        "better",
+        "kind",
+        "primary",
+        "group"
+      ],
+      "additionalProperties": false,
+      "not": {
+        "properties": {
+          "better": {
+            "const": "none"
+          },
+          "primary": {
+            "const": true
+          }
+        },
+        "required": [
+          "better",
+          "primary"
+        ]
+      }
+    },
+    "Comparison": {
+      "type": "object",
+      "description": "One case compared between a subject and the baseline.",
+      "properties": {
+        "case": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "baseline": {
+          "type": "string"
+        },
+        "n_rounds": {
+          "type": "integer"
+        },
+        "n_unpaired": {
+          "type": "integer"
+        },
+        "n_untied": {
+          "type": "integer"
+        },
+        "n_lower": {
+          "type": "integer"
+        },
+        "n_higher": {
+          "type": "integer"
+        },
+        "subject_median": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "baseline_median": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "statistic": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "scale": {
+          "enum": [
+            "ratio",
+            "percent"
+          ]
+        },
+        "gap": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "floor": {
+          "$ref": "#/$defs/FloorPair"
+        },
+        "bar": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p_raw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p_raw_fraction": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "p_corrected": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "verdict": {
+          "enum": [
+            "FASTER",
+            "SLOWER",
+            "BETTER",
+            "WORSE",
+            "HIGHER",
+            "LOWER",
+            "TIE",
+            "UNRESOLVED",
+            "NO VERDICT"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "better",
+            "worse",
+            "higher",
+            "lower",
+            "tie",
+            "unresolved",
+            "no_verdict"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "inside_noise",
+            "not_significant",
+            "order_unbalanced",
+            "sensitive_to_disturbed_rounds",
+            "positive_control_failed",
+            "nonpositive_value",
+            "too_far_apart",
+            "single_measurement",
+            "order_not_recorded",
+            "too_few_rounds",
+            "no_floor",
+            "one_sided_floor",
+            "zero_floor",
+            "side_failed",
+            "more_than_one_node",
+            null
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "inside_noise",
+              "not_significant",
+              "order_unbalanced",
+              "sensitive_to_disturbed_rounds",
+              "positive_control_failed",
+              "nonpositive_value",
+              "too_far_apart",
+              "single_measurement",
+              "order_not_recorded",
+              "too_few_rounds",
+              "no_floor",
+              "one_sided_floor",
+              "zero_floor",
+              "side_failed",
+              "more_than_one_node"
+            ]
+          }
+        },
+        "order_split": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/Sensitivity"
+        }
+      },
+      "required": [
+        "case",
+        "primary",
+        "subject",
+        "baseline",
+        "n_rounds",
+        "n_unpaired",
+        "n_untied",
+        "n_lower",
+        "n_higher",
+        "subject_median",
+        "baseline_median",
+        "ratio",
+        "gap",
+        "floor",
+        "bar",
+        "p_raw",
+        "p_raw_fraction",
+        "p_corrected",
+        "verdict",
+        "outcome",
+        "reason",
+        "order_split",
+        "sensitivity"
+      ],
+      "additionalProperties": false
+    },
+    "ControlCase": {
+      "type": "object",
+      "description": "What the positive control read on one primary case.",
+      "properties": {
+        "case": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "number"
+        },
+        "ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p_raw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "n_rounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "passed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "case",
+        "expected",
+        "ratio",
+        "p_raw",
+        "n_rounds",
+        "passed"
+      ],
+      "additionalProperties": false
+    },
+    "Controls": {
+      "type": "object",
+      "description": "The controls of a run. Twins are the negative control; this holds the positive one.",
+      "properties": {
+        "positive": {
+          "$ref": "#/$defs/PositiveControl"
+        }
+      },
+      "required": [
+        "positive"
+      ],
+      "additionalProperties": false
+    },
+    "Degraded": {
+      "type": "object",
+      "description": "A check that failed, was degraded or could not run, with a one-line reason.",
+      "properties": {
+        "name": {
+          "enum": [
+            "cpus",
+            "quiet",
+            "census",
+            "plugin"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "degraded",
+            "unavailable"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticsState": {
+      "type": "object",
+      "description": "The state of the explain step of a run.",
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "written",
+            "skipped",
+            "off",
+            "failed",
+            "interrupted"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "mode_auto_no_difference",
+            "lock",
+            "no_instrument",
+            null
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "status": {
+            "const": "skipped"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "DriverInfo": {
+      "type": "object",
+      "description": "The driver that read the values, and the versions of the tool it wraps.",
+      "properties": {
+        "name": {
+          "enum": [
+            "wall",
+            "lines",
+            "gbench",
+            "nvbench",
+            "pytest-benchmark",
+            "hyperfine",
+            "perf",
+            "llama-bench",
+            "guidellm",
+            "aiperf",
+            "vllm-bench",
+            null
+          ]
+        },
+        "tool_versions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "tool_versions"
+      ],
+      "additionalProperties": false
+    },
+    "EnergyInfo": {
+      "type": "object",
+      "description": "What the energy cases cover and what they leave out.",
+      "properties": {
+        "scope": {
+          "type": "string"
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "scope",
+        "excludes"
+      ],
+      "additionalProperties": false
+    },
+    "EngineInfo": {
+      "type": "object",
+      "description": "A container engine's name and version.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "EnvPad": {
+      "type": "object",
+      "description": "Whether the size of the environment was varied from round to round.",
+      "properties": {
+        "varied": {
+          "type": "boolean"
+        },
+        "min": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "max": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4096
+        }
+      },
+      "required": [
+        "varied"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "varied": {
+            "const": true
+          }
+        },
+        "required": [
+          "varied"
+        ]
+      },
+      "then": {
+        "properties": {
+          "min": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ]
+      },
+      "else": {
+        "properties": {
+          "min": {
+            "type": "null"
+          },
+          "max": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "Figure": {
+      "type": "object",
+      "description": "One figure: its value and its text. Rounding happens only in the text.",
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "Floor": {
+      "type": "object",
+      "description": "One side's noise floor. ``n`` is the number of rounds it was computed from.",
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "n": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "provisional": {
+          "type": "boolean"
+        },
+        "spread": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "outlier_rounds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "value",
+        "n",
+        "provisional",
+        "spread",
+        "outlier_rounds"
+      ],
+      "additionalProperties": false
+    },
+    "FloorPair": {
+      "type": "object",
+      "description": "The floors of a comparison, where they came from and the unit they are in.",
+      "properties": {
+        "source": {
+          "enum": [
+            "twins",
+            "supplied"
+          ]
+        },
+        "unit": {
+          "enum": [
+            "fraction",
+            "percent"
+          ]
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Floor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "baseline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Floor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "enum": [
+            "TWO-SIDED",
+            "ONE-SIDED",
+            "NONE"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "subject",
+        "baseline",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "GateSummary": {
+      "type": "object",
+      "description": "One machine check as a results document shows it.",
+      "properties": {
+        "name": {
+          "enum": [
+            "cpus",
+            "quiet",
+            "census",
+            "plugin"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "off",
+            "warn",
+            "enforce"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "degraded",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "mode",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "GpuInfo": {
+      "type": "object",
+      "description": "A GPU's model and driver version.",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "driver": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "driver"
+      ],
+      "additionalProperties": false
+    },
+    "LaunchCost": {
+      "type": "object",
+      "description": "What a launch costs before the workload does anything.",
+      "properties": {
+        "command": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+$"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "median_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p25_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p75_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "min_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "command",
+        "n",
+        "median_s",
+        "p25_s",
+        "p75_s",
+        "min_s"
+      ],
+      "additionalProperties": false
+    },
+    "MachineState": {
+      "type": "object",
+      "description": "The state of the machine during the run.",
+      "properties": {
+        "status": {
+          "enum": [
+            "quiet",
+            "busy",
+            "unknown"
+          ]
+        },
+        "gates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GateSummary"
+          }
+        },
+        "degraded": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Degraded"
+          }
+        },
+        "discard_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "undecided_launches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "status",
+        "gates",
+        "degraded"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSummary": {
+      "type": "object",
+      "description": "The machine facts a results document may show. ``core_types`` are core-type keys.",
+      "properties": {
+        "os": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "cpu_model": {
+          "type": "string"
+        },
+        "core_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "os",
+        "arch",
+        "cpu_model",
+        "core_types"
+      ],
+      "additionalProperties": false
+    },
+    "Note": {
+      "type": "object",
+      "description": "A loud note: a stable code and a plain-language message.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "PlanSummary": {
+      "type": "object",
+      "description": "The plan as it was run.",
+      "properties": {
+        "schedule": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rounds_requested": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rounds_planned": {
+          "type": "integer"
+        },
+        "rounds_completed": {
+          "type": "integer"
+        },
+        "warmups": {
+          "type": "integer"
+        },
+        "launches": {
+          "type": "integer"
+        },
+        "explain_launches": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schedule",
+        "rounds_requested",
+        "rounds_planned",
+        "rounds_completed",
+        "warmups",
+        "launches"
+      ],
+      "additionalProperties": false
+    },
+    "PlotsState": {
+      "type": "object",
+      "description": "Whether the charts of a run were drawn.",
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "drawn",
+            "not_drawn",
+            "off",
+            "interrupted"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "extra_missing",
+            "failed",
+            null
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "status": {
+            "const": "not_drawn"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "PluginCounts": {
+      "type": "object",
+      "description": "How many third-party plug-ins loaded and how many plug-ins failed to load.",
+      "properties": {
+        "loaded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "loaded",
+        "failed"
+      ],
+      "additionalProperties": false
+    },
+    "PositiveControl": {
+      "type": "object",
+      "description": "The state of the positive control of a run.",
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "failed",
+            "not_run"
+          ]
+        },
+        "entry": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "via": {
+          "enum": [
+            "repeat",
+            "factor"
+          ]
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 0.5
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ControlCase"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "entry",
+        "via",
+        "tolerance",
+        "cases"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ok"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "entry": {
+                "type": "string"
+              },
+              "cases": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "passed": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "entry": {
+                "type": "string"
+              },
+              "cases": {
+                "contains": {
+                  "properties": {
+                    "passed": {
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "passed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Provenance": {
+      "type": "object",
+      "description": "Where the numbers came from, with nothing that identifies the machine, except that ``config_sha256`` can confirm a guessed path or host, as SECURITY.md says under Known limits of the hashes.",
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/MachineSummary"
+        },
+        "gpu": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GpuInfo"
+          }
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "node_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seeds": {
+          "type": "object"
+        },
+        "config_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "driver": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DriverInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "machine",
+        "gpu",
+        "engine",
+        "node_type",
+        "seeds",
+        "config_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "RefusalEntry": {
+      "type": "object",
+      "description": "A refusal as a results document lists it.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^E_[A-Z0-9_]+$"
+        },
+        "scope": {
+          "enum": [
+            "experiment",
+            "case"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "scope",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "ResultsSide": {
+      "type": "object",
+      "description": "A side as a results document shows it. ``image_ref`` is set only on request.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "cmd",
+            "image",
+            "python",
+            "venv",
+            "conda",
+            "serve",
+            "file",
+            "rows",
+            "plugin"
+          ]
+        },
+        "role": {
+          "enum": [
+            "subject",
+            "baseline",
+            "twin",
+            "control"
+          ]
+        },
+        "twin_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "control_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "identity": {
+          "type": "object",
+          "description": "The part of a side's identity that may be shared: hashes, the platform and the version line. Nothing else is allowed here.",
+          "additionalProperties": false,
+          "properties": {
+            "image_id": {
+              "type": "string",
+              "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+            },
+            "digests": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+              }
+            },
+            "platform": {
+              "type": "string"
+            },
+            "python_version": {
+              "type": "string"
+            },
+            "packages_sha256": {
+              "type": "string",
+              "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+            },
+            "executable_sha256": {
+              "type": "string",
+              "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+            },
+            "argv_sha256": {
+              "type": "string",
+              "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+            },
+            "args_sha256": {
+              "type": "string",
+              "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+            },
+            "files_sha256": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+              }
+            },
+            "identify_sha256": {
+              "type": "string",
+              "pattern": "^([a-z0-9]+([+._-][a-z0-9]+)*:)?[0-9a-f]{12,}$"
+            }
+          }
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "image_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "driver": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DriverInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "role",
+        "twin_of",
+        "identity",
+        "fingerprint"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "twin"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "twin_of": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "twin_of"
+            ]
+          },
+          "else": {
+            "properties": {
+              "twin_of": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "control"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "control_of": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "control_of"
+            ]
+          },
+          "else": {
+            "properties": {
+              "control_of": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RuleInfo": {
+      "type": "object",
+      "description": "The rule used: every field of it, the family size, and the family in plain words.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "object"
+        },
+        "family_size": {
+          "type": "integer"
+        },
+        "plain": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "fields",
+        "family_size",
+        "plain"
+      ],
+      "additionalProperties": false
+    },
+    "RunInfo": {
+      "type": "object",
+      "description": "The run. ``command`` is how to reproduce it, with nothing that identifies the machine except the forms SECURITY.md lists under Known limits of the shown command.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "captures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaptureRef"
+          }
+        },
+        "pooled": {
+          "type": "boolean"
+        },
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "started_at",
+        "finished_at",
+        "captures",
+        "pooled"
+      ],
+      "additionalProperties": false
+    },
+    "SameVsSame": {
+      "type": "object",
+      "description": "A side compared with its own twin on one case.",
+      "properties": {
+        "side": {
+          "type": "string"
+        },
+        "case": {
+          "type": "string"
+        },
+        "ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "floor": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p_raw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "n": {
+          "type": "integer"
+        },
+        "unit": {
+          "enum": [
+            "fraction",
+            "percent"
+          ]
+        }
+      },
+      "required": [
+        "side",
+        "case",
+        "ratio",
+        "floor",
+        "p_raw",
+        "n"
+      ],
+      "additionalProperties": false
+    },
+    "Sensitivity": {
+      "type": "object",
+      "description": "The comparison repeated without the disturbed rounds.",
+      "properties": {
+        "rounds_set_aside": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "better",
+            "worse",
+            "higher",
+            "lower",
+            "tie",
+            "unresolved",
+            "no_verdict",
+            null
+          ]
+        },
+        "agrees": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "not_computed": {
+          "enum": [
+            "too_few_rounds",
+            "too_many_disturbed",
+            null
+          ]
+        }
+      },
+      "required": [
+        "rounds_set_aside",
+        "ratio",
+        "outcome",
+        "agrees"
+      ],
+      "additionalProperties": false
+    },
+    "Series": {
+      "type": "object",
+      "description": "The values of one primary case on one lineup entry, round by round.",
+      "properties": {
+        "case": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "disturbed_rounds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "required": [
+        "case",
+        "name",
+        "values",
+        "disturbed_rounds"
+      ],
+      "additionalProperties": false
+    },
+    "Tool": {
+      "type": "object",
+      "description": "The tool that wrote a results document.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

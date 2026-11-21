@@ -1,0 +1,11 @@
+{
+  "generator": "tests/fixtures/_gen/drivers.py",
+  "seed": null,
+  "tool": "llama-bench",
+  "version": "llama.cpp build 12375, commit 9d25e0014",
+  "synthetic": false,
+  "image": "ghcr.io/ggml-org/llama.cpp:full@sha256:5bee33d877070ee246edb2f3442bcea4942d01d602f1abf479183c49a0f2ba7c",
+  "workload": "the model stories15M-q4_0.gguf (sha256 66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739) from https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf, a conversion of https://huggingface.co/karpathy/tinyllamas (MIT licence), on CPU; the model is not part of the repository",
+  "command": "llama-bench -m models/stories15M-q4_0.gguf -p 64 -n 16 -r 3 -t 4 -o json",
+  "replaced": "model_filename, test_time and cpu_info replaced by made-up values"
+}

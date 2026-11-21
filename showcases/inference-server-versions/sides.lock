@@ -1,0 +1,20 @@
+# The images of this showcase, each pinned by the digest of its multi-platform
+# index, as the registry gave it for the tag, and the model at a fixed
+# revision. pairbench.toml names the same image references; run.sh names the
+# same model revision.
+
+[sides.old]
+image = "docker.io/vllm/vllm-openai:v0.32.0"
+digest = "sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34"
+
+[sides.new]
+image = "docker.io/vllm/vllm-openai:v0.33.0"
+digest = "sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e"
+
+[model]
+repository = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct"
+revision = "7ae557604adf67be50417f59c2c2f167def9a775"
+licence = "Apache-2.0"
+
+[load_tool]
+package = "guidellm==0.8.1, the version the guidellm driver was checked against"

@@ -1,0 +1,110 @@
+{
+ "metadata": {
+  "version": 2,
+  "guidellm_version": "0.8.1",
+  "python_version": "3.12.3",
+  "platform": "made-up-platform"
+ },
+ "benchmarks": [
+  {
+   "type_": "generative_benchmark",
+   "config": {
+    "strategy": {
+     "type_": "concurrent",
+     "worker_count": 1,
+     "max_concurrency": 1,
+     "streams": 1,
+     "rampup_duration": 0.0
+    }
+   },
+   "start_time": 1000000000.7619917,
+   "end_time": 1000000010.7619917,
+   "duration": 10.0,
+   "metrics": {
+    "time_to_first_token_ms": {
+     "successful": {
+      "mean": 6.638200451229618,
+      "median": 3.7527084350585938,
+      "min": 2.8238296508789062,
+      "max": 99.33686256408691,
+      "count": 482,
+      "total_sum": 3199.6126174926762,
+      "percentiles": {
+       "p50": 3.7527084350585938,
+       "p90": 9.718894958496094,
+       "p95": 18.0361270904541,
+       "p99": 50.46415328979492
+      }
+     }
+    },
+    "inter_token_latency_ms": {
+     "successful": {
+      "mean": 0.38252299991322236,
+      "median": 0.3514982038928616,
+      "min": 0.2504241081976121,
+      "max": 1.5132811761671496,
+      "count": 14942,
+      "total_sum": 5715.658664703368,
+      "percentiles": {
+       "p50": 0.3514982038928616,
+       "p90": 0.4665851593017578,
+       "p95": 0.5283278803671559,
+       "p99": 1.0902573985438193
+      }
+     }
+    },
+    "output_tokens_per_second": {
+     "successful": {
+      "mean": 1541.5075342427378,
+      "median": 1503.8737898888492,
+      "min": 0.0,
+      "max": 6626.072669826224,
+      "count": 15415,
+      "total_sum": 23762338.640351802,
+      "percentiles": {
+       "p50": 1503.8737898888492,
+       "p90": 3226.3876923076923,
+       "p95": 3415.557003257329,
+       "p99": 3698.680776014109
+      }
+     }
+    },
+    "requests_per_second": {
+     "successful": {
+      "mean": 48.1,
+      "median": 51.02435463857327,
+      "min": 0.0,
+      "max": 73.84858088597788,
+      "count": 481,
+      "total_sum": 23136.100000000002,
+      "percentiles": {
+       "p50": 51.02435463857327,
+       "p90": 62.9936169893216,
+       "p95": 65.7352600068959,
+       "p99": 69.71219625702224
+      }
+     }
+    },
+    "output_token_count": {
+     "successful": {
+      "mean": 32.0,
+      "median": 32.0,
+      "min": 32.0,
+      "max": 32.0,
+      "count": 482,
+      "total_sum": 15424.0,
+      "percentiles": {
+       "p50": 32.0,
+       "p90": 32.0,
+       "p95": 32.0,
+       "p99": 32.0
+      }
+     }
+    }
+   },
+   "requests": {
+    "successful": []
+   }
+  }
+ ]
+}

@@ -1,0 +1,799 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pairbench/config/v1",
+  "title": "pairbench config",
+  "description": "The config file. An unknown key is refused.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sides"
+  ],
+  "properties": {
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rounds": {
+          "anyOf": [
+            {
+              "const": "auto"
+            },
+            {
+              "type": "integer",
+              "minimum": 1
+            }
+          ]
+        },
+        "rounds_exact": {
+          "type": "boolean"
+        },
+        "quick": {
+          "type": "boolean"
+        },
+        "budget": {
+          "$ref": "#/$defs/duration"
+        },
+        "warmups": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "same_vs_same": {
+          "description": "on, off, or the sides that get a twin.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "allow_underpowered": {
+          "type": "boolean"
+        },
+        "out": {
+          "type": "string"
+        },
+        "print_plan": {
+          "type": "boolean"
+        },
+        "json": {
+          "type": "boolean"
+        },
+        "no_plugins": {
+          "type": "boolean"
+        },
+        "node_type": {
+          "type": "string"
+        },
+        "vary_env_size": {
+          "type": "boolean"
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "driver": {
+          "type": "string",
+          "minLength": 1
+        },
+        "levels": {
+          "description": "The load levels: whole numbers of at least 1.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "uniqueItems": true
+            },
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "pattern": "^\\s*0*[1-9]\\d*\\s*(,\\s*0*[1-9]\\d*\\s*)*$"
+            }
+          ]
+        },
+        "level_duration": {
+          "$ref": "#/$defs/duration"
+        },
+        "level_kind": {
+          "description": "What a level counts: concurrent requests, or requests per second.",
+          "enum": [
+            "concurrency",
+            "rate"
+          ]
+        }
+      }
+    },
+    "sides": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^(?!\\.\\.?$)[^~=\\s]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/side"
+      }
+    },
+    "launch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": {
+          "description": "A CPU list such as 4-7 or 0,2,4.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "pattern": "^\\d+(-\\d+)?(,\\d+(-\\d+)?)*$"
+            }
+          ]
+        },
+        "gpus": {
+          "description": "all, or GPU indices.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "pattern": "^(all|\\d+(,\\d+)*)$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "memory": {
+          "type": "string"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "env_pass": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mounts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workdir": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "engine": {
+          "enum": [
+            "auto",
+            "docker",
+            "podman"
+          ]
+        },
+        "pull": {
+          "enum": [
+            "missing",
+            "never",
+            "always"
+          ]
+        },
+        "identify": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "perf_counters": {
+          "description": "Gives a container the capability to use performance counters.",
+          "type": "boolean"
+        },
+        "allow_identical": {
+          "type": "boolean"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "off",
+            "warn",
+            "enforce"
+          ]
+        },
+        "wait_quiet": {
+          "type": "boolean"
+        },
+        "locks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lock_timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "allow_mixed_core_types": {
+          "type": "boolean"
+        },
+        "quiet": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_busy_cores": {
+              "type": "number",
+              "minimum": 0
+            },
+            "gpu_idle": {
+              "type": "boolean"
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "interval_s": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_wait_s": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "census": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_busy_cores": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "discard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_busy_cores": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fail_on": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "better",
+              "worse",
+              "unresolved",
+              "no_verdict"
+            ]
+          }
+        }
+      }
+    },
+    "cases": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primary": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "groups": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "energy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "min_samples": {
+          "type": "integer",
+          "minimum": 2
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include_image_refs": {
+          "type": "boolean"
+        },
+        "html": {
+          "type": "boolean"
+        }
+      }
+    },
+    "controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "positive": {
+          "description": "Whether the positive control runs. Unset: on, except for serving sides.",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        "positive_tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 0.5
+        },
+        "positive_via": {
+          "description": "How the control doubles the work.",
+          "enum": [
+            "repeat",
+            "factor"
+          ]
+        }
+      }
+    },
+    "launch_cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "launches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "note_share": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "explain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "always",
+            "auto",
+            "off"
+          ]
+        },
+        "sample_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "call_graph": {
+          "enum": [
+            "fp",
+            "dwarf",
+            "lbr"
+          ]
+        },
+        "top": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "plots": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ]
+        },
+        "max_round_charts": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "duration": {
+      "description": "Seconds as a number, or a text such as 90s, 10m or 1h30m.",
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^\\s*(\\d+(\\.\\d+)?|(\\d+(\\.\\d+)?(ms|s|m|h))+)\\s*$"
+        }
+      ]
+    },
+    "launch_override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": {
+          "description": "A CPU list such as 4-7 or 0,2,4.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "pattern": "^\\d+(-\\d+)?(,\\d+(-\\d+)?)*$"
+            }
+          ]
+        },
+        "gpus": {
+          "description": "all, or GPU indices.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "string",
+              "pattern": "^(all|\\d+(,\\d+)*)$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "memory": {
+          "type": "string"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "env_pass": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mounts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workdir": {
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        },
+        "timeout": {
+          "$ref": "#/$defs/duration"
+        },
+        "engine": {
+          "enum": [
+            "auto",
+            "docker",
+            "podman"
+          ]
+        },
+        "pull": {
+          "enum": [
+            "missing",
+            "never",
+            "always"
+          ]
+        },
+        "identify": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "perf_counters": {
+          "description": "Gives a container the capability to use performance counters.",
+          "type": "boolean"
+        }
+      },
+      "description": "The launch settings one side overrides. env merges per variable; every other key is replaced whole."
+    },
+    "serve": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "ready": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "http": {
+              "type": "string"
+            },
+            "timeout": {
+              "$ref": "#/$defs/duration"
+            }
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "model": {
+          "type": "string"
+        },
+        "model_name": {
+          "type": "string"
+        },
+        "launcher": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "body": {
+              "type": "object"
+            }
+          }
+        },
+        "phases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "image"
+          ]
+        },
+        {
+          "required": [
+            "command"
+          ]
+        }
+      ]
+    },
+    "side": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "entrypoint": {
+          "type": "string"
+        },
+        "cmd": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "venv": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conda": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "format": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "spec": {
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "baseline": {
+          "type": "boolean"
+        },
+        "serve": {
+          "$ref": "#/$defs/serve"
+        },
+        "launch": {
+          "$ref": "#/$defs/launch_override"
+        }
+      },
+      "description": "One side. Exactly one of the keys that name its kind is given.",
+      "oneOf": [
+        {
+          "required": [
+            "image"
+          ]
+        },
+        {
+          "required": [
+            "cmd"
+          ]
+        },
+        {
+          "required": [
+            "python"
+          ]
+        },
+        {
+          "required": [
+            "venv"
+          ]
+        },
+        {
+          "required": [
+            "conda"
+          ]
+        },
+        {
+          "required": [
+            "serve"
+          ]
+        },
+        {
+          "required": [
+            "file"
+          ]
+        },
+        {
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    }
+  }
+}

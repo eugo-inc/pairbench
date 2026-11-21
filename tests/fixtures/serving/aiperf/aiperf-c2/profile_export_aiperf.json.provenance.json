@@ -1,0 +1,13 @@
+{
+ "generator": "tests/fixtures/_gen/serving.py",
+ "seed": 1234,
+ "tool": "aiperf",
+ "version": "0.13.0",
+ "synthetic": false,
+ "image": "ghcr.io/ggml-org/llama.cpp:full@sha256:5bee33d877070ee246edb2f3442bcea4942d01d602f1abf479183c49a0f2ba7c",
+ "server": "llama-server of llama.cpp build 12375 (commit 9d25e0014), the image's /app/llama-server, on CPU with 4 threads, a context of 4096 tokens and 4 slots, the port published on the loopback address only",
+ "workload": "the model stories15M-q4_0.gguf (sha256 66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739) from https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf, a conversion of https://huggingface.co/karpathy/tinyllamas (MIT licence), served under the name stories15M; the model is not part of the repository",
+ "command": "aiperf profile --url http://127.0.0.1:8000 --model stories15M --endpoint-type chat --streaming --concurrency 2 --benchmark-duration 10 --isl 32 --osl 32 --tokenizer gpt2 --random-seed 1234 --artifact-dir out/c2 --export-level records --ui none --no-gpu-telemetry --no-server-metrics",
+ "replaced": "kept to schema_version, aiperf_version, request_count, time_to_first_token, inter_token_latency, request_latency, output_sequence_length, output_token_throughput, request_throughput, benchmark_duration; the run's command, configuration, start and end times and every other metric dropped",
+ "tool_install": "aiperf 0.13.0 from PyPI, run on the host beside the server"
+}

@@ -1,0 +1,469 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pairbench/diagnostics/v1",
+  "title": "pairbench diagnostics document",
+  "type": "object",
+  "description": "What the resource figures, the counters and the sampled stacks say about two sides.",
+  "properties": {
+    "schema": {
+      "const": "pairbench/diagnostics/v1"
+    },
+    "run": {
+      "$ref": "#/$defs/DiagnosticsRun"
+    },
+    "holds_names": {
+      "type": "boolean"
+    },
+    "instruments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/InstrumentRun"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ResourceRow"
+      }
+    },
+    "counters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CounterRow"
+      }
+    },
+    "stacks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/StackSummary"
+      }
+    },
+    "objects": {
+      "$ref": "#/$defs/ObjectDiff"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      }
+    },
+    "files": {
+      "$ref": "#/$defs/DiagnosticsFiles"
+    },
+    "name_map": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Note"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "run",
+    "holds_names",
+    "instruments",
+    "resources",
+    "counters",
+    "stacks",
+    "objects",
+    "findings",
+    "files",
+    "name_map"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "CounterRow": {
+      "type": "object",
+      "description": "One counted event of a subject against the baseline.",
+      "properties": {
+        "event": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "baseline": {
+          "type": "string"
+        },
+        "subject_value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "baseline_value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "event",
+        "subject",
+        "baseline",
+        "subject_value",
+        "baseline_value",
+        "ratio"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticsFiles": {
+      "type": "object",
+      "description": "The files the explain step wrote, as names relative to the run folder.",
+      "properties": {
+        "folded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "folded_diff": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "flame": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "flame_diff": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "folded",
+        "folded_diff",
+        "flame",
+        "flame_diff"
+      ],
+      "additionalProperties": false
+    },
+    "DiagnosticsRun": {
+      "type": "object",
+      "description": "The run a diagnostics document belongs to: the id its results carry.",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Finding": {
+      "type": "object",
+      "description": "A sentence about how two sides differ, with the numbers it was made from.",
+      "properties": {
+        "id": {
+          "enum": [
+            "cores_used",
+            "cpu_time_split",
+            "peak_memory",
+            "context_switches",
+            "page_faults",
+            "instructions",
+            "instructions_per_cycle",
+            "cache_misses",
+            "branch_misses",
+            "top_function_share",
+            "top_object_share",
+            "objects_on_one_side",
+            "objects_differ"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "InstrumentRun": {
+      "type": "object",
+      "description": "One instrument on one side: whether it ran, and why not when it did not.",
+      "properties": {
+        "name": {
+          "enum": [
+            "counters",
+            "stacks",
+            "pystacks"
+          ]
+        },
+        "side": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "skipped",
+            "failed"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "not_installed",
+            "not_permitted",
+            "not_in_image",
+            "no_capability",
+            "launcher_cannot",
+            "side_changed",
+            "lock",
+            "launch_failed",
+            "interpreter_too_old",
+            null
+          ]
+        },
+        "rc": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "side",
+        "status",
+        "reason",
+        "rc"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    "Note": {
+      "type": "object",
+      "description": "A loud note: a stable code and a plain-language message.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "ObjectDiff": {
+      "type": "object",
+      "description": "The shared objects the sides loaded, compared.",
+      "properties": {
+        "only_in": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "differ": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "required": [
+              "name"
+            ]
+          }
+        }
+      },
+      "required": [
+        "only_in",
+        "differ"
+      ],
+      "additionalProperties": false
+    },
+    "ResourceRow": {
+      "type": "object",
+      "description": "One resource case of a subject against the baseline: the medians and the outcome.",
+      "properties": {
+        "case": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "baseline": {
+          "type": "string"
+        },
+        "subject_median": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "baseline_median": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "better",
+            "worse",
+            "higher",
+            "lower",
+            "tie",
+            "unresolved",
+            "no_verdict"
+          ]
+        }
+      },
+      "required": [
+        "case",
+        "subject",
+        "baseline",
+        "subject_median",
+        "baseline_median",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "StackSummary": {
+      "type": "object",
+      "description": "The sampled stacks of one side: which instrument took them, and where samples fell.",
+      "properties": {
+        "side": {
+          "type": "string"
+        },
+        "instrument": {
+          "enum": [
+            "stacks",
+            "pystacks"
+          ]
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "top_functions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TopFunction"
+          }
+        },
+        "top_objects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TopObject"
+          }
+        }
+      },
+      "required": [
+        "side",
+        "instrument",
+        "samples",
+        "top_functions",
+        "top_objects"
+      ],
+      "additionalProperties": false
+    },
+    "TopFunction": {
+      "type": "object",
+      "description": "A function with its share of the samples of one side.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "object": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "name",
+        "object",
+        "share"
+      ],
+      "additionalProperties": false
+    },
+    "TopObject": {
+      "type": "object",
+      "description": "A shared object with its share of the samples of one side.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "name",
+        "share"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

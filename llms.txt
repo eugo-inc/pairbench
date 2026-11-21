@@ -1,0 +1,78 @@
+# pairbench
+
+> pairbench says whether one side is really faster than another on a workload, on one machine, or whether the difference is noise.
+
+A side is a container image, a command, a Python environment, a server image or a set of result files. pairbench runs every side in paired, alternating rounds together with an identical twin of each side, measures the noise floor from the twins in the same rounds, tests each case with an exact sign test, corrects for testing several cases at once, and gives a verdict per case: FASTER, SLOWER, TIE, UNRESOLVED or NO VERDICT, with the reason. Programs read `comparisons[].outcome` and `comparisons[].reason` in `results.json` and quote numbers from its `figures`; `pairbench fill` puts those figures into documents.
+
+The documentation is published at https://eugo.io/docs/pairbench/latest/, where every page also has a Markdown copy. This list links the pages in the repository.
+
+## Start
+
+- [Is a benchmark difference real or noise?](docs/index.md): pairbench runs two sides in paired, alternating rounds beside identical twins, measures the noise and gives each case a verdict: real difference or noise.
+- [Install pairbench](docs/install.md): Install pairbench with pip on Linux or macOS with Python 3.11 or newer; optional extras add charts, the tool server, GPU readings and load tools.
+- [Compare two Python environments: a first run](docs/quickstart.md): A first comparison step by step: a workload, the plan, the run, the verdict, and a number from the results put into a document.
+- [What are sides, twins, rounds, cases and verdicts?](docs/concepts.md): The terms pairbench uses on every page: side, baseline, twin, lineup, round, launch, case, primary case, noise floor, bar, verdict, capture and results.
+
+## Method
+
+- [How does pairbench decide?](docs/method/index.md): The chain behind every verdict: paired rounds, a noise floor from twins, the exact sign test, a correction for several cases and the rule that combines them.
+- [Why does pairbench run the sides in paired, alternating rounds?](docs/method/paired-rounds.md): Why each side runs once per round in an order that rotates and reverses, and how pairing by round takes slow drift of the machine out of every comparison.
+- [How is the noise floor measured?](docs/method/noise-floor.md): Each side runs beside an identical twin in the same rounds; how far the side sits from its twin is its noise floor, measured at the same load as the comparison.
+- [What is the exact sign test?](docs/method/sign-test.md): The exact two-sided sign test pairbench applies to each case: what it counts, how ties are handled, and the fewest rounds that can give a verdict.
+- [Why are p-values corrected for testing several cases?](docs/method/multiple-comparisons.md): Testing many cases makes a lucky pass likely; pairbench corrects the p-values of the primary cases with Holm's method. What the family is and why.
+- [What does each verdict mean?](docs/method/verdicts.md): The default rule, strict: when a case reads FASTER, SLOWER, TIE, UNRESOLVED or NO VERDICT, every reason for the last two, and how to report one.
+- [Can I benchmark on a shared or busy machine?](docs/method/shared-machines.md): How pairbench works on a machine others use: the quiet check, pinning, locks, witnesses during every launch and rounds set aside when disturbed.
+- [Why does every analysis need a case that must pass and one that must fail?](docs/method/instrument-controls.md): A check that has never been given a known answer may say the same thing about everything; the controls pairbench runs on its own instrument.
+- [What does the positive control check?](docs/method/positive-control.md): The positive control runs twice the work once per round and must read about twice the value; what it checks, what it does not, and what a failure means.
+- [What does a launch cost before the workload runs?](docs/method/launch-cost.md): Every run measures what starting a process costs with an empty command; when that cost matters, and how to time the work alone.
+- [What do the diagnostics say about how two sides differ?](docs/method/diagnostics.md): Resource figures, hardware counters, sampled stacks and flame graphs: what a finding says, and what it never says.
+- [Can times to first token from two load tools be compared?](docs/method/first-token-definitions.md): No: each load tool starts and stops its first-token stopwatch at its own point; what each tool measures, read from its public source.
+- [How is energy per token measured?](docs/method/energy-per-token.md): GPU power sampled during the load phase, integrated over the window and divided into output tokens; what is measured, what is excluded, when no value is given.
+- [How does a benchmark fool its author?](docs/method/pitfalls.md): Common shapes of a misleading benchmark, such as a fixed order or a floor taken at another load: how to recognise each and what pairbench does about it.
+- [What should a published benchmark comparison state?](docs/method/reporting-checklist.md): The checklist for publishing a comparison: what was compared, where, how often, with what noise and which verdicts, so a reader can judge and repeat it.
+- [How often does the default rule give a wrong verdict?](docs/method/error-rates.md): How often the default rule gives each outcome in simulated experiments, with and without a true difference between two sides.
+
+## Guides
+
+- [Which driver reads my benchmark?](docs/guides/index.md): A driver turns one launch into one value per case; the table of built-in drivers, what each reads and its default primary cases.
+- [Compare the run time of two images or commands](docs/guides/wall.md): The wall driver, the default: the run time of each launch from the launch's own clock, for image, command and Python environment sides.
+- [Compare values your workload prints](docs/guides/lines.md): The lines driver reads values the workload prints itself, to time the work alone without the start of the process or to compare any number it computes.
+- [Compare Google Benchmark results](docs/guides/gbench.md): The gbench driver runs a Google Benchmark program once per side per round and reads the median real time of each benchmark from its JSON output.
+- [Compare NVBench GPU kernel times](docs/guides/nvbench.md): The nvbench driver reads the mean GPU time of each state from NVBench's JSON output, checked against a real run.
+- [Compare pytest-benchmark results](docs/guides/pytest-benchmark.md): The pytest-benchmark driver runs your benchmark tests once per side per round and compares the median of each test's timings.
+- [Compare commands timed by hyperfine](docs/guides/hyperfine.md): The hyperfine driver runs hyperfine once per side per round and compares the median run time of each command from its JSON export.
+- [Compare hardware counters from perf stat](docs/guides/perf.md): The perf driver reads hardware and software counters from perf stat; every counter is a secondary case.
+- [Compare llama.cpp token rates with llama-bench](docs/guides/llama-bench.md): The llama-bench driver reads llama.cpp's benchmark program in JSON output and compares the median tokens per second of each test.
+- [Compare two inference-server versions with GuideLLM](docs/guides/guidellm.md): Serve each version as a serving side and let GuideLLM drive it: first token, token rate and tokens per joule at each load level, one report per level.
+- [Compare two inference servers with AIPerf](docs/guides/aiperf.md): Serve each side as a serving side and let AIPerf drive it; pairbench reads AIPerf's per-request records, one artifact folder per load level.
+- [Compare two inference servers with vllm bench serve](docs/guides/vllm-bench.md): The vllm-bench driver, experimental, reads the result file of vllm bench serve, one per load level, against a serving side.
+- [Build an image that holds perf](docs/guides/perf-in-an-image.md): What an image side needs for the perf driver and for the counters and stacks of the explain step: the program in the image and the capability to count.
+
+## Reference
+
+- [pairbench reference](docs/reference/index.md): Every command, flag, config key, exit code, text code, results field and public Python name, each with its own anchor.
+- [Commands and flags](docs/reference/commands.md): Every pairbench command with each flag it takes and the config key the flag sets: run, plan, compare, report, fill, selftest, doctor, schema, gate and more.
+- [Config file keys](docs/reference/config.md): Every key of the TOML config file, with its default and meaning; how a key is set from the command line or the environment.
+- [Environment variables](docs/reference/environment.md): Every environment variable pairbench reads or sets, what it does with it and which software defines it.
+- [Exit codes and text codes](docs/reference/exit-codes.md): What each exit code and each stable text code of a refusal means, with its cause and its fix.
+- [What is in a run folder and in results.json?](docs/reference/results-schema.md): The files of a run folder, the fields of results.json a program reads, the figure keys for documents, and diagnostics.json.
+- [Give pairbench rows written by hand or by another program](docs/reference/text-format.md): The text input format: rows of round, side, case and value, with host blocks, read by pairbench compare with the text reader.
+- [Use pairbench from Python](docs/reference/python-api.md): The Python API: plan, run, analyse, render, fill and the other functions, building sides, rows produced elsewhere, rules and the statistics primitives.
+- [Every public Python name](docs/reference/python-names.md): Every public name of pairbench and pairbench.stats, and the plug-in contract of pairbench.api, with its signature and its docstring, written from the source.
+- [Add a driver, reader, rule or other plug-in](docs/reference/plugin-api.md): How a package adds sides, drivers, capture readers, machine checks, rules, reporters or server launchers through entry points, and what each must do.
+- [Drive pairbench from an AI agent through the tool server](docs/reference/tool-server.md): pairbench mcp: a Model Context Protocol server over standard input and output, its tools, its answers and what an agent should read.
+
+## Project
+
+- [Showcases: complete comparisons you can run](docs/showcases.md): Seven worked comparisons with configs, scripts and pinned images: pip against conda, a noisy neighbour, a pipeline gate, Python versions, servers and more.
+- [Use pairbench as an AI agent](docs/agents.md): The loop for an agent: doctor, plan, run with --json, read outcome and reason from results.json, quote figures, and report a result.
+- [How does pairbench compare with other benchmarking tools?](docs/comparison.md): What hyperfine, pyperf, benchstat, Google Benchmark's compare.py and asv do, from their own documentation, and where pairbench differs in approach.
+- [Which licences apply to pairbench and what it runs?](docs/licence.md): pairbench is Apache-2.0; the programs, images, models and profilers it runs keep their own licences, and so do your results.
+- [Frequently asked questions](docs/faq.md): Short answers about launches, UNRESOLVED and NO VERDICT, pooling, busy machines, overhead, Python, results of other tools and your own statistics.
+- [Changelog](docs/changelog.md): What each release of pairbench added and changed, newest first.
+
+## Elsewhere
+
+- [Agent skill](skills/pairbench/SKILL.md): the skill for AI agents, installed with `pairbench skill install --dir PATH`
+- [Source](https://github.com/eugo-inc/pairbench): the source repository
+- [Package index page](https://pypi.org/project/pairbench/): the package, installed with `pip install pairbench`

@@ -1,0 +1,11 @@
+# The images of this showcase, each pinned by the digest of its multi-platform
+# index, as the registry gave it for the tag. pairbench.toml names the same
+# references.
+
+[sides.py313]
+image = "docker.io/library/python:3.13-slim"
+digest = "sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+
+[sides.py314]
+image = "docker.io/library/python:3.14-slim"
+digest = "sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"

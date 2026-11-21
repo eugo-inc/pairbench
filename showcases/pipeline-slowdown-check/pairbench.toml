@@ -1,0 +1,28 @@
+# Two revisions of a small library, the same image and the same tests. The
+# exit code is 1 when a primary case of revision b is SLOWER than revision a.
+# run.sh installs pytest and pytest-benchmark once into .deps/ and mounts this
+# folder at /showcase, read-only, in every launch.
+
+[workload]
+argv = ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "/showcase/tests"]
+driver = "pytest-benchmark"
+
+[sides.a]
+image = "python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+env = { PYTHONPATH = "/showcase/revisions/a:/showcase/.deps/pytest" }
+baseline = true
+
+[sides.b]
+image = "python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+env = { PYTHONPATH = "/showcase/revisions/b:/showcase/.deps/pytest" }
+
+[launch]
+allow_identical = true
+memory = "2g"
+env = { PYTHONDONTWRITEBYTECODE = "1" }
+
+[rule]
+fail_on = ["worse"]
+
+[controls]
+positive_via = "factor"

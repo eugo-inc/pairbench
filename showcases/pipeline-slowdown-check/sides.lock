@@ -1,0 +1,15 @@
+# The image of this showcase, pinned by the digest of its multi-platform index,
+# as the registry gave it for the tag. Both sides use it; they differ in the
+# revision folder on PYTHONPATH. The packages are pinned in run.sh.
+
+[sides.a]
+image = "docker.io/library/python:3.13-slim"
+digest = "sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+packages = ["pytest==9.2.0", "pytest-benchmark==5.3.1"]
+source = "revisions/a"
+
+[sides.b]
+image = "docker.io/library/python:3.13-slim"
+digest = "sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+packages = ["pytest==9.2.0", "pytest-benchmark==5.3.1"]
+source = "revisions/b"

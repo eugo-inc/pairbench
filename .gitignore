@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# the documentation site: installed packages, generated pages and the built site
+site/node_modules/
+site/dist/
+site/.astro/
+site/src/content/docs/
+site/src/generated/
+# run folders written by the tool
+pairbench-runs/

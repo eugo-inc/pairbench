@@ -1,0 +1,32 @@
+# NumPy from pip against NumPy from conda-forge, same NumPy and Python versions.
+# run.sh installs each side's NumPy once into .deps/ and mounts this folder at
+# /showcase, read-only, in every launch.
+
+[workload]
+argv = ["python", "/showcase/bench.py"]
+driver = "lines"
+
+[sides.pip]
+image = "python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90"
+env = { PYTHONPATH = "/showcase/.deps/pip-numpy" }
+baseline = true
+
+[sides.conda]
+image = "condaforge/miniforge3:26.9.4-2@sha256:dfb274710eee2bb062c87b15c10fde6ea91f71b763796b5de489df87b08cf678"
+args = ["/showcase/.deps/conda-numpy/bin/python", "/showcase/bench.py"]
+
+[sides.pip.launch]
+identify = ["python", "-c", "import numpy; print('numpy', numpy.__version__); numpy.show_config()"]
+
+[sides.conda.launch]
+identify = ["/showcase/.deps/conda-numpy/bin/python", "-c", "import numpy; print('numpy', numpy.__version__); numpy.show_config()"]
+
+[launch]
+memory = "4g"
+env = { PYTHONDONTWRITEBYTECODE = "1", OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1" }
+
+[cases]
+primary = ["*"]
+
+[controls]
+positive_via = "factor"

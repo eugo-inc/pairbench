@@ -1,0 +1,14 @@
+{
+  "generator": "tests/fixtures/_gen/drivers.py",
+  "seed": null,
+  "tool": "NVBench",
+  "version": "0.1.0 (JSON file version 1.0.0), commit 0f8eb2dd715f90e963a8ab0ff9374097110cc3f9",
+  "synthetic": false,
+  "image": "docker.io/nvidia/cuda:13.4.3-devel-ubuntu24.04@sha256:5626a7d0ecafe3e7c115a452f6b05f20f214f8509346196a7835b205dc5b7fd9",
+  "workload": "kernel_bench of showcases/gpu-kernel (kernel_bench.cu: saxpy and cub_sum at 2^24 and 2^26 elements), built inside the image by showcases/gpu-kernel/build.sh with the image's own toolkit",
+  "environment": "docker run --rm --memory 8g --cpus 4 --gpus device=0, one NVIDIA GPU",
+  "nvbench_commit": "0f8eb2dd715f90e963a8ab0ff9374097110cc3f9",
+  "source": "https://github.com/NVIDIA/nvbench at commit 0f8eb2dd715f90e963a8ab0ff9374097110cc3f9",
+  "command": "./kernel_bench --min-samples 10 --timeout 2 --json /pairbench/artifacts/nvbench.json",
+  "replaced": "devices: every hardware figure and the name replaced by made-up values, the id kept; each summary with the hint frequency (the mean SM clock rate) set to 1000000000; each nv/cold/bw/global/utilization (a share of the device's peak memory bandwidth) set to 0.5; the program's path in meta.argv[0] and meta.raw_argv[0] replaced by ./kernel_bench; every other measured time, count, rate and ratio kept as the run wrote it"
+}

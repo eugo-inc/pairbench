@@ -1,0 +1,5 @@
+# What run.sh and pairbench write inside a showcase folder.
+pairbench-runs/
+.deps/
+.build/
+models/

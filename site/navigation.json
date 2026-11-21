@@ -1,0 +1,104 @@
+{
+  "title": "pairbench",
+  "summary": "pairbench says whether one side is really faster than another on a workload, on one machine, or whether the difference is noise.",
+  "details": "A side is a container image, a command, a Python environment, a server image or a set of result files. pairbench runs every side in paired, alternating rounds together with an identical twin of each side, measures the noise floor from the twins in the same rounds, tests each case with an exact sign test, corrects for testing several cases at once, and gives a verdict per case: FASTER, SLOWER, TIE, UNRESOLVED or NO VERDICT, with the reason. Programs read `comparisons[].outcome` and `comparisons[].reason` in `results.json` and quote numbers from its `figures`; `pairbench fill` puts those figures into documents.",
+  "sections": [
+    {
+      "label": "Start",
+      "slug": "start",
+      "pages": [
+        { "page": "index.md", "label": "Home" },
+        { "page": "install.md", "label": "Install" },
+        { "page": "quickstart.md", "label": "Quick start" },
+        { "page": "concepts.md", "label": "Concepts" }
+      ]
+    },
+    {
+      "label": "Method",
+      "slug": "method",
+      "pages": [
+        { "page": "method/index.md", "label": "How pairbench decides" },
+        { "page": "method/paired-rounds.md", "label": "Paired rounds" },
+        { "page": "method/noise-floor.md", "label": "Noise floor" },
+        { "page": "method/sign-test.md", "label": "Sign test" },
+        { "page": "method/multiple-comparisons.md", "label": "Multiple comparisons" },
+        { "page": "method/verdicts.md", "label": "Verdicts" },
+        { "page": "method/shared-machines.md", "label": "Shared machines" },
+        { "page": "method/instrument-controls.md", "label": "Instrument controls" },
+        { "page": "method/positive-control.md", "label": "Positive control" },
+        { "page": "method/launch-cost.md", "label": "Launch cost" },
+        { "page": "method/diagnostics.md", "label": "Diagnostics" },
+        { "page": "method/first-token-definitions.md", "label": "First-token definitions" },
+        { "page": "method/energy-per-token.md", "label": "Energy per token" },
+        { "page": "method/pitfalls.md", "label": "Pitfalls" },
+        { "page": "method/reporting-checklist.md", "label": "Reporting checklist" },
+        { "page": "method/error-rates.md", "label": "Simulated error rates" }
+      ]
+    },
+    {
+      "label": "Guides",
+      "slug": "guides",
+      "pages": [
+        { "page": "guides/index.md", "label": "Choose a driver" },
+        { "page": "guides/wall.md", "label": "wall" },
+        { "page": "guides/lines.md", "label": "lines" },
+        { "page": "guides/gbench.md", "label": "gbench" },
+        { "page": "guides/nvbench.md", "label": "nvbench" },
+        { "page": "guides/pytest-benchmark.md", "label": "pytest-benchmark" },
+        { "page": "guides/hyperfine.md", "label": "hyperfine" },
+        { "page": "guides/perf.md", "label": "perf" },
+        { "page": "guides/llama-bench.md", "label": "llama-bench" },
+        { "page": "guides/guidellm.md", "label": "guidellm" },
+        { "page": "guides/aiperf.md", "label": "aiperf" },
+        { "page": "guides/vllm-bench.md", "label": "vllm-bench" },
+        { "page": "guides/perf-in-an-image.md", "label": "An image that holds perf" }
+      ]
+    },
+    {
+      "label": "Reference",
+      "slug": "reference",
+      "pages": [
+        { "page": "reference/index.md", "label": "Reference pages" },
+        { "page": "reference/commands.md", "label": "Commands" },
+        { "page": "reference/config.md", "label": "Config" },
+        { "page": "reference/environment.md", "label": "Environment variables" },
+        { "page": "reference/exit-codes.md", "label": "Exit codes" },
+        { "page": "reference/results-schema.md", "label": "Results schema" },
+        { "page": "reference/text-format.md", "label": "Text input format" },
+        { "page": "reference/python-api.md", "label": "Python API" },
+        { "page": "reference/python-names.md", "label": "Every Python name" },
+        { "page": "reference/plugin-api.md", "label": "Plug-in API" },
+        { "page": "reference/tool-server.md", "label": "Tool server" }
+      ]
+    },
+    {
+      "label": "Project",
+      "slug": "project",
+      "pages": [
+        { "page": "showcases.md", "label": "Showcases" },
+        { "page": "agents.md", "label": "For AI agents" },
+        { "page": "comparison.md", "label": "Comparison with other tools" },
+        { "page": "licence.md", "label": "Licence notes" },
+        { "page": "faq.md", "label": "FAQ" },
+        { "page": "changelog.md", "label": "Changelog" }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Agent skill",
+      "target": "skills/pairbench/SKILL.md",
+      "description": "the skill for AI agents, installed with `pairbench skill install --dir PATH`"
+    },
+    {
+      "title": "Source",
+      "target": "https://github.com/eugo-inc/pairbench",
+      "description": "the source repository"
+    },
+    {
+      "title": "Package index page",
+      "target": "https://pypi.org/project/pairbench/",
+      "description": "the package, installed with `pip install pairbench`"
+    }
+  ]
+}

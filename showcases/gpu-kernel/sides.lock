@@ -1,0 +1,16 @@
+# The images of this showcase, each pinned by the digest of its multi-platform
+# index, as the registry gave it for the tag. pairbench.toml names the same
+# references. build.sh pins the NVBench commit and the CMake release, with
+# the SHA-256 of each CMake download.
+
+[sides.cuda1343]
+image = "docker.io/nvidia/cuda:13.4.3-devel-ubuntu24.04"
+digest = "sha256:5626a7d0ecafe3e7c115a452f6b05f20f214f8509346196a7835b205dc5b7fd9"
+
+[sides.cuda1350]
+image = "docker.io/nvidia/cuda:13.5.0-devel-ubuntu24.04"
+digest = "sha256:d3fa71793540a2b76ab227ee00016e754da2758b7a51b49bc8a72543af5a8bc2"
+
+[build]
+nvbench = "https://github.com/NVIDIA/nvbench at commit 0f8eb2dd715f90e963a8ab0ff9374097110cc3f9"
+cmake = "4.4.5, from https://github.com/Kitware/CMake/releases/tag/v4.4.5"
