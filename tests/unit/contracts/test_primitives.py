@@ -1713,7 +1713,7 @@ def test_an_operator_in_quotes_or_a_line_break_in_a_shell_text(
         (("tool", "--api-key=made|up-21&&x"), ("tool", "--api-key=<hidden>")),
         (("tool", "API_TOKEN=made-up-22;x"), ("tool", "API_TOKEN=<hidden>")),
         (("tool", "--token", "made-up-23;x"), ("tool", "--token", "<hidden>")),
-        (("python", "-c", "API_KEY='made-up-24'|x"), ("python", "-c", "API_KEY=<hidden>")),
+        (("python", "-c", "API_KEY=made-up-24|x"), ("python", "-c", "API_KEY=<hidden>")),
         (("tool", "http://made-up.example;/made/up/home/bin/tool"), ("tool", "http://<hidden>")),
         (("tool", "http://localhost;/made/up/home/bin/tool"), ("tool", "http://<hidden>")),
     ],

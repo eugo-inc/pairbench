@@ -2,10 +2,10 @@
 # Copyright (c) 2026, Eugo, Inc.
 """Two sides that run two programs over ``ssh`` behind a wrapper are two sides.
 
-After ``taskset``, ``numactl``, ``chrt``, ``stdbuf`` or ``ionice`` the remote command of
-``ssh`` keeps its program, so ``plan`` takes two sides whose remote commands run two programs
-as two sides, and refuses two sides that differ only in a credential there with
-``E_SAME_SIDE``.
+After ``taskset``, ``numactl``, ``chrt``, ``stdbuf``, ``ionice``, ``nice``, ``nohup``,
+``timeout`` or ``sudo`` the remote command of ``ssh`` keeps its program, so ``plan`` takes two
+sides whose remote commands run two programs as two sides, and refuses two sides that differ
+only in a credential there with ``E_SAME_SIDE``.
 """
 
 from __future__ import annotations
@@ -33,6 +33,12 @@ WRAPPERS = {
     "chrt": "chrt -f 10",
     "stdbuf": "stdbuf -oL",
     "ionice": "ionice -c 2 -n 7",
+    "nice": "nice",
+    "nice with an adjustment": "nice -n 5",
+    "nohup": "nohup",
+    "timeout": "timeout 30",
+    "timeout with a signal": "timeout -s KILL 30",
+    "sudo": "sudo -u app",
 }
 
 

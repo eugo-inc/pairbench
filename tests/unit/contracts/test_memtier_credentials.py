@@ -43,6 +43,22 @@ CREDENTIALS: dict[str, tuple[tuple[str, ...], str, str]] = {
         "memtier_benchmark '-a{user}:<hidden>' --ratio 1:1",
         "sh -c 'memtier_benchmark -a{user}:<hidden> --ratio 1:1'",
     ),
+    # The user ends at the first `:`, so a password that holds a `:` is hidden whole.
+    "-a user:password with a colon in the password": (
+        ("memtier_benchmark", "-a", f"{USER}:{PW}:{PW}", "--ratio", "1:1"),
+        "memtier_benchmark -a '{user}:<hidden>' --ratio 1:1",
+        "sh -c 'memtier_benchmark -a {user}:<hidden> --ratio 1:1'",
+    ),
+    "-auser:password with a colon in the password": (
+        ("memtier_benchmark", f"-a{USER}:{PW}:{PW}", "--ratio", "1:1"),
+        "memtier_benchmark '-a{user}:<hidden>' --ratio 1:1",
+        "sh -c 'memtier_benchmark -a{user}:<hidden> --ratio 1:1'",
+    ),
+    "--authenticate user:password with a colon in the password": (
+        ("memtier_benchmark", "--authenticate", f"{USER}:{PW}:{PW}", "--ratio", "1:1"),
+        "memtier_benchmark --authenticate '{user}:<hidden>' --ratio 1:1",
+        "sh -c 'memtier_benchmark --authenticate {user}:<hidden> --ratio 1:1'",
+    ),
 }
 # Forms whose user is hidden with the password, or that hold no user.
 WHOLE: dict[str, tuple[tuple[str, ...], str, str]] = {
@@ -90,6 +106,10 @@ HEADERS: dict[str, tuple[tuple[str, ...], str]] = {
         ("redis-cli", "SET", "k", f"Authorization: Bearer {PW}"),
         "redis-cli SET k 'Authorization: <hidden>'",
     ),
+    "a header text of a credential name given to redis-cli": (
+        ("redis-cli", "SET", "k", f"token: {PW}"),
+        "redis-cli SET k 'token: <hidden>'",
+    ),
     "a header text with two blanks given to memtier": (
         ("memtier_benchmark", "--key-prefix", f"auth: Bearer {PW}"),
         "memtier_benchmark --key-prefix 'auth: <hidden>'",
@@ -106,6 +126,10 @@ NO_CLIENT = (("./bench", "--prefix", "auth:", "64"), "./bench --prefix 'auth: <h
 SHELL_HEADERS: dict[str, tuple[str, str]] = {
     "memtier key prefix in a shell text": (
         f"memtier_benchmark --key-prefix auth: {PW} --ratio 1:1",
+        "sh -c 'memtier_benchmark --key-prefix auth: <hidden>'",
+    ),
+    "memtier key prefix before an ordinary option in a shell text": (
+        "memtier_benchmark --key-prefix auth: -n 10",
         "sh -c 'memtier_benchmark --key-prefix auth: <hidden>'",
     ),
     "redis-cli header text in a shell text": (
@@ -189,6 +213,26 @@ def test_a_memtier_password_alone_or_after_an_equals_sign_is_hidden_whole(
     assert model.hashed_argv(argv) == model.hashed_argv(typed(args, PASSWORDS[0]))
     assert password not in " ".join(model.hashed_argv(argv))
     assert USERS[0] not in " ".join(model.hashed_argv(argv))
+
+
+# Two made-up passwords of one character each: a password glued to `-a` is hidden whatever its
+# length.
+ONE_LETTER_PASSWORDS = ("k", "q")
+
+
+def test_a_password_of_one_character_glued_to_memtier_a_is_hidden() -> None:
+    hashes = []
+    for password in ONE_LETTER_PASSWORDS:
+        argv = ("memtier_benchmark", f"-a{password}", "--ratio", "1:1")
+
+        assert model.public_command((*LEAD, *argv)) == (
+            SHOWN_LEAD + "memtier_benchmark '-a<hidden>' --ratio 1:1"
+        )
+        assert model.public_command((*LEAD, "sh", "-c", shell_text(argv))) == (
+            SHOWN_LEAD + "sh -c 'memtier_benchmark -a<hidden> --ratio 1:1'"
+        )
+        hashes.append(model.hashed_argv(argv))
+    assert hashes == [["memtier_benchmark", "-a<hidden>", "--ratio", "1:1"]] * 2
 
 
 def test_a_long_option_after_memtier_a_is_no_value_of_it() -> None:

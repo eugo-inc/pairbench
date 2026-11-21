@@ -137,6 +137,40 @@ def test_a_double_quote_left_open_in_a_free_text_quotes_no_path_past_its_line() 
     assert model.public_text(text) == 'cannot read "out.txt and more\nthen in.txt'
 
 
+# Folder names with a word that starts with a digit or `_`, before the word that holds the next
+# `/` or as that word: the path runs on over it as over a word that starts with a letter.
+RUN_ON_FOLDERS = (
+    "Zq 2024 Files",
+    "Zq _old Files",
+    "Zq 2024 _old Files",
+    "Zq One 2024",
+    "Zq One _old",
+)
+
+
+@pytest.mark.parametrize("folder", RUN_ON_FOLDERS)
+def test_a_path_in_a_free_text_runs_on_over_words_that_start_with_a_digit_or_an_underscore(
+    folder: str,
+) -> None:
+    path = f"/srv/{folder}/x.csv"
+
+    assert model.public_text(f"copy {path} now") == "copy x.csv now"
+    assert model.public_case(f"test_copy[{path}]") == "test_copy[x.csv]"
+
+
+def test_a_double_quoted_path_after_a_quote_left_open_on_an_earlier_line_is_cut_whole() -> None:
+    text = 'a "/a/x\nput "/srv/Zq & Co/y"'
+
+    assert model.public_text(text) == 'a "x\nput "y"'
+
+
+@pytest.mark.parametrize("quote", ["'", '"'])
+def test_a_quote_closed_only_on_a_later_line_quotes_no_path_in_a_free_text(quote: str) -> None:
+    text = f"say {quote}/srv/Zq & Co/a b\n{quote} x"
+
+    assert model.public_text(text) == f"say {quote}Zq & Co/a b\n{quote} x"
+
+
 @pytest.mark.parametrize(("place", "folder"), [(p, _folder(n)) for p in PLACES for n in (1, 3, 5)])
 def test_a_shell_text_read_word_by_word_shows_no_word_of_the_folder(
     place: str, folder: str

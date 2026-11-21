@@ -100,7 +100,8 @@ def test_the_section_names_every_option_whose_value_is_a_command_text(repo_root:
         "`-S` (`-NpTEXT`) and wherever `hyperfine` starts a command in the words of `ssh`, "
         "`watch` or `parallel`, which a shell runs once they are joined: first, or after a "
         "separator, after the assignments that lead it, after `env`, `sshpass`, `taskset`, "
-        "`numactl`, `chrt`, `stdbuf`, `ionice` or `time` read as below, or after the host of a "
+        "`numactl`, `chrt`, `stdbuf`, `ionice`, `time`, `nice`, `nohup`, `timeout` or `sudo` "
+        "read as below, or after the host of a "
         "nested `ssh` (`ssh made-up-host taskset -c 0 hyperfine --setup=TEXT ./bench-old`), and "
         f"of `-c` or `--command` of {named} and `{shells[-1]}` "
         "(`TEXT_OPTIONS`), given as the next argument or glued to the option"
@@ -117,6 +118,10 @@ JOINED_STARTS = {
     "after an assignment": ("watch", "LC_ALL=C"),
     "after env": ("parallel", "env"),
     "after taskset": ("ssh", "made-up-host", "taskset", "-c", "0"),
+    "after nice": ("ssh", "made-up-host", "nice", "-n", "5"),
+    "after nohup": ("watch", "nohup"),
+    "after timeout": ("parallel", "timeout", "-s", "KILL", "30"),
+    "after sudo": ("ssh", "made-up-host", "sudo", "-u", "made-up-user", "LC_ALL=C"),
     "after the host of a nested ssh": ("ssh", "made-up-host", "ssh", "made-up-inner"),
 }
 
@@ -280,7 +285,29 @@ SHOWN_EXAMPLES = (
         ("watch", "-c", "API_KEY=zqm-made-up&&./bench-old"),
         "watch -c 'API_KEY=<hidden>&&./bench-old'",
     ),
+    (
+        ("taskset", "-c", "0-3", "ssh", "made-up-host", "API_KEY=zqm-made-up ./bench-old"),
+        "taskset -c 0-3 ssh made-up-host 'API_KEY=<hidden> ./bench-old'",
+    ),
+    (
+        ("timeout", "-s", "KILL", "30", "ssh", "made-up-host", "API_KEY=zqm-made-up ./bench-old"),
+        "timeout -s KILL 30 ssh made-up-host 'API_KEY=<hidden> ./bench-old'",
+    ),
+    (
+        ("setsid", "ssh", "made-up-host", "API_KEY=zqm-made-up ./bench-old"),
+        "setsid ssh made-up-host 'API_KEY=<hidden>'",
+    ),
 )
+
+
+def test_the_section_names_every_program_that_runs_the_command_after_its_operands(
+    repo_root: Path,
+) -> None:
+    text = section(repo_root)
+
+    assert [name for name in model._COMMAND_STARTERS if f"`{name}`" not in text] == []
+    assert "the duration of `timeout`" in text
+    assert "the assignments of `sudo`" in text
 
 
 def test_the_section_says_a_shell_text_ends_a_value_with_its_word(repo_root: Path) -> None:

@@ -73,6 +73,7 @@ def test_the_section_names_every_client_and_its_password_options(repo_root: Path
             *options.user_password,
             *options.sentinel,
             *options.acl_user,
+            *options.many_secrets,
         ):
             if not any(f"`{option}" in row for row in rows):
                 missing.append(f"{program} {option}")

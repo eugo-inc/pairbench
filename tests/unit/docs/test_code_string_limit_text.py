@@ -27,9 +27,7 @@ LIMIT = (
     'own quote inside its braces, as `python3 -c \'token = f"made {d["k"]} VALUE"\'` shows '
     "`python3 -c 'token = <hidden>k\"]} VALUE\"'`; a string with a tag before it in JavaScript, "
     "as ``node -e 'const token = String.raw`made VALUE`'`` shows "
-    "``node -e 'const token = <hidden> VALUE`'``, and a string in backquotes whose braces hold a "
-    "string in backquotes of their own, as ``node -e 'const token = `made ${f(`x`)} VALUE`'`` "
-    "shows ``node -e 'const token = <hidden>x`)} VALUE`'``; a raw string of Julia or of Swift, as "
+    "``node -e 'const token = <hidden> VALUE`'``; a raw string of Julia or of Swift, as "
     "`julia -e 'token = raw\"made VALUE\"'` shows `julia -e 'token = <hidden>\"made VALUE\"'` and "
     "`swift -e 'let token = #\"made VALUE\"#'` shows "
     "`swift -e 'let token = <hidden>\"made VALUE\"#'`; a raw string of C++ that names an end word "
@@ -62,10 +60,6 @@ ONE_LINE = (
         "node -e 'const token = <hidden> VALUE`'",
     ),
     (
-        "node -e 'const token = `made ${f(`x`)} VALUE`'",
-        "node -e 'const token = <hidden>x`)} VALUE`'",
-    ),
-    (
         "julia -e 'token = raw\"made VALUE\"'",
         "julia -e 'token = <hidden>\"made VALUE\"'",
     ),
@@ -91,7 +85,17 @@ AS_ADVISED = (
     ("node -e 'const token = `made ${f(x)} VALUE`'", "node -e 'const token = <hidden>'"),
     ("julia -e 'token = \"made VALUE\"'", "julia -e 'token = \"<hidden>\"'"),
     ("swift -e 'let token = \"made VALUE\"'", "swift -e 'let token = \"<hidden>\"'"),
+    ("python3 -c 'API_KEY = \"made VALUE\"'", "python3 -c 'API_KEY = \"<hidden>\"'"),
+    ("perl -e '$API_KEY = \"made VALUE\"'", "perl -e '$API_KEY = \"<hidden>\"'"),
+    ('tool \'{"api_key": "made VALUE"}\'', 'tool \'{"api_key": "<hidden>"}\''),
 )
+# A string in backquotes whose braces hold a string in backquotes of their own, hidden whole,
+# and its example, which the list does not hold.
+NESTED_TEMPLATE = (
+    "node -e 'const token = `made ${f(`x`)} VALUE`'",
+    "node -e 'const token = <hidden>'",
+)
+NESTED_EXAMPLE = "`made ${f(`x`)} VALUE`"
 # A here-document of Ruby opened with no brackets around it, hidden whole.
 HEREDOC = (("ruby", "-e", "token = <<~EOT\nmade VALUE\nEOT"), "ruby -e 'token = <hidden>'")
 
@@ -150,3 +154,12 @@ def test_a_here_document_with_no_brackets_around_it_is_hidden() -> None:
 
     assert model.public_command(list(words)) == shown
     assert VALUE not in " ".join(model.hashed_argv(list(words)))
+
+
+def test_a_template_whose_braces_hold_a_template_is_hidden_whole(repo_root: Path) -> None:
+    typed, shown = NESTED_TEMPLATE
+    args = shlex.split(typed)
+
+    assert model.public_command(args) == shown
+    assert model.hashed_argv(args) == shlex.split(shown)
+    assert NESTED_EXAMPLE not in limits(repo_root)

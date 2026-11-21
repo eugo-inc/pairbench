@@ -140,13 +140,17 @@ def test_a_slash_that_starts_no_absolute_path_is_kept(argv: tuple[str, ...]) -> 
 # An absolute path glued to an option, of one letter or more: cut to its last part. A
 # relative path of three parts or more glued to a one-letter option reads as an option of
 # more letters with an absolute path glued to it (``-Ia`` and ``/zqd1/zqd2``), as
-# ``-isystem/a/include`` is, so it is cut too.
+# ``-isystem/a/include`` is, so it is cut too. A path that starts at ``~`` names a home
+# folder, so it is cut after an option of more letters even when one part follows it.
 GLUED = (
     ("-I/zqd1/zqd2/include", "-Iinclude"),
     ("-isystem/zqd1/zqd2/include", "-isysteminclude"),
     ("-MF/zqd1/zqd2/x.d", "-MFx.d"),
     ("-L~/zqd1/zqd2/lib", "-Llib"),
     ("-Ia/zqd1/zqd2", "-Iazqd2"),
+    ("-isystem~/zqd1", "-isystemzqd1"),
+    ("-isystem~zqdu/inc", "-isysteminc"),
+    ("-MF~/x.d", "-MFx.d"),
 )
 # An absolute path of one part glued to an option of more letters names no folder: kept.
 GLUED_KEPT = ("-isystem/include", "-MF/x.d")

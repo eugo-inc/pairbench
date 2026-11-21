@@ -4,7 +4,8 @@
 
 A side's fingerprint is taken over the output of ``launch.identify``, with the
 credentials it holds hidden and every other value kept: a checksum, a build
-id, a measure such as ``KEY_SIZE`` and a package version stay in the hash. So
+id, a measure such as ``KEY_SIZE`` and a package version stay in the hash, and so does a
+version given to a name that reads like a credential (``DB_PASSWORD: 1.2.3``). So
 two captures of one command whose identified file changed between them do not
 pool (``E_POOL_SIDE_DRIFT``), and two sides told apart only by what their
 identify prints are two sides.
@@ -49,6 +50,7 @@ PRINTED = {
     "build-id": "    Build ID: 00112233445566778899aabbccddeeff",
     "key-size": "KEY_SIZE=128",
     "keyring": "keyring==24.3.0",
+    "version-named-like-a-password": "DB_PASSWORD: 1.2.3",
 }
 # The same line after the change.
 CHANGED = {
@@ -57,6 +59,7 @@ CHANGED = {
     "build-id": "    Build ID: ffeeddccbbaa99887766554433221100",
     "key-size": "KEY_SIZE=256",
     "keyring": "keyring==25.1.0",
+    "version-named-like-a-password": "DB_PASSWORD: 1.2.4",
 }
 # Two credentials identify prints, each a value of the same made-up name.
 TOKENS = ("MADE_UP_TOKEN=made-up-token-one", "MADE_UP_TOKEN=made-up-token-two")

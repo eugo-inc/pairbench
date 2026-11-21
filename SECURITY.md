@@ -130,9 +130,7 @@ of names are not read as you may mean them:
   own quote inside its braces, as `python3 -c 'token = f"made {d["k"]} VALUE"'` shows
   `python3 -c 'token = <hidden>k"]} VALUE"'`; a string with a tag before it in JavaScript, as
   ``node -e 'const token = String.raw`made VALUE`'`` shows
-  ``node -e 'const token = <hidden> VALUE`'``, and a string in backquotes whose braces hold a
-  string in backquotes of their own, as ``node -e 'const token = `made ${f(`x`)} VALUE`'``
-  shows ``node -e 'const token = <hidden>x`)} VALUE`'``; a raw string of Julia or of Swift, as
+  ``node -e 'const token = <hidden> VALUE`'``; a raw string of Julia or of Swift, as
   `julia -e 'token = raw"made VALUE"'` shows `julia -e 'token = <hidden>"made VALUE"'` and
   `swift -e 'let token = #"made VALUE"#'` shows `swift -e 'let token = <hidden>"made VALUE"#'`;
   a raw string of C++ that names an end word and holds a quote, as in `R"x(made " VALUE)x"`,
@@ -230,6 +228,11 @@ of names are not read as you may mean them:
   shown command hides the password and the hash takes it as typed. Written as `-j2` or
   `--jobs=2`, or with the text as a word of its own after `--setup`, the password is hidden in
   both.
+- **A client's option written shorter than its name.** A client's password option is read
+  by its whole name, as the config reference lists it. A parser such as Python's `argparse`
+  also takes a long option shortened to a start that no other option of the program shares,
+  and such a shortened option is not read as a password option, so the value after it shows:
+  `vllm serve org/model-a --api-ke made-up-key` shows whole.
 - **A Redis command its client refuses or reads otherwise.** The command of a Redis or Valkey
   client is read where the client starts it, so in a form the client refuses or reads as
   something else, a password shows: `redis-benchmark -c AUTH madeup` shows whole, since the
@@ -373,8 +376,9 @@ through
 `launch.env_pass` or a key file, and a Redis password with `-a` or `--pass`, or through
 `launch.env_pass`. Write the command of a Redis client in a form the client reads, and give a
 server its password on its command line (`--requirepass`) rather than in a file the side
-writes. Keep a client's password out of a comment, and join nothing to a credential's value in
-code. Name a client by its own name where its command starts, give a client the config
+writes. Write a client's option by its whole name, keep a client's password out of a comment,
+and join nothing to a credential's value in code. Name a client by its own name where its
+command starts, give a client the config
 reference does not list its password with `--pass` or through `launch.env_pass`, give `ssh` its
 remote command after the host, give the client of `--cluster call` its password with `-a`, and
 write a password rule in plain quotes. Write an option of `parallel` or `watch` glued to its
@@ -396,6 +400,23 @@ fingerprint covers its identity the same way, such as its command as typed and t
 its `identify` command; of its executable it covers the last part of the path, not the folder.
 To avoid it, keep such values out of the side's command: run it from a neutral folder, and pass
 values to it through `launch.env_pass`, which no hash covers.
+
+A line of an `identify` output that gives a name a version, two numbers or more joined by dots
+after a colon and nothing else, is read as a package's version whatever the name, so
+`DB_PASSWORD: 1.2.3` stays as printed in `identify_sha256`, in the side's fingerprint and in
+`hash_inputs.json`. A reader who knows the rest of the output can confirm a guessed value by
+hashing the guess, and a change to the value keeps captures made before and after it from
+pooling (`E_POOL_SIDE_DRIFT`). Keep a password out of what an `identify` command prints, and
+give it to the side through `launch.env_pass`.
+
+The arguments of a serving side are read with the program that `serve.command` names; with no
+`serve.command`, as for an image whose own entrypoint starts the server, they are read alone,
+and an option that takes several keys, such as the `--api-key` of the vLLM server, is read as
+one that takes one: of `serve.args = ["--model", "org/model-a", "--api-key", "KEY1", "KEY2"]`
+the config's hash covers `KEY2` as typed. The hash of a serving side's arguments that its
+identity holds reads them alone even when `serve.command` names the program. So a reader who
+knows the rest of the side can confirm a guessed second key by hashing the guess. Give such a
+server one key on its command line.
 
 `tools/hash_inputs.py` of this repository writes `hash_inputs.json` into a run folder: the
 values each published hash is taken over, rebuilt from the capture. It holds each side's whole

@@ -4679,14 +4679,15 @@ def _glued_path_cut(found: re.Match[str], path: str) -> str | None:
     """Cut a path glued to an option (``_GLUED_PATH``) to its last part, after the option.
 
     An option whose name is more than one letter is glued to the path only
-    when the path holds two parts or more, its blanks included, or starts at
-    ``~``: ``-isystem/a/include`` shows ``-isysteminclude``, while
-    ``-Ia/b``, which may be ``-I`` and the relative path ``a/b``, and
-    ``-isystem/x``, which names no folder, are left as they are.
+    when the path holds two parts or more, its blanks included, as one that
+    starts at ``~`` always does (``~/x``, ``~user/x``):
+    ``-isystem/a/include`` shows ``-isysteminclude``, while ``-Ia/b``, which
+    may be ``-I`` and the relative path ``a/b``, and ``-isystem/x``, which
+    names no folder, are left as they are.
     """
     option = found.group(1)
     name = option.lstrip("-")
-    if len(name) > 1 and name[0].isalpha() and not path.startswith("~") and "/" not in path[1:]:
+    if len(name) > 1 and name[0].isalpha() and "/" not in path[1:]:
         return None
     return option + _last_part(path)
 
@@ -6063,6 +6064,9 @@ _NEXT_CREDENTIALS: Final = "credentials"
 # (``>password``, ``<password``) or the hash of one (``#hash``, ``!hash``) keeps only its
 # first character, and any other rule is read as it stands.
 _NEXT_ACL_RULES: Final = "acl rules"
+# The values of a client's option that takes one secret or more (``many_secrets``): each
+# next word is hidden whole up to a word that starts with ``-`` or is an operator.
+_NEXT_SECRETS: Final = "secrets"
 # The token after an Authorization scheme word that is a credential's value, hidden whole
 # unless it starts an option: ``--token Bearer VALUE`` and ``--auth=Basic VALUE``.
 _NEXT_TOKEN: Final = "token"
@@ -6128,7 +6132,13 @@ class ClientOptions:
     next word is the user name, which is shown, and each word after it up to
     the next long option or command separator is a rule of that user, read
     as a rule of ``ACL SETUSER`` is (``_NEXT_ACL_RULES``), so
-    ``redis-server --user app on >VALUE`` shows ``><hidden>``.
+    ``redis-server --user app on >VALUE`` shows ``><hidden>``. A
+    ``many_secrets`` option takes one secret or more as its next arguments,
+    each hidden whole up to the next word that starts with ``-`` or is an
+    operator (``_NEXT_SECRETS``), so ``vllm serve m --api-key VALUE VALUE
+    --port 8000`` shows ``--api-key <hidden> <hidden> --port 8000``; a value
+    glued after ``=`` is its only one, as for any option whose name says
+    credential.
     """
 
     secret: tuple[str, ...] = ()
@@ -6141,6 +6151,7 @@ class ClientOptions:
     sentinel: tuple[str, ...] = ()
     switches: tuple[str, ...] = ()
     acl_user: tuple[str, ...] = ()
+    many_secrets: tuple[str, ...] = ()
 
 
 # The options of the Redis and Valkey clients and benchmarks that take the next argument as
@@ -6233,6 +6244,13 @@ _REDIS_SERVER: Final = ClientOptions(sentinel=("--sentinel",), acl_user=("--user
 _MEMTIER_BENCHMARK: Final = ClientOptions(
     credentials=("-a", "--authenticate"), command=("--command",)
 )
+# The OpenAI-compatible server of vLLM takes one API key or more after ``--api-key``: the field
+# ``FrontendArgs.api_key`` of ``vllm/entrypoints/common/cli_args.py`` is a list, which
+# ``collection_to_kwargs`` of ``vllm/engine/arg_utils.py`` gives ``nargs="+"``, and the parser of
+# ``vllm/utils/argparse_utils.py`` reads ``--api_key`` as ``--api-key``, in
+# [vLLM 0.33.0](https://github.com/vllm-project/vllm/tree/v0.33.0). The server is started as
+# ``vllm serve`` or as the module ``vllm.entrypoints.openai.api_server``.
+_VLLM_SERVER: Final = ClientOptions(many_secrets=("--api-key", "--api_key"))
 # The clients whose password options are hidden, by the name of the program. A
 # program is found by its name at the start of any word, also after a path
 # (``/usr/bin/redis-benchmark``), after a command separator (``true;mysql``) or
@@ -6257,6 +6275,8 @@ CLIENT_PASSWORD_OPTIONS: Final[Mapping[str, ClientOptions]] = {
     "mariadb-admin": _MYSQL_CLIENT,
     "sshpass": ClientOptions(secret=("-p",), takes_value=("-f", "-d", "-P"), runs_command=True),
     "ab": ClientOptions(user_password=("-A", "-P")),
+    "vllm": _VLLM_SERVER,
+    "vllm.entrypoints.openai.api_server": _VLLM_SERVER,
 }
 # What ends one command of a shell text and starts the next: ``;``, ``&``,
 # ``|``, a bracket or a backquote. The ``&`` of a redirection (``2>&1``, ``&>out``) ends none.
@@ -6295,6 +6315,10 @@ def _next_rule(plain: str, program: str = "") -> str:
     # the value holds: the next word is no value of it.
     if client is not None and _hidden_client_glued(plain, program) is not None:
         return ""
+    # A client's option that takes several keys hides each of them, though its name says
+    # credential (``vllm serve --api-key``).
+    if client is not None and plain in client.many_secrets:
+        return _NEXT_SECRETS
     if _names_credential(plain):
         return _NEXT_SECRET
     if plain in USER_PASSWORD_OPTIONS:
@@ -6632,12 +6656,46 @@ def _no_shell_after() -> tuple[re.Pattern[str], re.Pattern[str]]:
 _NO_SHELL_AFTER, _SHELL_NAMED_AFTER = _no_shell_after()
 # Programs whose first operand starts the command they run, with their options that take
 # the next argument as their value: ``env`` after its options and assignments; ``taskset``,
-# ``numactl``, ``chrt``, ``stdbuf`` and ``ionice`` after their options and the operand of
-# ``_STARTER_LEADS``, as their own manuals give their options (taskset(1), chrt(1) and
-# ionice(1) of util-linux 2.42, numactl(8) of numactl 2.0.19, stdbuf(1) of GNU coreutils
-# 9.11); and each client of ``CLIENT_PASSWORD_OPTIONS`` that ``runs_command``.
+# ``numactl``, ``chrt``, ``stdbuf``, ``ionice``, ``nice``, ``nohup``, ``timeout`` and
+# ``sudo`` after their options, their assignments and the operand of ``_STARTER_LEADS``, as
+# their own manuals give their options (taskset(1), chrt(1) and ionice(1) of util-linux
+# 2.42, numactl(8) of numactl 2.0.19, stdbuf(1), nice(1), nohup(1) and timeout(1) of GNU
+# coreutils 9.11, and sudo(8) of sudo 1.9.17p2); and each client of
+# ``CLIENT_PASSWORD_OPTIONS`` that ``runs_command``. An adjustment ``nice`` takes as
+# an option of digits (``nice -10``) starts with ``-`` as any option does.
 _COMMAND_STARTERS: Final[Mapping[str, tuple[str, ...]]] = {
     "env": ("-u", "--unset", "-C", "--chdir"),
+    "nice": ("-n", "--adjustment"),
+    "nohup": (),
+    "timeout": ("-k", "--kill-after", "-s", "--signal"),
+    "sudo": (
+        "-a",
+        "--auth-type",
+        "-C",
+        "--close-from",
+        "-c",
+        "--login-class",
+        "-D",
+        "--chdir",
+        "-g",
+        "--group",
+        "-h",
+        "--host",
+        "-p",
+        "--prompt",
+        "-R",
+        "--chroot",
+        "-r",
+        "--role",
+        "-t",
+        "--type",
+        "-T",
+        "--command-timeout",
+        "-U",
+        "--other-user",
+        "-u",
+        "--user",
+    ),
     "taskset": (),
     "numactl": (
         "-i",
@@ -6669,11 +6727,13 @@ _COMMAND_STARTERS: Final[Mapping[str, tuple[str, ...]]] = {
 }
 # The operand a starter of ``_COMMAND_STARTERS`` takes before the command it runs, when the
 # operand has this form: the mask of ``taskset``, a bit mask or with ``-c`` a list of CPUs
-# (``0x3``, ``0-3,8``), and the priority of ``chrt``, which a policy other than ``--fifo`` and
-# ``--rr`` may leave out.
+# (``0x3``, ``0-3,8``), the priority of ``chrt``, which a policy other than ``--fifo`` and
+# ``--rr`` may leave out, and the duration of ``timeout``, which is always its first operand
+# (``30``, ``1.5m``), so any word is read as it.
 _STARTER_LEADS: Final[Mapping[str, re.Pattern[str]]] = {
     "taskset": re.compile(r"(?:0[xX])?[0-9A-Fa-f,:-]+"),
     "chrt": re.compile(r"[0-9]+"),
+    "timeout": re.compile(r".+", re.DOTALL),
 }
 
 
@@ -7137,6 +7197,7 @@ class _CommandWalk:
             _NEXT_USER,
             _NEXT_ACL_RULES,
             _NEXT_ACL_USER,
+            _NEXT_SECRETS,
         ):
             self.rule = ""
             self.value = False
@@ -7367,7 +7428,7 @@ class _CommandWalk:
         self.secret_word = False
         if self.rule == _NEXT_SECRET_NAME:
             self.rule = _NEXT_SETTING_VALUES
-        elif self.rule not in (_NEXT_SETTING_VALUES, _NEXT_ACL_RULES):
+        elif self.rule not in (_NEXT_SETTING_VALUES, _NEXT_ACL_RULES, _NEXT_SECRETS):
             self.rule = ""
         self.taken = not (auth and (comment or _read_apart(ahead)))
         if not self.taken:
@@ -8039,6 +8100,9 @@ def _hidden_next(rule: str, word: str) -> str | None:
         return None if _plain_word(word).startswith("--") else HIDDEN
     if rule == _NEXT_TOKEN:
         return None if _plain_word(word).startswith("-") else HIDDEN
+    if rule == _NEXT_SECRETS:
+        plain = _plain_word(word)
+        return None if plain.startswith("-") or plain in _OPERATOR_WORDS else HIDDEN
     if rule == _NEXT_PASSWORD:
         return _hidden_password(word)
     if rule == _NEXT_CREDENTIALS:
@@ -9085,9 +9149,13 @@ def _hidden_words(
 
 # A word of a program's text that gives a credential-like name a quoted value that
 # ``_hidden_code`` hid, and the rest of the word after the closing quote, when that rest
-# starts as the next part of the program does: ``API_KEY='<hidden>';run_old()``.
+# starts as the next part of the program does: ``API_KEY='<hidden>';run_old()``. No
+# string goes on past its closing quote before one of these, in a program's text or a
+# shell's: a backquote ends it as ``;`` does, and so do ``&&`` and ``|`` that no quote
+# follows. ``||`` ends none, as it joins two strings in SQL (``'a'||'b'``), and neither does
+# an ``&&`` or a ``|`` before a quote, which starts more of the value rather than a command.
 _HIDDEN_QUOTED_VALUE = re.compile(
-    r"""([^\s'"=]+=)(['"])""" + re.escape(HIDDEN) + r"""\2(?=[;,)\]}])"""
+    r"""([^\s'"=]+=)(['"])""" + re.escape(HIDDEN) + r"""\2(?=[;,)\]}`]|(?:&&|\|(?!\|))(?!['"]))"""
 )
 
 
@@ -9451,6 +9519,17 @@ _BRACKET = re.compile(r"[()\[\]{}]")
 _DOUBLE_QUOTED_REST = re.compile(r"""[^"\\]*(?:\\.[^"\\]*)*""", re.DOTALL)
 # The same in single quotes, in the text of a program, where a backslash escapes ``'`` too.
 _SINGLE_QUOTED_REST = re.compile(r"""[^'\\]*(?:\\.[^'\\]*)*""", re.DOTALL)
+# The rest of a value in three quotes, as a program's string, up to the three that close
+# it: one or two quotes, and a quote after a backslash, belong to it (``'''a';b'''``).
+_TRIPLE_QUOTED_REST: Final[Mapping[str, re.Pattern[str]]] = {
+    quote: re.compile(rf"""(?:[^{quote}\\]|\\.|{quote}(?!{quote}{quote}))*""", re.DOTALL)
+    for quote in ("'", '"')
+}
+# The rest of a word of a shell text from a place in it, read with the shell's quotes and
+# escapes, up to a blank or an operator; a quote that is not closed runs to the end of the text.
+_SHELL_WORD_REST = re.compile(
+    r"""(?:'[^']*'?|"[^"\\]*(?:\\[\s\S][^"\\]*)*"?|\\[\s\S]|[^\s'"\\;&|()<>`])*"""
+)
 # More of one statement after a value: ``= ...`` after a type, as in ``api_key: str = ...``.
 _CODE_MORE = re.compile(_CODE_BLANKS + r""":?=""" + _CODE_BLANKS)
 # What joins a value to more of the same value: a call or an index right after
@@ -9569,15 +9648,68 @@ def _quoted_value_end(text: str, at: int, *, code: bool = False) -> int:
     A ``"`` after a backslash does not close a value in double quotes; in the
     text of a program (``code``) a ``'`` after a backslash does not close one
     in single quotes either, while a shell's single quotes hold no escape. A
-    value that is not closed runs to the end of the text.
+    value that opens with three quotes, as a program's string may, ends at the
+    three that close it (``_TRIPLE_QUOTED_REST``). In a shell's text the same
+    quotes are an empty string and the opening quote of the next, so there
+    the value runs at least to the end of the shell word
+    (``_SHELL_WORD_REST``): ``'''a'b''' VALUE'`` is one word there. A value
+    that is not closed runs to the end of the text.
     """
     quote = text[at]
+    if text.startswith(quote * 3, at):
+        inside = _TRIPLE_QUOTED_REST[quote].match(text, at + 3)
+        close = inside.end() if inside is not None else at + 3
+        end = close + 3 if text.startswith(quote * 3, close) else len(text)
+        if not code:
+            word = _SHELL_WORD_REST.match(text, at)
+            if word is not None:
+                end = max(end, word.end())
+        return end
     if quote == '"' or code:
         rest = (_DOUBLE_QUOTED_REST if quote == '"' else _SINGLE_QUOTED_REST).match(text, at + 1)
         close = rest.end() if rest is not None else at + 1
         return close + 1 if close < len(text) else len(text)
     close = text.find(quote, at + 1)
     return len(text) if close < 0 else close + 1
+
+
+def _backquoted_value_end(text: str, at: int) -> int:
+    """Return where the value in backquotes that starts at ``at`` ends.
+
+    It ends after the backquote that closes it, as a template string of
+    JavaScript and a command of Perl or of a shell do. A character after a
+    backslash does not close it, and neither does a backquote inside a
+    ``${...}`` part, which runs to the ``}`` that closes it and may hold
+    strings, braces and templates of its own. A value that is not closed
+    runs to the end of the text. The text is read once.
+    """
+    # Each part open at a place: a backquote for a template, ``{`` for a ``${...}`` part or
+    # a brace in one, or the quote of a string in one.
+    open_parts = ["`"]
+    i = at + 1
+    while i < len(text):
+        char = text[i]
+        inside = open_parts[-1]
+        if char == "\\":
+            i += 2
+            continue
+        if inside in _QUOTES:
+            if char == inside:
+                open_parts.pop()
+        elif inside == "`":
+            if char == "`":
+                open_parts.pop()
+                if not open_parts:
+                    return i + 1
+            elif text.startswith("${", i):
+                open_parts.append("{")
+                i += 1
+        elif char in "`{" or char in _QUOTES:
+            open_parts.append(char)
+        elif char == "}":
+            open_parts.pop()
+        i += 1
+    return len(text)
 
 
 def _code_value_end(
@@ -9597,11 +9729,15 @@ def _code_value_end(
     A quoted value ends at its closing quote (``_quoted_value_end``, which
     ``code`` steers) and a value in brackets at its closing bracket, quoted
     brackets aside; either runs to the end of the text when it is not
-    closed. Any other value is bare (``_CODE_BARE``): ``;`` belongs to it,
-    and a closing bracket ends it only where it closes a bracket open before
-    it (``brackets``, made from the text when none is given), so
-    ``{password: a;b)c}`` hides all of ``a;b)c``. In a shell text it also
-    ends at the first of ``stops``, the operators of the text
+    closed. A value in backquotes, a template string or a command of a
+    program or of a shell, ends at the backquote that closes it
+    (``_backquoted_value_end``); where more of the same word is glued after
+    that backquote, the rest is read on as a bare value, so all of the value
+    in ``{password: `a`b}`` is hidden. Any other value is bare (``_CODE_BARE``):
+    ``;`` belongs to it, and a closing bracket ends it only where it closes
+    a bracket open before it (``brackets``, made from the text when none is
+    given), so ``{password: a;b)c}`` hides all of ``a;b)c``. In a shell
+    text it also ends at the first of ``stops``, the operators of the text
     (``_operator_spans``), after its start. A value that starts with a
     backslash, or a quote that only holds the other quote (``'"'``), is how
     a shell writes a quote inside a quoted word: it is left to the reading
@@ -9639,6 +9775,11 @@ def _code_value_end(
         close = _quoted_part_end(at, quoted)
         if close is not None and text[close : close + 1] == '"':
             return None
+    start = at
+    if first == "`":
+        start = _backquoted_value_end(text, at)
+        if start >= len(text) or text[start].isspace() or text[start] in ";,)]}":
+            return start
     if first in _QUOTES and first:
         between = text[at + 1 : at + 2]
         if between in _QUOTES and between not in ("", first) and text[at + 2 : at + 3] == first:
@@ -9663,10 +9804,10 @@ def _code_value_end(
                 if depth == 0:
                     return i + 1
         return len(text)
-    limit = _stop_after(stops, at, len(text))
+    limit = _stop_after(stops, start, len(text))
     # The value is read in pieces between closing brackets, and no further than one
     # character past the operator that ends it, so a text of many values is read once.
-    end = at
+    end = start
     while True:
         piece = _CODE_BARE.match(text, end, limit + 1)
         if piece is not None:

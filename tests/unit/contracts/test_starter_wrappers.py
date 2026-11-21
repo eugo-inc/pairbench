@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026, Eugo, Inc.
-"""A runner after ``taskset``, ``numactl``, ``chrt``, ``stdbuf`` or ``ionice`` is read as a runner.
+"""A runner after a program that runs the command after its options is read as a runner.
 
-Each of these programs runs the command that follows its options and, for ``taskset`` and
-``chrt``, the mask or the priority it takes first. That command starts a command as the one
-after ``env`` does, so ``ssh``, ``hyperfine``, ``watch`` and ``parallel`` there keep the
-program of their text shown and hashed, and a credential in that text stays hidden. Two
-sides that run two programs behind the same wrapper are two sides; two sides that differ only
-in the credential are one.
+``taskset``, ``numactl``, ``chrt``, ``stdbuf``, ``ionice``, ``nice``, ``nohup``, ``timeout``
+and ``sudo`` each run the command that follows their options and, for ``taskset``, ``chrt``
+and ``timeout``, the mask, the priority or the duration they take first. That command starts
+a command as the one after ``env`` does, so ``ssh``, ``hyperfine``, ``watch`` and ``parallel``
+there keep the program of their text shown and hashed, and a credential in that text stays
+hidden. Two sides that run two programs behind the same wrapper are two sides; two sides that
+differ only in the credential are one.
 """
 
 from __future__ import annotations
@@ -144,6 +145,155 @@ WRAPPER_FORMS: dict[str, tuple[tuple[str, ...], str]] = {
         ("ionice", "-t", "-c", "3", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
         "ionice -t -c 3 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
     ),
+    "nice": (
+        ("nice", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "nice ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "nice with an adjustment": (
+        ("nice", "-n", "5", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "nice -n 5 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "nice with an adjustment glued to its option": (
+        ("nice", "-n5", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "nice -n5 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "nice with the long option of an adjustment": (
+        ("nice", "--adjustment", "5", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "nice --adjustment 5 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "nice with an adjustment glued to its long option": (
+        ("nice", "--adjustment=5", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "nice --adjustment=5 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "nice with an adjustment as an option of digits": (
+        ("nice", "-10", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "nice -10 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "nohup": (
+        ("nohup", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "nohup ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "timeout with a duration": (
+        ("timeout", "30", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "timeout 30 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "timeout with a duration and its unit": (
+        ("timeout", "1.5m", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "timeout 1.5m ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "timeout with a signal": (
+        ("timeout", "-s", "KILL", "30", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "timeout -s KILL 30 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "timeout with a time to kill after": (
+        ("timeout", "-k", "5", "30", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "timeout -k 5 30 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "timeout with values glued to its long options": (
+        (
+            "timeout",
+            "--signal=TERM",
+            "--kill-after=5s",
+            "30",
+            "ssh",
+            "made-up-host",
+            "API_KEY={v} ./made-up-bench-{p}",
+        ),
+        "timeout --signal=TERM --kill-after=5s 30 ssh made-up-host "
+        "'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "timeout with flags": (
+        (
+            "timeout",
+            "--foreground",
+            "--preserve-status",
+            "-v",
+            "30",
+            "ssh",
+            "made-up-host",
+            "API_KEY={v} ./made-up-bench-{p}",
+        ),
+        "timeout --foreground --preserve-status -v 30 ssh made-up-host "
+        "'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo": (
+        ("sudo", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "sudo ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo with a user": (
+        ("sudo", "-u", "app", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "sudo -u app ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo with a user glued to its long option": (
+        ("sudo", "--user=app", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "sudo --user=app ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo with a flag and a group": (
+        ("sudo", "-E", "-g", "bench", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "sudo -E -g bench ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo with the long options of a folder and a prompt": (
+        (
+            "sudo",
+            "--chdir",
+            "work",
+            "--prompt",
+            "pw",
+            "ssh",
+            "made-up-host",
+            "API_KEY={v} ./made-up-bench-{p}",
+        ),
+        "sudo --chdir work --prompt pw ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo with an assignment": (
+        ("sudo", "A=1", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "sudo A=1 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo with the end of its options": (
+        ("sudo", "-u", "app", "--", "ssh", "made-up-host", "API_KEY={v} ./made-up-bench-{p}"),
+        "sudo -u app -- ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "hyperfine after nice": (
+        ("nice", "-n", "5", "hyperfine", "API_KEY={v} ./made-up-bench-{p}"),
+        "nice -n 5 hyperfine 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "hyperfine after timeout": (
+        ("timeout", "60", "hyperfine", "API_KEY={v} ./made-up-bench-{p}"),
+        "timeout 60 hyperfine 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "watch after sudo": (
+        ("sudo", "-u", "app", "watch", "-n", "1", "API_KEY={v} ./made-up-bench-{p}"),
+        "sudo -u app watch -n 1 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "a wrapper after nohup": (
+        (
+            "nohup",
+            "taskset",
+            "-c",
+            "0",
+            "ssh",
+            "made-up-host",
+            "API_KEY={v} ./made-up-bench-{p}",
+        ),
+        "nohup taskset -c 0 ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "sudo after timeout": (
+        (
+            "timeout",
+            "30",
+            "sudo",
+            "-u",
+            "app",
+            "ssh",
+            "made-up-host",
+            "API_KEY={v} ./made-up-bench-{p}",
+        ),
+        "timeout 30 sudo -u app ssh made-up-host 'API_KEY=<hidden> ./made-up-bench-old'",
+    ),
+    "nice in a shell text": (
+        ("sh", "-c", "nice -n 5 ssh made-up-host 'API_KEY={v} ./made-up-{p}'"),
+        """sh -c 'nice -n 5 ssh made-up-host '"'"'API_KEY=<hidden> ./made-up-old'"'"''""",
+    ),
     "hyperfine after taskset": (
         ("taskset", "-c", "0-3", "hyperfine", "API_KEY={v} ./made-up-bench-{p}"),
         "taskset -c 0-3 hyperfine 'API_KEY=<hidden> ./made-up-bench-old'",
@@ -221,6 +371,14 @@ CLIENT_FORMS: dict[str, tuple[tuple[str, ...], str]] = {
     "redis-cli after chrt with no priority": (
         ("chrt", "-o", "redis-cli", "-a", "{v}", "ping"),
         "chrt -o redis-cli -a '<hidden>' ping",
+    ),
+    "redis-cli after sudo": (
+        ("sudo", "-u", "app", "redis-cli", "-a", "{v}", "ping"),
+        "sudo -u app redis-cli -a '<hidden>' ping",
+    ),
+    "redis-cli after timeout": (
+        ("timeout", "5", "redis-cli", "-a", "{v}", "ping"),
+        "timeout 5 redis-cli -a '<hidden>' ping",
     ),
     "sshpass after ionice": (
         ("ionice", "-c", "3", "sshpass", "-p", "{v}", "ssh", "made-up-host", "true"),

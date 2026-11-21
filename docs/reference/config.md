@@ -510,15 +510,37 @@ operators and all, as the first form below says (`tool 'DB_PASSWORD=a b; ls'` sh
   `except`, `lambda`, `not`, `and`, `or`, `is`, `case` or `match` (`CODE_KEYWORDS`) is given no
   value, so the statement after it stays: `python3 -c 'if token: run_old()'` is shown as typed.
   A value in quotes ends at its closing quote, and a quote after a backslash does not close it,
-  but in the single quotes of a shell text, which hold no escape. A bare value holds a `;` that no blank follows and a closing bracket, as a password may,
-  unless the `;` is an operator of a shell text or the bracket closes one open before the
-  value: `tool --config '{password: a;b, threads: 8}'` shows
+  but in the single quotes of a shell text, which hold no escape. A value that opens with three
+  quotes, as a string of Python may, ends at the three that close it, so a quote, a `;` or an
+  `&&` inside it is hidden with it. In a shell text, where three quotes are an empty string
+  and the opening quote of the next, the value runs at least to the end of the shell word:
+  `sh -c "API_KEY='''a'b''' VALUE' ./bench-old"` shows `sh -c 'API_KEY=<hidden> ./bench-old'`.
+  A value in backquotes, a template string of JavaScript or a
+  command of Perl or of a shell, ends at the backquote that closes it, blanks and `${...}`
+  parts included, and one that is not closed runs to the end of the text:
+  `` sh -c 'API_KEY=`echo made VALUE` ./bench-old' `` shows
+  `sh -c 'API_KEY=<hidden> ./bench-old'`, and
+  `` node -e 'process.env.API_KEY = `made VALUE`;run_old()' `` shows
+  `node -e 'process.env.API_KEY = <hidden>;run_old()'`. What is glued after the closing
+  backquote is more of the same value and is hidden with it:
+  `` ./bench --config '{password: `a`VALUE}' `` shows `./bench --config '{password: <hidden>}'`.
+  A bare value holds a `;` that no blank
+  follows and a closing bracket, as a password may, unless the `;` is an operator of a shell
+  text or the bracket closes one open before the value:
+  `tool --config '{password: a;b, threads: 8}'` shows
   `tool --config '{password: <hidden>, threads: 8}'`, inside `sh -c` too. A bare value also
   runs on past a line break after a backslash, as a shell joins the two lines in double quotes
-  and a program joins them in its text. In the text after
-  `-c` of a program that is no shell (`python -c`), the statement after a quoted value stays,
-  and a header-like `name:` hides its value up to the end of its line:
-  in `python3 -c 'API_KEY="VALUE";run_old()'` the quoted value is hidden and `run_old()` stays.
+  and a program joins them in its text. In the text after `-c` of a program that is no shell
+  (`python -c`), the statement after a quoted value stays, as do an `&&`, a `|` or a backquote
+  right after its closing quote, and a header-like `name:` hides its value up to the end of its
+  line: in `python3 -c 'API_KEY="VALUE";run_old()'` the quoted value is hidden and `run_old()`
+  stays. A `||`, which joins two strings in SQL, and an `&&` or a `|` that a quote follows go on
+  with the value, so the rest of the word is hidden with it:
+  `psql -c "ALTER ROLE app PASSWORD='made'||'VALUE'"` shows
+  `psql -c 'ALTER ROLE app PASSWORD=<hidden>'`. The text after `node -e` or `perl -e` is read as
+  any other argument, as Perl and JavaScript end a string where Python does not (Perl's
+  `q{...}`, a pattern in either): a value glued to its name there hides the rest of the text,
+  so `node -e 'API_KEY="VALUE";run_old()'` shows `node -e 'API_KEY=<hidden>'`.
   A value written as a string that a mark of its own opens is hidden to the mark that closes
   it: a string with a prefix (`f'...'`, `rb"..."`, `@"..."`, `u8"..."`), a raw string of Rust
   (`r#"..."#`), a raw string of C++ with a prefix before its `R` or none (`R"(...)"`,
@@ -632,7 +654,8 @@ after it stays shown:
   (`-NpTEXT`) and wherever `hyperfine` starts a command in the words of `ssh`, `watch` or
   `parallel`, which a shell runs once they are joined: first, or after a separator, after the
   assignments that lead it, after `env`, `sshpass`, `taskset`, `numactl`, `chrt`, `stdbuf`,
-  `ionice` or `time` read as below, or after the host of a nested `ssh`
+  `ionice`, `time`, `nice`, `nohup`, `timeout` or `sudo` read as below, or after the host of a
+  nested `ssh`
   (`ssh made-up-host taskset -c 0 hyperfine --setup=TEXT ./bench-old`), and of `-c` or `--command`
   of `su`, `runuser`, `flock`, `script` and `fish`
   (`TEXT_OPTIONS`), given as the next argument or glued to the option. So `ssh made-up-host 'API_KEY=VALUE ./bench-old'`
@@ -659,22 +682,28 @@ after it stays shown:
   reserved word of a shell that a command follows (`{`, `!`, `if`, `then`, `else`, `elif`,
   `while`, `until`, `do`, and the body of a function), after the assignments that lead a
   command, and the command that `env` or `sshpass` runs. So is the
-  command that `taskset`, `numactl`, `chrt`, `stdbuf`, `ionice` or `time` runs, after the
-  options of each and the mask of `taskset` or the priority of `chrt`, read with the options
+  command that `taskset`, `numactl`, `chrt`, `stdbuf`, `ionice`, `time`, `nice`, `nohup`,
+  `timeout` or `sudo` runs, after the options of each, the assignments of `sudo`, and the mask
+  of `taskset`, the priority of `chrt` or the duration of `timeout`, read with the options
   their own manuals give that take a value
   ([taskset(1)](https://github.com/util-linux/util-linux/blob/v2.42/schedutils/taskset.1.adoc),
   [chrt(1)](https://github.com/util-linux/util-linux/blob/v2.42/schedutils/chrt.1.adoc) and
   [ionice(1)](https://github.com/util-linux/util-linux/blob/v2.42/schedutils/ionice.1.adoc) of
   util-linux 2.42, [numactl(8)](https://github.com/numactl/numactl/blob/v2.0.19/numactl.8) of
-  numactl 2.0.19, [stdbuf(1)](https://man7.org/linux/man-pages/man1/stdbuf.1.html) of GNU
-  coreutils 9.11, and [time](https://www.gnu.org/software/time/manual/time.html) of GNU time 1.9
-  with the `-p` of a shell's own `time`):
-  `taskset -c 0-3 ssh made-up-host 'API_KEY=VALUE ./bench-old'` shows
-  `taskset -c 0-3 ssh made-up-host 'API_KEY=<hidden> ./bench-old'`. After any other program,
-  such as `nice`, `nohup`, `timeout` or `sudo`, the text of `ssh`, `hyperfine`, `watch`,
+  numactl 2.0.19, [stdbuf(1)](https://man7.org/linux/man-pages/man1/stdbuf.1.html),
+  [nice(1)](https://man7.org/linux/man-pages/man1/nice.1.html),
+  [nohup(1)](https://man7.org/linux/man-pages/man1/nohup.1.html) and
+  [timeout(1)](https://man7.org/linux/man-pages/man1/timeout.1.html) of GNU coreutils 9.11,
+  [sudo(8)](https://github.com/sudo-project/sudo/blob/v1.9.17p2/docs/sudo.mdoc.in) of sudo
+  1.9.17p2, and [time](https://www.gnu.org/software/time/manual/time.html) of GNU time 1.9
+  with the `-p` of a shell's own `time`): `taskset -c 0-3 ssh made-up-host 'API_KEY=VALUE ./bench-old'` shows
+  `taskset -c 0-3 ssh made-up-host 'API_KEY=<hidden> ./bench-old'`, and
+  `timeout -s KILL 30 ssh made-up-host 'API_KEY=VALUE ./bench-old'` shows
+  `timeout -s KILL 30 ssh made-up-host 'API_KEY=<hidden> ./bench-old'`. After any other
+  program, such as `setsid` or `doas`, the text of `ssh`, `hyperfine`, `watch`,
   `parallel` or `tmux` is read as any argument is, so a credential's value there runs to the
-  end of the text: `nice ssh made-up-host 'API_KEY=VALUE ./bench-old'` shows
-  `nice ssh made-up-host 'API_KEY=<hidden>'`. The value of one of their own options, such as
+  end of the text: `setsid ssh made-up-host 'API_KEY=VALUE ./bench-old'` shows
+  `setsid ssh made-up-host 'API_KEY=<hidden>'`. The value of one of their own options, such as
   `ssh -o` or `tmux -e`, is no command text and keeps the rule for a value. In each of these
   texts but the one after `-c` of a program that is no shell (`python -c`), the words end
   where a shell's words end: a value given with `=` ends where its shell word ends, so `=` or
@@ -816,6 +845,7 @@ not say what its entrypoint is, the run is refused with
 | `mysql`, `mysqlslap`, `mysqladmin`, `mariadb`, `mariadb-slap`, `mariadb-admin` | `-pVALUE` | `-p<hidden>` |
 | `sshpass` | `-p VALUE`, `-pVALUE` | `-p <hidden>` |
 | `ab` | `-A user:VALUE`, `-P user:VALUE` | `-A user:<hidden>` |
+| `vllm`, `vllm.entrypoints.openai.api_server` | `--api-key VALUE VALUE`, `--api_key VALUE VALUE` | `--api-key <hidden> <hidden>` |
 | `curl` and any other program but a Redis or Valkey server | `-u`, `--user`, `-U`, `--proxy-user` with `user:VALUE` | `-u user:<hidden>` |
 | `redis-server`, `redis-sentinel`, `valkey-server`, `valkey-sentinel` | `--sentinel auth-pass master VALUE`, `--sentinel sentinel-pass VALUE` | `--sentinel auth-pass master <hidden>` |
 | `redis-server`, `redis-sentinel`, `valkey-server`, `valkey-sentinel` | `--user name on >VALUE`, `<VALUE`, `#VALUE`, `!VALUE` | `--user name on ><hidden>` |
@@ -836,6 +866,19 @@ read as a rule of `ACL SETUSER` is. A rule that gives a password or its hash (`>
 `--user app on '><hidden>' '~*' +@all --port 7000`. A `--NAME` right after `--user` is read
 as the next option and not as a name, so `redis-server --user --requirepass VALUE` shows
 `--user --requirepass <hidden>`.
+
+The OpenAI-compatible server of vLLM, started as `vllm serve` or as
+`python -m vllm.entrypoints.openai.api_server`, takes one API key or more after `--api-key`
+and reads `--api_key` as the same option, as its parser reads them in
+[vLLM 0.33.0](https://github.com/vllm-project/vllm/tree/v0.33.0). Each word after the option
+is hidden, up to the next word that starts with `-`, a shell operator or the end of the
+command: `vllm serve org/model-a --api-key VALUE VALUE --port 8000` shows
+`vllm serve org/model-a --api-key '<hidden>' '<hidden>' --port 8000`. A model written after the
+keys is one more key to the server and is hidden with them. A key glued after `=` is the
+option's only one, so `vllm serve --api-key=VALUE org/model-a` shows
+`vllm serve '--api-key=<hidden>' org/model-a`, and after any other program `--api-key` hides
+one word: `./made-up-tool --api-key VALUE made-up-out.json` shows
+`./made-up-tool --api-key '<hidden>' made-up-out.json`.
 
 The `mysql` clients hide only the joined form: with a space, `-p` asks for the password and the
 next word is a database name, which is shown (`mysql -p shop`). The options of `sshpass` end at
