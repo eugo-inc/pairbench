@@ -26,8 +26,14 @@ taken over nothing that names the machine:
   owner-only in the private folder and one line on standard error says so. The class of
   machine is written as ``machine-class.txt`` beside them after a publish.
 
-The folder given must be inside this checkout. The README's section on native code is filled
-from the published results document::
+The folder given must be inside this checkout and named by its last part: an empty value, or
+one whose last part names no folder, such as ``.``, is refused before anything runs, since the
+publish after the run would refuse it. The folder it names once its links and any ``..`` are
+followed must be empty or absent; one that holds files is refused before anything runs as well.
+So is a folder that would hold the run's private folder, empty or absent: ``pairbench-runs``
+or the checkout itself, by whatever path it is named, since the published folder would then
+hold the run's capture and sidecar.
+The README's section on native code is filled from the published results document::
 
     pairbench fill docs/readme/README.in.md \\
         --results OUT_FOLDER/results.json -o README.md
@@ -242,6 +248,19 @@ def hash_inputs_command(
     return [python, str(HASH_INPUTS), str(run_folder), "--publish", str(published)]
 
 
+def _folder_refusal(typed: str) -> str | None:
+    """Why the folder value ``typed`` names no folder to write, which the publish after the run
+    would refuse; ``None`` when it names one."""
+    if not typed:
+        return "the folder is given as an empty value; give the folder to write"
+    if not Path(typed).name:
+        return (
+            f"the folder {typed} names no folder by its last part; give the folder to write by "
+            "its name"
+        )
+    return None
+
+
 def _run(command: Sequence[str]) -> int:
     return subprocess.run(list(command), check=False).returncode
 
@@ -249,7 +268,7 @@ def _run(command: Sequence[str]) -> int:
 def main(argv: Sequence[str] | None = None, *, run: Runner = _run, repo: Path = REPOSITORY) -> int:
     """Run the measurement and return the exit code of the first step that fails."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    parser.add_argument("folder", type=Path, help="the run folder to write; empty or absent")
+    parser.add_argument("folder", help="the run folder to write; empty or absent")
     parser.add_argument(
         "--machine-class",
         required=True,
@@ -258,22 +277,35 @@ def main(argv: Sequence[str] | None = None, *, run: Runner = _run, repo: Path = 
     parser.add_argument("--engine", default="docker", help="the container engine to run")
     parser.add_argument("--dry-run", action="store_true", help="print the commands only")
     options = parser.parse_args(argv)
-    folder: Path = options.folder
+    typed = str(options.folder)
+    refusal = _folder_refusal(typed)
+    if refusal is not None:
+        print(refusal, file=sys.stderr)
+        return EXIT_USAGE
+    folder = Path(typed)
     named = machine_class(str(options.machine_class))
     if named is None:
         print(MACHINE_CLASS_REFUSED, file=sys.stderr)
         return EXIT_USAGE
     checkout = repo.resolve()
     inside = folder.resolve()
+    shown = inside.name or str(inside)
     if inside != checkout and checkout not in inside.parents:
         print(
-            f"the folder {folder.name} is not inside the repository, which the run reaches "
-            f"at {WORK}",
+            f"the folder {shown} is not inside the repository, which the run reaches at {WORK}",
             file=sys.stderr,
         )
         return EXIT_USAGE
-    if folder.exists() and (not folder.is_dir() or any(folder.iterdir())):
-        print(f"the folder {folder.name} exists and is not empty", file=sys.stderr)
+    runs = (checkout / RUNS).resolve()
+    if inside == runs or inside in runs.parents:
+        print(
+            f"the folder {shown} would hold the run's private folder, which is written under "
+            f"{RUNS}; name another folder inside the repository",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    if inside.exists() and (not inside.is_dir() or any(inside.iterdir())):
+        print(f"the folder {shown} exists and is not empty", file=sys.stderr)
         return EXIT_USAGE
     engine = str(options.engine)
     private = private_folder(checkout)

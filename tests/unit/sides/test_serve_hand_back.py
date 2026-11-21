@@ -244,6 +244,29 @@ def test_an_interrupt_during_the_hand_back_names_the_folder_and_goes_on(
     ]
 
 
+def test_an_error_in_the_hand_back_after_a_serving_launch_that_ended_names_the_folder(
+    script: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seen_as_another_user_s(monkeypatch)
+    processes = EngineStandIn(script, {})
+    error = RuntimeError("a made-up failure")
+
+    def failing() -> Completed:
+        raise error
+
+    engine = HandBackEngine(processes=processes, chown=failing)
+    notes: list[tuple[str, str]] = []
+    resolved = container_kind(engine, processes).resolve(container_side(), ctx(notes=notes))
+    with pytest.raises(RuntimeError) as caught:
+        resolved.launch(_launch(tmp_path, Load()))
+    assert caught.value is error
+    _handed_back_once_after_the_server_is_removed(engine)
+    # Without the end that says later launches of the side are not named.
+    assert notes == [
+        ("files_not_handed_back", KEPT + "the hand-back stopped on an error (RuntimeError)")
+    ]
+
+
 def test_every_stopped_serving_launch_whose_files_stay_is_named(
     script: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -319,6 +342,37 @@ def test_a_serving_start_stopped_after_the_engine_runs_removes_the_server_and_ha
     _handed_back_once_after_the_server_is_removed(engine)
     # The engine's client is down before the container is removed, so it
     # cannot start the container after the removal.
+    assert engine.clients_gone_at_remove == [True]
+    assert [process.exited() is not None for process in processes.started] == [True]
+    assert notes == []
+
+
+@pytest.mark.parametrize(
+    "stop", [KeyboardInterrupt(), RuntimeError("a made-up failure")], ids=["interrupt", "error"]
+)
+def test_a_serving_start_cut_short_whose_watcher_fails_to_stop_still_cleans_up(
+    stand_in: EngineStandIn, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop: BaseException
+) -> None:
+    processes = stand_in
+    engine = HandBackEngine(processes=processes)
+    _seen_as_another_user_s(monkeypatch, until=lambda: bool(_chowns(engine)))
+    notes: list[tuple[str, str]] = []
+    resolved = container_kind(engine, processes).resolve(container_side(), ctx(notes=notes))
+    real_stop = container.PidWatcher.stop
+    stopped: list[bool] = []
+
+    def failing_stop(self: container.PidWatcher) -> int | None:
+        real_stop(self)
+        stopped.append(True)
+        raise RuntimeError("a made-up watcher failure")
+
+    monkeypatch.setattr(container.PidWatcher, "stop", failing_stop)
+    _cut_short_after_the_engine_starts(monkeypatch, "output-reader", stop)
+    with pytest.raises(type(stop)) as caught:
+        resolved.launch(_launch(tmp_path, Load()))
+    assert caught.value is stop
+    assert stopped == [True]
+    _handed_back_once_after_the_server_is_removed(engine)
     assert engine.clients_gone_at_remove == [True]
     assert [process.exited() is not None for process in processes.started] == [True]
     assert notes == []

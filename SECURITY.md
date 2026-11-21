@@ -428,9 +428,16 @@ file shows that value in another place, such as the word `8g` in the workload's 
 
 Only such a sidecar may be shared: `--publish FOLDER` copies `results.json`, `results.md` and
 `report.html` into the folder, and the sidecar with them only when it may be shared; otherwise
-it keeps the sidecar owner-only in the run folder, says so on standard error and exits 0. A
-results file kept in this repository has a sidecar that passed this check beside it, with one
-exception, in `docs/figures/launch-cost/`: the launch-cost results are kept without their
-sidecar because the results hide the two side commands; the commands are the constants of
-`tools/launch_cost.py`, so a reader runs that script to repeat the run rather than recomputing
-the hashes.
+it keeps the sidecar owner-only in the run folder, says so on standard error and exits 0.
+`--publish` refuses, with exit 2 and before it reads or writes any file, a `FOLDER` that is
+empty, whose last part names no folder, such as `.`, or that is the run folder or a folder
+inside it, through a link or not. It refuses the same way a `FOLDER` that holds the run folder,
+at any depth, through a link or not, since the run's own private files would then lie inside the
+published folder. It checks every file before it copies any: a publish that fails before its
+first copy leaves `FOLDER` as it was and says "nothing published", and one that fails after it
+says "partly published" and names exactly the files it copied, both with exit 2. A results file
+kept in this repository has a sidecar that passed this check beside it, with one exception, in
+`docs/figures/launch-cost/`: the launch-cost
+results are kept without their sidecar because the results hide the two side commands; the
+commands are the constants of `tools/launch_cost.py`, so a reader runs that script to repeat the
+run rather than recomputing the hashes.

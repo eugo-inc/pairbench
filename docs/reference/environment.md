@@ -319,8 +319,13 @@ results may be published. It refuses unless the checkout is reached at `/work`, 
 publishes `results.json`, `results.md` and `report.html` into the named folder, and
 `hash_inputs.json` with them only when the shared files show every value the sidecar holds;
 otherwise the sidecar stays owner-only in the private folder and `run.sh` exits with the run's
-own code. A normal run when unset; an empty value, or one that names the showcase folder
-itself such as `.` or `./.`, is refused like a folder outside the showcase.
+own code. A normal run when unset. Each of these values is refused with exit 2 and its own
+line on standard error, before anything runs: an empty value; one that names the showcase
+folder itself, such as `.` or `./.`; an absolute path or one with `..`; one with a part made
+only of blanks or only of dots, or a part that starts with `-`; and `pairbench-runs` or a
+folder under it, which holds the private run folders. A value that reaches, through a link, the
+showcase folder, a folder that holds it, or `pairbench-runs` or a folder under it is refused the
+same way, as is one with a part that is a link leading to no folder.
 
 ### `PAIRBENCH_NEIGHBOUR_LOOPS`
 

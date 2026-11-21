@@ -6,11 +6,15 @@ The noisy-neighbour script is run from a copy of its folder and of the helper
 beside it, with made-up ``pairbench`` and ``docker`` programs first on the
 path. The made-up
 ``pairbench`` refuses a run folder that holds files, as the real one does.
+
+Each container a showcase script starts itself, outside pairbench, gets no swap
+beyond its memory limit: its ``--memory-swap`` is the value of its ``--memory``.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -33,6 +37,18 @@ mkdir -p "$out" && : > "$out/results.json"
 echo "$out" >> "$PAIRBENCH_FAKE_LOG"
 """
 FAKE_ENGINE = "#!/bin/sh\nexit 0\n"
+ENGINE_RUN = re.compile(r'(?:"\$engine"|\bdocker|\bpodman)\s+run\b')
+MEMORY = re.compile(r"--memory(?:=|\s+)(\S+)")
+MEMORY_SWAP = re.compile(r"--memory-swap(?:=|\s+)(\S+)")
+# Each container a showcase script starts, script by script and in order, with its memory limit.
+ENGINE_RUN_MEMORY = {
+    "gpu-kernel/run.sh": ["8g"],
+    "inference-server-versions/run.sh": ["8g"],
+    "noisy-neighbour/run.sh": ["256m"],
+    "numpy-pip-vs-conda/run.sh": ["4g", "4g"],
+    "pipeline-slowdown-check/run.sh": ["2g"],
+    "vendor-container-vs-pip/run.sh": ["8g"],
+}
 
 
 def _program(folder: Path, name: str, text: str) -> None:
@@ -85,3 +101,26 @@ def test_the_noisy_neighbour_script_runs_twice_into_new_folders(
     assert [Path(out).name for out in outs] == ["quiet", "noisy", "quiet", "noisy"]
     assert Path(outs[0]).parent == Path(outs[1]).parent != Path(outs[2]).parent
     assert all(Path(out).parent.parent == Path("pairbench-runs") for out in outs)
+
+
+def _commands(text: str) -> list[str]:
+    """Return the lines of a shell script, each line ended by a backslash joined to the next."""
+    return [
+        line for line in text.replace("\\\n", " ").splitlines() if not line.lstrip().startswith("#")
+    ]
+
+
+def test_every_container_a_showcase_script_starts_gets_no_swap_beyond_its_memory() -> None:
+    starts: dict[str, list[tuple[list[str], list[str]]]] = {}
+    for script in sorted((ROOT / "showcases").rglob("*.sh")):
+        for command in _commands(script.read_text(encoding="utf-8")):
+            if ENGINE_RUN.search(command):
+                name = script.relative_to(ROOT / "showcases").as_posix()
+                starts.setdefault(name, []).append(
+                    (MEMORY.findall(command), MEMORY_SWAP.findall(command))
+                )
+
+    assert starts == {
+        name: [([memory], [memory]) for memory in limits]
+        for name, limits in ENGINE_RUN_MEMORY.items()
+    }

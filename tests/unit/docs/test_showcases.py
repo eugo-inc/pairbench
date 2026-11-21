@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -56,10 +57,42 @@ OUTSIDE_SHOWCASE = (
     "PAIRBENCH_SHOWCASE_PUBLISH: name a folder inside the showcase by a relative path, not an "
     "absolute one, and without '..'\n"
 )
+# The other refusals of a value, each with its own line.
+EMPTY_PUBLISH = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: the value is empty; unset it for a normal run, or name a folder "
+    "inside the showcase to publish into\n"
+)
+THE_SHOWCASE_ITSELF = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: the value names the showcase folder itself; name a folder inside "
+    "it to publish into\n"
+)
+BLANK_PART = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: a part of the folder is made only of blanks; give each part a "
+    "name\n"
+)
+DOTS_PART = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: a part of the folder is made only of dots; give each part a name\n"
+)
+OPTION_PART = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: a part of the folder starts with '-', which a command reads as an "
+    "option; give it another name\n"
+)
+PRIVATE_RUNS_FOLDER = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: pairbench-runs holds the private run folders; name a folder "
+    "outside it\n"
+)
 ENVIRONMENT = "docs/reference/environment.md"
 PUBLISH_REFUSED_WHOLE = (
-    "A normal run when unset; an empty value, or one that names the showcase folder itself such "
-    "as `.` or `./.`, is refused like a folder outside the showcase."
+    "A normal run when unset. Each of these values is refused with exit 2 and its own line on "
+    "standard error, before anything runs: an empty value; one that names the showcase folder "
+    "itself, such as `.` or `./.`; an absolute path or one with `..`; one with a part made only "
+    "of blanks or only of dots, or a part that starts with `-`; and `pairbench-runs` or a folder "
+    "under it, which holds the private run folders."
+)
+PUBLISH_REFUSED_THROUGH_A_LINK = (
+    "A value that reaches, through a link, the showcase folder, a folder that holds it, or "
+    "`pairbench-runs` or a folder under it is refused the same way, as is one with a part that is "
+    "a link leading to no folder."
 )
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 PINNED_IMAGE = re.compile(r"^(?P<ref>[^@\s]+:[^@\s]+)@(?P<digest>sha256:[0-9a-f]{64})$")
@@ -228,13 +261,18 @@ def publish(
     part: str,
     code: int = 0,
     writer_code: int = 0,
+    links: Mapping[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     """Run the publish helper as run.sh reads it, with the showcase reached under /work.
 
     ``code`` is the exit code of the run, and ``writer_code`` that of tools/hash_inputs.py.
+    ``links`` maps a link to make in the showcase to what it points at.
     """
     showcase = tmp_path / "checkout" / "showcases" / "made-up"
-    showcase.mkdir(parents=True)
+    showcase.mkdir(parents=True, exist_ok=True)
+    for name, target in (links or {}).items():
+        (showcase / name).parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, showcase / name)
     bin_folder = tmp_path / "bin"
     bin_folder.mkdir()
     log = tmp_path / "calls.log"
@@ -346,19 +384,42 @@ def test_a_publish_the_sidecar_writer_refuses_exits_with_the_writer_s_code(
     published_calls(calls, "published")
 
 
-# A value outside the showcase, and one that names the showcase folder itself or nothing.
-@pytest.mark.parametrize(
-    "given", ["/work/kept", "../kept", "kept/../../x", ".", "./", "./.", "", ".//./"]
-)
+# Each value that names no folder inside the showcase to publish into, and what it is told.
+REFUSED_VALUES = {
+    "absolute": ("/work/kept", OUTSIDE_SHOWCASE),
+    "parent": ("../kept", OUTSIDE_SHOWCASE),
+    "climbing-out": ("kept/../../x", OUTSIDE_SHOWCASE),
+    "climbing-back": ("kept/..", OUTSIDE_SHOWCASE),
+    "empty": ("", EMPTY_PUBLISH),
+    "dot": (".", THE_SHOWCASE_ITSELF),
+    "dot-slash": ("./", THE_SHOWCASE_ITSELF),
+    "dot-slash-dot": ("./.", THE_SHOWCASE_ITSELF),
+    "dots-and-slashes": (".//./", THE_SHOWCASE_ITSELF),
+    "a-blank": (" ", BLANK_PART),
+    "a-tab": ("\t", BLANK_PART),
+    "a-blank-part": ("kept/  /x", BLANK_PART),
+    "three-dots": ("...", DOTS_PART),
+    "a-part-of-dots": ("kept/....", DOTS_PART),
+    "a-dash": ("-", OPTION_PART),
+    "an-option": ("--help", OPTION_PART),
+    "an-option-after-a-dot": ("./-kept", OPTION_PART),
+    "a-later-part": ("kept/-x", OPTION_PART),
+    "the-private-folder": ("pairbench-runs", PRIVATE_RUNS_FOLDER),
+    "the-private-folder-with-a-slash": ("pairbench-runs/", PRIVATE_RUNS_FOLDER),
+    "under-the-private-folder": ("./pairbench-runs/kept", PRIVATE_RUNS_FOLDER),
+}
+
+
+@pytest.mark.parametrize(("given", "said"), list(REFUSED_VALUES.values()), ids=list(REFUSED_VALUES))
 @pytest.mark.parametrize("part", ["", "quiet"])
-def test_publishing_into_a_folder_outside_the_showcase_is_refused(
-    repo_root: Path, tmp_path: Path, given: str, part: str
+def test_publishing_into_a_value_that_names_no_folder_inside_the_showcase_is_refused(
+    repo_root: Path, tmp_path: Path, given: str, said: str, part: str
 ) -> None:
     done, calls = publish(repo_root, tmp_path, given, part)
 
     assert done.returncode == EXIT_USAGE
     assert done.stdout == ""
-    assert done.stderr == OUTSIDE_SHOWCASE
+    assert done.stderr == said
     assert calls == []
     assert (
         sorted(path.name for path in (tmp_path / "checkout" / "showcases" / "made-up").iterdir())
@@ -366,12 +427,175 @@ def test_publishing_into_a_folder_outside_the_showcase_is_refused(
     )
 
 
-# A folder whose name starts with a dot is a folder inside the showcase.
-@pytest.mark.parametrize("given", ["./kept", ".kept", "./.kept", "kept/."])
+# A folder whose name starts with or holds dots, blanks or a dash, or one named pairbench-runs
+# below another, is a folder inside the showcase.
+@pytest.mark.parametrize(
+    "given",
+    [
+        "./kept",
+        ".kept",
+        "./.kept",
+        "kept/.",
+        "..kept",
+        "kept...",
+        "my kept",
+        "kept-",
+        "kept/pairbench-runs",
+    ],
+)
 def test_publishing_into_a_folder_named_with_dots_inside_the_showcase_runs(
     repo_root: Path, tmp_path: Path, given: str
 ) -> None:
     done, calls = publish(repo_root, tmp_path, given, "")
+
+    assert (done.returncode, done.stderr) == (0, "")
+    published_calls(calls, given)
+
+
+# A value whose folder, once the links of the parts that exist are followed, is the showcase,
+# a folder that holds the showcase, or pairbench-runs or a folder under it: refused before
+# anything runs, as these named directly are, since the published folder would then hold the
+# private run folders.
+LINKED_TO_THE_SHOWCASE = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: the value names the showcase folder itself through a link; name "
+    "a folder inside it to publish into\n"
+)
+HOLDS_THE_SHOWCASE = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: the value names, through a link, a folder that holds the "
+    "showcase and so its private run folders; name a folder inside the showcase to publish into\n"
+)
+LINKED_PRIVATE_RUNS = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: the value names pairbench-runs or a folder under it through a "
+    "link, and pairbench-runs holds the private run folders; name a folder outside it\n"
+)
+LINK_TO_NO_FOLDER = (
+    "PAIRBENCH_SHOWCASE_PUBLISH: a part of the folder is a link that leads to no folder; name a "
+    "folder, or a link to one\n"
+)
+# Each value refused through a link: the links made in the showcase, a folder made there before
+# the run, the value, and what it is told.
+LINKED_VALUES = {
+    "a-link-to-the-showcase": ({"kept": "."}, "", "kept", LINKED_TO_THE_SHOWCASE),
+    "a-link-to-the-showcase-with-a-dot": ({"kept": "."}, "", "kept/.", LINKED_TO_THE_SHOWCASE),
+    "a-link-in-a-folder-to-the-showcase": (
+        {"sub/kept": ".."},
+        "",
+        "sub/kept",
+        LINKED_TO_THE_SHOWCASE,
+    ),
+    "a-link-to-the-showcase-by-its-path": (
+        {"kept": "../made-up"},
+        "",
+        "kept",
+        LINKED_TO_THE_SHOWCASE,
+    ),
+    "a-link-to-the-folder-above": ({"up": ".."}, "", "up", HOLDS_THE_SHOWCASE),
+    "a-link-two-folders-up": ({"up": "../.."}, "", "up", HOLDS_THE_SHOWCASE),
+    "a-folder-above-through-a-link": ({"up": "../.."}, "", "up/showcases", HOLDS_THE_SHOWCASE),
+    "a-link-to-the-root": ({"root": "/"}, "", "root", HOLDS_THE_SHOWCASE),
+    "a-link-to-the-private-folder": (
+        {"kept": "pairbench-runs"},
+        "pairbench-runs",
+        "kept",
+        LINKED_PRIVATE_RUNS,
+    ),
+    "a-link-under-the-private-folder": (
+        {"kept": "pairbench-runs/old"},
+        "pairbench-runs/old",
+        "kept",
+        LINKED_PRIVATE_RUNS,
+    ),
+    "the-private-folder-through-a-link-to-the-showcase": (
+        {"kept": "."},
+        "pairbench-runs",
+        "kept/pairbench-runs",
+        LINKED_PRIVATE_RUNS,
+    ),
+    "the-private-folder-not-made-yet-through-a-link-to-the-showcase": (
+        {"kept": "."},
+        "",
+        "kept/pairbench-runs/new",
+        LINKED_PRIVATE_RUNS,
+    ),
+    "a-link-to-the-private-folder-not-made-yet": (
+        {"kept": "pairbench-runs"},
+        "",
+        "kept",
+        LINK_TO_NO_FOLDER,
+    ),
+    "a-link-to-nothing-in-a-later-part": (
+        {"sub/gone": "absent"},
+        "",
+        "sub/gone/kept",
+        LINK_TO_NO_FOLDER,
+    ),
+}
+
+
+def listed(top: Path) -> list[str]:
+    """Every path under ``top``, links not followed."""
+    found = []
+    for folder, folders, files in os.walk(top):
+        for name in (*folders, *files):
+            found.append((Path(folder) / name).relative_to(top).as_posix())
+    return sorted(found)
+
+
+@pytest.mark.parametrize(
+    ("links", "made", "given", "said"), list(LINKED_VALUES.values()), ids=list(LINKED_VALUES)
+)
+def test_publishing_through_a_link_to_a_folder_that_holds_the_private_runs_is_refused(
+    repo_root: Path,
+    tmp_path: Path,
+    links: Mapping[str, str],
+    made: str,
+    given: str,
+    said: str,
+) -> None:
+    showcase = tmp_path / "checkout" / "showcases" / "made-up"
+    (showcase / made).mkdir(parents=True)
+    planted = {f"showcases/made-up/{name}" for name in links} | {
+        f"showcases/made-up/{Path(name).parent}" for name in links if "/" in name
+    }
+    before = listed(tmp_path / "checkout")
+
+    done, calls = publish(repo_root, tmp_path, given, "", links=links)
+
+    assert done.returncode == EXIT_USAGE
+    assert done.stdout == ""
+    assert done.stderr == said
+    assert calls == []
+    assert listed(tmp_path / "checkout") == sorted({*before, *planted})
+
+
+# Links that lead to a folder inside the showcase, or beside it, publish there.
+@pytest.mark.parametrize(
+    ("links", "given"),
+    [
+        ({"kept": "."}, "kept/published"),
+        ({"kept": "sub"}, "kept"),
+        ({"kept": "../made-up2"}, "kept"),
+        ({}, "pairbench-runs2"),
+        ({}, "pairbench-run"),
+        ({"kept": "pairbench-runs2"}, "kept"),
+    ],
+    ids=[
+        "a-folder-inside-through-a-link-to-the-showcase",
+        "a-link-to-a-folder-inside",
+        "a-link-to-a-folder-whose-name-starts-with-the-showcase-name",
+        "a-name-that-starts-with-the-private-folder-name",
+        "a-name-that-the-private-folder-name-starts-with",
+        "a-link-to-a-name-that-starts-with-the-private-folder-name",
+    ],
+)
+def test_publishing_through_a_link_to_a_folder_inside_or_beside_the_showcase_runs(
+    repo_root: Path, tmp_path: Path, links: Mapping[str, str], given: str
+) -> None:
+    showcase = tmp_path / "checkout" / "showcases" / "made-up"
+    for folder_name in ("sub", "../made-up2", "pairbench-runs", "pairbench-runs2"):
+        (showcase / folder_name).mkdir(parents=True)
+
+    done, calls = publish(repo_root, tmp_path, given, "", links=links)
 
     assert (done.returncode, done.stderr) == (0, "")
     published_calls(calls, given)
@@ -383,6 +607,7 @@ def test_the_reference_says_an_empty_value_or_the_showcase_folder_is_refused(
     text = " ".join((repo_root / ENVIRONMENT).read_text(encoding="utf-8").split())
 
     assert PUBLISH_REFUSED_WHOLE in text
+    assert PUBLISH_REFUSED_THROUGH_A_LINK in text
 
 
 @pytest.mark.parametrize("name", SHOWCASES)

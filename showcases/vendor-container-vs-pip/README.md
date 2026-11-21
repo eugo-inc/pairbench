@@ -10,8 +10,9 @@ installed from pip:
 
 Both images are pinned by digest in [`sides.lock`](sides.lock) and
 [`pairbench.toml`](pairbench.toml). This showcase ships its recipe only: the commands, the
-config and the shape of the output, with no numbers from a run. No approved result exists yet.
-Read the licence of the vendor container before you publish a result made with it.
+config and the shape of the output, with no numbers from a run. Its [`expected/`](expected/)
+folder holds no result. Read the licence of the vendor container before you publish a result
+made with it.
 
 ## Run it
 
@@ -111,5 +112,4 @@ There is no `diagnostics.json` and no `profiles/` folder, because the explain st
 
 ## Expected result
 
-[`expected/`](expected/) holds no result yet. A result is published only after a real run has
-been approved, with the class of machine that produced it.
+[`expected/`](expected/) holds no result: its one line says that no approved result exists yet.

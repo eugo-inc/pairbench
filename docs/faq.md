@@ -91,8 +91,8 @@ Every number in the documentation is one of four kinds: a known answer of the me
 checked by `pairbench selftest`; a made-up example that says so; a share from the simulated
 experiments that `tools/error_rates.py` writes to the
 [error-rate page](method/error-rates.md), which the tests check against its data; or a
-figure filled in from a results file by `pairbench fill`. The showcases publish results only
-after a real run has been approved.
+figure filled in from a results file by `pairbench fill`. No showcase holds a result: each
+`expected/` folder says in one line that no approved result exists yet.
 
 ## Is there a config file that is read by default?
 

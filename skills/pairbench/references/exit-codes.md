@@ -11,7 +11,7 @@
 | 6 | the analysis was refused | read the text code, such as `E_TOO_FEW_ROUNDS` or `E_GRID` |
 | 7 | `fill`: a figure is missing | every missing key is listed |
 | 8 | internal error | report it as a bug |
-| 130 | interrupted | the capture is marked `interrupted` |
+| 130 | interrupted: Ctrl-C, `SIGTERM`, `SIGHUP` or `SIGQUIT`, each with 130, not 128 plus the signal's number (143 for `SIGTERM`) | the capture is marked `interrupted` |
 
 Every refusal prints its line on standard error, `E_CODE: message`, then a line
 `pairbench: see ADDRESS` with the address of the code's cause and fix in the documentation. It

@@ -53,7 +53,7 @@ script writes is filled owner-only beside its place and moved over it once whole
 given the mode of a new file when it may be shared. The file it fills is named
 ``.NAME.PID.SPACE.RANDOM.tmp``: the file, the number of the process that writes it, a mark of
 the process space that number belongs to (twelve hexadecimal digits taken from the boot and
-the process-number namespace, all zeros where neither can be read) and a random part. A later
+the process-number namespace, all zeros where either cannot be read) and a random part. A later
 run removes such a file at once when a process of its own process space left it and has
 ended, and any such file once it is older than ``STRAY_SECONDS`` (an hour, far longer than a
 write takes); it keeps every other one, so that it never removes the file of a run that still
@@ -74,8 +74,20 @@ of its values the shared files do not show, never which.
 it copied. When the sidecar cannot be shared it is never copied: it stays owner-only in
 ``RUN_FOLDER``, one line on standard error names it and says why, and the publish exits 0, so
 that a script that publishes a run exits with the run's own code. A file of these that the
-publish does not copy is removed from ``FOLDER``, so the folder holds one run's files; the
-sidecar of ``RUN_FOLDER`` itself is kept when ``FOLDER`` is that folder.
+publish does not copy is removed from ``FOLDER``, so the folder holds one run's files.
+The publish checks before it changes anything: it reads each file it copies, refuses a folder
+at the name of a file it would write or remove in ``FOLDER``, and fills each copy beside its
+place; only then does it move the copies into place and remove the files of an earlier run. A
+failure before the first move leaves ``FOLDER`` as it was, removes a folder the publish made,
+and says "nothing published"; one after it says "partly published" and names exactly the files
+copied, those not copied, and those of an earlier publish still in ``FOLDER``. Either exits 2.
+``--publish`` refuses, with exit 2 and before it reads or writes any file, a ``FOLDER`` that
+is empty, whose last part names no folder, such as ``.``, or that is the run folder or a
+folder inside it, through a link or not. It refuses the same way a ``FOLDER`` that holds the run
+folder, at any depth, through a link or not, since the run's own private files would then lie
+inside the published folder. A folder holds the run folder when it is a folder above it, with
+its links followed or as it is named; a folder beside it, such as ``run2`` beside ``run``, does
+not.
 
 Exit 1 is a hash its rebuilt value does not give; exit 2 is a missing or unreadable file, or a
 ``results.json`` that is not a results document. Every other refusal removes the
@@ -94,6 +106,7 @@ import posixpath
 import re
 import secrets
 import shlex
+import stat
 import sys
 import time
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
@@ -759,6 +772,42 @@ def _remove_left(path: Path) -> None:
                 os.unlink(path.parent / name)
 
 
+def _stage(path: Path, data: bytes) -> tuple[Path, int]:
+    """Fill a new owner-only file beside ``path`` with ``data``; return it and its open descriptor.
+
+    The file is named by ``_temporary``. Nothing is left behind when the fill fails.
+    """
+    temporary = _temporary(path, os.getpid(), _space(), _token())
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_MODE)
+    try:
+        os.fchmod(descriptor, PRIVATE_MODE)
+        view = memoryview(data)
+        while view:
+            view = view[os.write(descriptor, view) :]
+        os.fsync(descriptor)
+    except BaseException:
+        os.close(descriptor)
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+        raise
+    return temporary, descriptor
+
+
+def _move(temporary: Path, path: Path, descriptor: int, *, private: bool) -> None:
+    """Move the file ``_stage`` filled over ``path``; one that may be shared then gets its mode.
+
+    ``TemporaryGone`` is raised, and nothing is changed, when another run removed the file first.
+    """
+    try:
+        os.replace(temporary, path)
+    except FileNotFoundError:
+        if os.fstat(descriptor).st_nlink == 0:
+            raise TemporaryGone(path.name) from None
+        raise
+    if not private:
+        os.fchmod(descriptor, SHARED_MODE & ~_umask())
+
+
 def _write_whole(path: Path, data: bytes, *, private: bool) -> None:
     """Write a file whole or not at all: into a new file beside it, then moved over it.
 
@@ -769,29 +818,15 @@ def _write_whole(path: Path, data: bytes, *, private: bool) -> None:
     before it was moved, ``TemporaryGone`` is raised and nothing else is changed.
     """
     _remove_left(path)
-    temporary = _temporary(path, os.getpid(), _space(), _token())
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_MODE)
+    temporary, descriptor = _stage(path, data)
     try:
-        os.fchmod(descriptor, PRIVATE_MODE)
-        with os.fdopen(descriptor, "wb") as stream:
-            descriptor = -1
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-            try:
-                os.replace(temporary, path)
-            except FileNotFoundError:
-                if os.fstat(stream.fileno()).st_nlink == 0:
-                    raise TemporaryGone(path.name) from None
-                raise
-            if not private:
-                os.fchmod(stream.fileno(), SHARED_MODE & ~_umask())
+        _move(temporary, path, descriptor, private=private)
     except BaseException:
-        if descriptor >= 0:
-            os.close(descriptor)
         with contextlib.suppress(FileNotFoundError):
             temporary.unlink()
         raise
+    finally:
+        os.close(descriptor)
 
 
 def _umask() -> int:
@@ -827,33 +862,224 @@ def write(folder: Path, captures: Sequence[Path] | None = None) -> tuple[Path, l
     return path, hidden
 
 
+class PartlyPublished(Exception):
+    """A publish that stopped after it changed the published folder: says exactly how."""
+
+
 def publish(folder: Path, into: Path, *, sidecar: bool = True) -> list[str]:
     """Copy the shared files of ``folder`` into ``into``, and its sidecar when ``sidecar``.
 
     Return the names copied. A file of ``SHARED`` that the run did not write, and the sidecar
-    when it is not copied, are removed from ``into``, so the folder holds one run's files. When
-    ``into`` is ``folder`` itself, the sidecar there is the run's own and is kept.
+    when it is not copied, are removed from ``into``, so the folder holds one run's files.
+    Raise ``ValueError``, and change nothing, when ``into`` is ``folder`` or a folder inside it,
+    since the removal would take the run's own sidecar, or a folder that holds it, since the
+    run's own private files would then lie inside the published folder.
+
+    Every check comes before the first change: each file to copy is read, a folder at the name
+    of a file to write or remove is refused, and each copy is filled beside its place. Only then
+    are the copies moved into place, one by one, and the files of an earlier run, and the files
+    earlier writes left stray, removed. A
+    failure before the first move raises and leaves ``into`` as it was, a folder this publish
+    made removed again; one after it raises ``PartlyPublished``, which names exactly the files
+    copied, those not copied, and those of an earlier publish still in ``into``.
     """
-    into.mkdir(parents=True, exist_ok=True)
-    names: list[str] = []
+    if _run_folder_part(folder, into) is not None:
+        raise ValueError(f"the folder {_named(into)} is the run folder or a folder inside it")
+    if _holds_run_folder(folder, into):
+        raise ValueError(f"the folder {_named(into)} holds the run folder")
+    names = [
+        name
+        for name in (*SHARED, SIDECAR)
+        if (folder / name).is_file() and (sidecar or name != SIDECAR)
+    ]
+    data = {name: (folder / name).read_bytes() for name in names}
     for name in (*SHARED, SIDECAR):
-        source = folder / name
-        if source.is_file() and (sidecar or name != SIDECAR):
-            _write_whole(into / name, source.read_bytes(), private=False)
-            names.append(name)
-        elif name != SIDECAR or not _same_folder(folder, into):
-            _remove_left(into / name)
-            with contextlib.suppress(FileNotFoundError):
-                (into / name).unlink()
-    return names
-
-
-def _same_folder(one: Path, other: Path) -> bool:
-    """Whether two paths name one folder, through a link or not."""
+        if _is_folder(into / name):
+            raise ValueError(
+                f"{name} in {_named(into)} is a folder, which a publish neither replaces nor "
+                "removes; remove it or publish into another folder"
+            )
+    made = _missing(into)
+    staged: list[tuple[str, Path, int]] = []
     try:
-        return os.path.samefile(one, other)
+        into.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            staged.append((name, *_stage(into / name, data[name])))
+    except BaseException:
+        _unstage(staged)
+        _remove_made(made)
+        raise
+    copied: list[str] = []
+    removed: list[str] = []
+    try:
+        for name, temporary, descriptor in staged:
+            _move(temporary, into / name, descriptor, private=True)
+            copied.append(name)
+            os.fchmod(descriptor, SHARED_MODE & ~_umask())
+        for name in (*SHARED, SIDECAR):
+            _remove_left(into / name)
+            if name not in names:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(into / name)
+                    removed.append(name)
+    except Exception as exc:
+        _unstage(staged)
+        if not copied and not removed:
+            _remove_made(made)
+            raise
+        raise PartlyPublished(_partly(into, names, copied, removed, exc)) from exc
+    except BaseException:
+        _unstage(staged)
+        raise
+    for _name, _temporary_path, descriptor in staged:
+        os.close(descriptor)
+    return copied
+
+
+def _is_folder(path: Path) -> bool:
+    """Whether ``path`` is a folder itself, not a link to one."""
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
     except OSError:
         return False
+
+
+def _missing(path: Path) -> list[Path]:
+    """The folders of ``path`` and above it that do not exist, the deepest first.
+
+    ``path`` is read as it is named, so a folder a ``..`` part climbs out of is among them; the
+    ``..`` parts themselves name no folder to make.
+    """
+    missing: list[Path] = []
+    place = path if path.is_absolute() else Path.cwd() / path
+    while place != place.parent and not os.path.lexists(place):
+        if place.name != "..":
+            missing.append(place)
+        place = place.parent
+    return missing
+
+
+def _remove_made(made: Sequence[Path]) -> None:
+    """Remove the folders a publish made, the deepest first, each only while it is empty."""
+    for place in made:
+        with contextlib.suppress(OSError):
+            os.rmdir(place)
+
+
+def _unstage(staged: Sequence[tuple[str, Path, int]]) -> None:
+    """Close each file a publish filled, and remove those not moved into place."""
+    for _name, temporary, descriptor in staged:
+        with contextlib.suppress(OSError):
+            os.close(descriptor)
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+
+
+def _partly(
+    into: Path,
+    names: Sequence[str],
+    copied: Sequence[str],
+    removed: Sequence[str],
+    error: BaseException,
+) -> str:
+    """What a publish that stopped after its first change changed, and what it left."""
+    said = f"copied {_listed(copied) if copied else 'nothing'} into {_named(into)}"
+    if removed:
+        said += f" and removed {_listed(removed)} from it"
+    said += f", then stopped: {error}"
+    rest = [name for name in names if name not in copied]
+    if rest:
+        said += f"; not copied: {_listed(rest)}"
+    before = [
+        name for name in (*SHARED, SIDECAR) if name not in copied and os.path.lexists(into / name)
+    ]
+    if before:
+        said += f"; still there from before: {_listed(before)}"
+    return said
+
+
+def _run_folder_part(folder: Path, into: Path) -> Path | None:
+    """The folder of ``into`` or above it that is the run folder ``folder``, through a link or not.
+
+    ``into`` with its links followed when it is that folder, the folder above it that is when
+    ``into`` lies inside it; ``None`` when neither is.
+    """
+    place = _resolved(into)
+    for part in (place, *place.parents):
+        with contextlib.suppress(OSError):
+            if os.path.samefile(part, folder):
+                return part
+    return None
+
+
+def _holds_run_folder(folder: Path, into: Path) -> bool:
+    """Whether ``into`` is a folder above the run folder ``folder``, at any depth.
+
+    The folders above it are taken with its links followed, and as it is named when no part of
+    its name is ``..``, so a folder that holds a link to the run folder holds it as well. Each
+    is compared as a folder on disk, never as text, so ``run2`` beside ``run`` holds nothing,
+    with ``into`` as named and with its links followed and its ``..`` parts taken, so a name
+    that climbs out of a folder that does not exist yet, such as ``absent/..``, is the folder
+    it lands in.
+    """
+    above = list(_resolved(folder).parents)
+    with contextlib.suppress(OSError):
+        named = folder if folder.is_absolute() else Path.cwd() / folder
+        if ".." not in named.parts:
+            above.extend(named.parents)
+    places = (into, _resolved(into))
+    for part in above:
+        for place in places:
+            with contextlib.suppress(OSError):
+                if os.path.samefile(part, place):
+                    return True
+    return False
+
+
+def _resolved(path: Path) -> Path:
+    """``path`` made absolute with its links followed, as far as they can be read."""
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return Path(os.path.abspath(path))
+
+
+def _named(path: Path) -> str:
+    """The name of the folder ``path`` names, also when its last part is ``.`` or ``..``."""
+    if path.name and path.name != "..":
+        return path.name
+    return _resolved(path).name or str(path)
+
+
+def _publish_refusal(folder: Path, typed: str) -> str | None:
+    """Why ``--publish typed`` names no folder to publish ``folder`` into; ``None`` when it does."""
+    if not typed:
+        return "nothing written: --publish names no folder; give the folder to publish into"
+    into = Path(typed)
+    if not into.name:
+        return (
+            f"nothing written: --publish {typed} names no folder by its last part; give the "
+            "folder to publish into by its name"
+        )
+    part = _run_folder_part(folder, into)
+    if part is None and _holds_run_folder(folder, into):
+        place = _resolved(into)
+        return (
+            f"nothing written: --publish names {place.name or place}, which holds the run folder "
+            f"{_named(folder)} and so its private files; publish into a folder that does not "
+            "hold the run folder"
+        )
+    if part is None:
+        return None
+    if part == _resolved(into):
+        return (
+            f"nothing written: --publish names the run folder {_named(folder)}; publish into a "
+            "folder outside it"
+        )
+    return (
+        f"nothing written: --publish names {_resolved(into).name} inside the run folder "
+        f"{_named(folder)}; publish into a folder outside it"
+    )
 
 
 def _listed(names: Sequence[str]) -> str:
@@ -899,18 +1125,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--publish",
-        type=Path,
         default=None,
         metavar="FOLDER",
         help="copy the shared files into FOLDER, and the sidecar only when it can be shared",
     )
     options = parser.parse_args(argv)
     folder: Path = options.folder
+    typed: str | None = options.publish
+    refusal = None if typed is None else _publish_refusal(folder, typed)
+    if refusal is not None:
+        print(refusal, file=sys.stderr)
+        return EXIT_USAGE
     earlier = _identity(folder / SIDECAR)
     needed = [folder / RESULTS, *(options.capture or [folder / CAPTURE])]
     missing = [path.name for path in needed if not path.is_file()]
     if missing:
-        message = f"the folder {folder.name} has no {', '.join(missing)}"
+        message = f"the folder {_named(folder)} has no {', '.join(missing)}"
         return _refused(folder, message, EXIT_USAGE, earlier)
     try:
         _path, hidden = write(folder, options.capture)
@@ -924,16 +1154,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _refused(folder, f"no {SIDECAR} written: {exc}", EXIT_MISMATCH, earlier)
     except (OSError, ValueError, Refusal) as exc:
         return _refused(folder, f"no {SIDECAR} written: {exc}", EXIT_USAGE, earlier)
-    into: Path | None = options.publish
-    if into is None:
+    if typed is None:
         if hidden:
             print(PRIVATE_LINE.format(len(hidden)), file=sys.stderr)
         else:
             print(SHAREABLE_LINE)
         return EXIT_OK
+    into = Path(typed)
     try:
         names = publish(folder, into, sidecar=not hidden)
-    except OSError as exc:
+    except PartlyPublished as exc:
+        print(f"partly published: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    except (OSError, ValueError) as exc:
         print(f"nothing published: {exc}", file=sys.stderr)
         return EXIT_USAGE
     print(f"published {_listed(names)} into {into.name}")

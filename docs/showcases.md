@@ -11,13 +11,14 @@ repository. Each one holds:
 - a `README.md` that says what is compared, how to run it and what to look at;
 - a `pairbench.toml` with the experiment;
 - a `run.sh` that runs it with one command, including any one-time preparation such as
-  installing a package into a folder the sides mount;
+  installing a package into a folder the sides mount; a container it starts itself, for that
+  preparation or beside the run, gets `--memory-swap` at the value of its `--memory`, so it
+  has no swap beyond its memory limit;
 - a `sides.lock` with the digest of every image;
 - the workload files, which honour `PAIRBENCH_WORK_FACTOR` (see
   [positive control](method/positive-control.md));
-- `expected/`, which holds the result of a real run and the class of machine that produced it,
-  once that result has been approved. Until then it holds one line saying that no approved
-  result exists yet. No showcase has an approved result yet.
+- `expected/`, which holds only a `README.md` with one line saying that no approved result
+  exists yet: no showcase holds a result.
 
 Every image is public and pinned by digest. Read the licence of each image and model before
 you publish a result made with it.
@@ -54,8 +55,8 @@ config and the shape of its output, with no numbers from a run. No approved resu
 
 ## Results
 
-Results are published in `expected/` only after a real run has been approved, with the class of
-machine that produced it. A reader of a published showcase whose sidecar was kept private
-cannot recompute its hashes; the showcase's public recipe, its `pairbench.toml`, `run.sh` and
-`sides.lock`, says what each side ran. Diagnostics, flame graphs and report pages of a showcase
-follow the stricter rule in [diagnostics](method/diagnostics.md).
+No `expected/` folder holds a result; each holds only the one line above. A reader of a
+published showcase whose sidecar was kept private cannot recompute its hashes; the showcase's
+public recipe, its `pairbench.toml`, `run.sh` and `sides.lock`, says what each side ran.
+Diagnostics, flame graphs and report pages of a showcase follow the stricter rule in
+[diagnostics](method/diagnostics.md).

@@ -19,7 +19,7 @@ runs="pairbench-runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
 run_pairbench quiet --config pairbench.toml --set "$mounts" --out "$runs/quiet" "$@"
 
-"$engine" run --detach --rm --name "$name" --memory 256m -v "$here:/showcase:ro" "$image" \
+"$engine" run --detach --rm --name "$name" --memory 256m --memory-swap 256m -v "$here:/showcase:ro" "$image" \
   python /showcase/neighbour.py "${PAIRBENCH_NEIGHBOUR_LOOPS:-1}" >/dev/null
 trap '"$engine" rm --force "$name" >/dev/null 2>&1 || true' EXIT INT TERM
 run_pairbench noisy --config pairbench.toml --set "$mounts" --out "$runs/noisy" "$@"

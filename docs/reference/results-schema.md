@@ -194,7 +194,11 @@ Numbers in this example are made up.
   private like the capture; see the run-folder table above.
   `tools/hash_inputs.py RUN_FOLDER --publish FOLDER` copies `results.json`, `results.md` and
   `report.html` into the folder, and the sidecar with them only when it can be shared;
-  otherwise the sidecar stays owner-only in the run folder and is not published. A results
+  otherwise the sidecar stays owner-only in the run folder and is not published. It refuses a
+  `FOLDER` that is the run folder, lies inside it or holds it, and it checks every file before
+  it copies any: a publish that fails before its first copy leaves `FOLDER` as it was and says
+  "nothing published", and one that fails after it says "partly published" and names exactly
+  the files it copied, both with exit 2. A results
   file kept in the source repository has a sidecar that passed this check beside it, except
   one: the launch-cost results are kept without their sidecar because the results hide the
   two side commands; the commands are the constants of `tools/launch_cost.py`, so a reader

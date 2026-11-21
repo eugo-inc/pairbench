@@ -612,19 +612,28 @@ def foreign_entries(folder: Path, uid: int) -> list[Path]:
     """Return the files and folders under ``folder`` that user ``uid`` does not own.
 
     A folder that cannot be listed counts as not owned. Symbolic links are
-    not followed.
+    not followed. The folders still to list are kept in a list, not in calls
+    of a function to itself, so folders nested deeper than the recursion
+    limit are read too. An entry whose path is longer than the system
+    allows cannot be read, so it counts as not owned.
     """
     found: list[Path] = []
-
-    def unlisted(error: OSError) -> None:
-        found.append(Path(error.filename) if error.filename else folder)
-
-    for root, folders, files in os.walk(folder, onerror=unlisted):
-        for name in (*folders, *files):
-            path = Path(root) / name
+    waiting = [folder]
+    while waiting:
+        here = waiting.pop()
+        try:
+            with os.scandir(here) as listing:
+                entries = list(listing)
+        except OSError as error:
+            found.append(Path(error.filename) if error.filename else here)
+            continue
+        for entry in entries:
+            path = Path(entry.path)
             try:
-                if path.lstat().st_uid != uid:
+                if entry.stat(follow_symlinks=False).st_uid != uid:
                     found.append(path)
+                if entry.is_dir(follow_symlinks=False):
+                    waiting.append(path)
             except OSError:
                 found.append(path)
     return found

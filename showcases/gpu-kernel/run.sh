@@ -13,7 +13,7 @@ engine=${PAIRBENCH_SHOWCASE_ENGINE:-docker}
 for side in cuda1343 cuda1350; do
   image=$(sed -n "/^\[sides\.$side\]/,/^\[/s/^image = \"\(.*\)\"$/\1/p" pairbench.toml)
   if [ ! -x ".build/$side/kernel_bench" ]; then
-    "$engine" run --rm --memory 8g --gpus device=0 -v "$here:/showcase" "$image" \
+    "$engine" run --rm --memory 8g --memory-swap 8g --gpus device=0 -v "$here:/showcase" "$image" \
       sh /showcase/build.sh "/showcase/.build/$side"
   fi
 done

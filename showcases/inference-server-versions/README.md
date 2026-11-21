@@ -63,5 +63,4 @@ The start-up phases of each server (model loading, engine start, first answer) a
 
 ## Expected result
 
-[`expected/`](expected/) holds no result yet. A result is published only after a real run has
-been approved, with the class of machine that produced it.
+[`expected/`](expected/) holds no result yet.

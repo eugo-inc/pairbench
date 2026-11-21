@@ -12,7 +12,8 @@ import dataclasses
 import json
 import os
 import stat
-from collections.abc import Callable, Mapping, Sequence
+import sys
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -1430,3 +1431,259 @@ def test_a_left_folder_of_launches_that_cannot_be_removed_is_refused_before_any_
     )
     assert (session.launched, session.closed) == ([], 1)
     assert left.read_text(encoding="utf-8") == LEFT_PERF_DATA
+
+
+# ---------------------------------------------------------------------------
+# The folder of the launches is removed however deep the folders in it go
+# ---------------------------------------------------------------------------
+
+# Folders nested in one another below a launch folder: more than Python calls itself by default.
+DEEP = sys.getrecursionlimit() + 100
+# A folder the step's launches reach, as a stopped launch could leave it.
+LEFT_FOLDER = Path(".explain") / "1-new" / "stacks"
+
+
+def _plant_deep(folder: Path, depth: int = DEEP) -> None:
+    """Make ``depth`` folders, each inside the one before, in ``folder``, and a file in the last."""
+    folder.mkdir(parents=True, exist_ok=True)
+    here = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for _ in range(depth):
+            os.mkdir("d", dir_fd=here)
+            below = os.open("d", os.O_RDONLY | os.O_DIRECTORY, dir_fd=here)
+            os.close(here)
+            here = below
+        os.close(os.open("left.txt", os.O_WRONLY | os.O_CREAT, 0o600, dir_fd=here))
+    finally:
+        os.close(here)
+
+
+def _clear(top: Path) -> None:
+    """Remove what a row left in ``top`` by path, deepest folder first, with nothing recursive."""
+    if not os.path.lexists(top):
+        return
+    if top.is_symlink() or not top.is_dir():
+        top.unlink()
+        return
+    folders = [top]
+    waiting = [top]
+    while waiting:
+        with os.scandir(waiting.pop()) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    folders.append(Path(entry.path))
+                    waiting.append(Path(entry.path))
+                else:
+                    os.unlink(entry.path)
+    for folder in reversed(folders):
+        os.rmdir(folder)
+
+
+@pytest.fixture
+def deep_cleared(tmp_path: Path) -> Iterator[Path]:
+    """The run folder of a row that plants a deep tree; what is left of it is removed after."""
+    yield tmp_path
+    _clear(tmp_path / ".explain")
+
+
+def _step(
+    step: str, monkeypatch: pytest.MonkeyPatch, out: Path, example: dict[str, Any]
+) -> tuple[str, ...]:
+    """Run the explain step, or record stacks, over ``out``; return the profiles written."""
+    experiment = _experiment()
+    if step == "explain":
+        made = explain.explain_run(experiment, _results(example), out=out)
+        return tuple(f"profiles/{s.side}.folded" for s in made.stacks)
+    wire_capture(monkeypatch, experiment, out)
+    return explain.record_stacks(out, tool="perf")[:2]
+
+
+def _actions(step: str) -> dict[tuple[str, str], Action]:
+    return _all_ok() if step == "explain" else _stacks_only()
+
+
+def _planting(action: Action) -> Action:
+    """Make ``action`` first leave a tree nested deeper than the recursion limit in its folder."""
+
+    def act(folder: Path) -> InstrumentedLaunch:
+        _plant_deep(folder / "left")
+        return action(folder)
+
+    return act
+
+
+PROFILES = ("profiles/new.folded", "profiles/old.folded")
+
+
+@pytest.mark.parametrize("step", ["explain", "stacks"])
+def test_a_left_tree_deeper_than_the_recursion_limit_is_removed_before_any_launch(
+    deep_cleared: Path, monkeypatch: pytest.MonkeyPatch, example_results: dict[str, Any], step: str
+) -> None:
+    """What a stopped step left is removed whole, never with an error about recursion."""
+    assert sys.getrecursionlimit() < DEEP
+    out = deep_cleared
+    _plant_deep(out / LEFT_FOLDER)
+    actions = _actions(step)
+    seen: dict[Path, list[str]] = {}
+    _seen_on_launch(actions, seen)
+    session = FakeSession(actions)
+    wire(monkeypatch, Opener(session))
+    assert _step(step, monkeypatch, out, example_results) == PROFILES
+    assert seen[out / LEFT_FOLDER] == []
+    assert session.closed == 1
+    assert not (out / ".explain").exists()
+
+
+@pytest.mark.parametrize("step", ["explain", "stacks"])
+def test_a_tree_deeper_than_the_recursion_limit_a_launch_leaves_is_removed_after_the_step(
+    deep_cleared: Path, monkeypatch: pytest.MonkeyPatch, example_results: dict[str, Any], step: str
+) -> None:
+    out = deep_cleared
+    actions = _actions(step)
+    actions[("new", "stacks")] = _planting(actions[("new", "stacks")])
+    session = FakeSession(actions)
+    wire(monkeypatch, Opener(session))
+    assert _step(step, monkeypatch, out, example_results) == PROFILES
+    assert session.closed == 1
+    assert not (out / ".explain").exists()
+
+
+@pytest.mark.parametrize("step", ["explain", "stacks"])
+def test_the_error_of_a_launch_that_left_a_deep_tree_is_the_error_passed_on(
+    deep_cleared: Path, monkeypatch: pytest.MonkeyPatch, example_results: dict[str, Any], step: str
+) -> None:
+    error = RuntimeError("a made-up failure of the launch")
+
+    def boom(folder: Path) -> InstrumentedLaunch:
+        _plant_deep(folder / "left")
+        raise error
+
+    out = deep_cleared
+    actions = _actions(step)
+    actions[("new", "stacks")] = boom
+    session = FakeSession(actions)
+    wire(monkeypatch, Opener(session))
+    with pytest.raises(RuntimeError) as caught:
+        _step(step, monkeypatch, out, example_results)
+    assert caught.value is error
+    assert session.closed == 1
+    assert not (out / ".explain").exists()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="needs a system that limits the files a process keeps open"
+)
+def test_a_left_deep_tree_is_removed_with_few_files_open(
+    deep_cleared: Path, monkeypatch: pytest.MonkeyPatch, example_results: dict[str, Any]
+) -> None:
+    """The removal keeps a few folders open at a time, not one for each level of the tree."""
+    import resource
+
+    out = deep_cleared
+    _plant_deep(out / LEFT_FOLDER)
+    session = FakeSession(_all_ok())
+    wire(monkeypatch, Opener(session))
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    few = 256
+    assert few < DEEP
+    resource.setrlimit(resource.RLIMIT_NOFILE, (few, hard))
+    try:
+        assert _step("explain", monkeypatch, out, example_results) == PROFILES
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+    assert not (out / ".explain").exists()
+
+
+@pytest.mark.parametrize("when", ["left-before", "left-by-a-launch"])
+def test_a_link_in_the_folder_of_the_launches_is_removed_and_never_followed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, example_results: dict[str, Any], when: str
+) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    kept = _leave(elsewhere / "inner")
+    out = tmp_path / "run"
+    actions = _all_ok()
+    if when == "left-before":
+        (out / ".explain" / "1-new").mkdir(parents=True)
+        (out / ".explain" / "1-new" / "linked").symlink_to(elsewhere, target_is_directory=True)
+    else:
+        out.mkdir()
+        made = actions[("new", "stacks")]
+
+        def linking(folder: Path) -> InstrumentedLaunch:
+            (folder / "linked").symlink_to(elsewhere, target_is_directory=True)
+            return made(folder)
+
+        actions[("new", "stacks")] = linking
+    wire(monkeypatch, Opener(FakeSession(actions)))
+    assert _step("explain", monkeypatch, out, example_results) == PROFILES
+    assert kept.read_text(encoding="utf-8") == LEFT_PERF_DATA
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["inner"]
+    assert not (out / ".explain").exists()
+
+
+def _too_deep(path: Any, ignore_errors: bool = False) -> None:
+    raise RecursionError("maximum recursion depth exceeded")
+
+
+def test_where_no_folder_opens_by_handle_a_tree_too_deep_to_remove_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, example_results: dict[str, Any]
+) -> None:
+    left = _leave(tmp_path / LEFT_FOLDER)
+    session = FakeSession(_all_ok())
+    wire(monkeypatch, Opener(session))
+    monkeypatch.setattr(explain, "_CAN_REMOVE_BY_HANDLE", False)
+    monkeypatch.setattr(explain.shutil, "rmtree", _too_deep)
+    with pytest.raises(Refusal) as caught:
+        _step("explain", monkeypatch, tmp_path, example_results)
+    assert (caught.value.code, caught.value.message) == (
+        "E_USAGE",
+        "the folder .explain in the run folder cannot be made anew for the launches: "
+        "it holds folders nested too deeply to remove",
+    )
+    assert (session.launched, session.closed) == ([], 1)
+    assert left.read_text(encoding="utf-8") == LEFT_PERF_DATA
+
+
+def test_where_no_folder_opens_by_handle_a_tree_too_deep_to_remove_after_the_step_is_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, example_results: dict[str, Any]
+) -> None:
+    session = FakeSession(_all_ok())
+    wire(monkeypatch, Opener(session))
+    monkeypatch.setattr(explain, "_CAN_REMOVE_BY_HANDLE", False)
+    monkeypatch.setattr(explain.shutil, "rmtree", _too_deep)
+    assert _step("explain", monkeypatch, tmp_path, example_results) == PROFILES
+    assert session.closed == 1
+    assert (tmp_path / ".explain" / "1-new" / "stacks").is_dir()
+
+
+@pytest.mark.parametrize("keep_going", [False, True], ids=["refused", "kept-going"])
+def test_a_folder_moved_away_while_it_is_removed_is_not_climbed_out_of(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, keep_going: bool
+) -> None:
+    """Coming back up lands in the folder the removal came from, or the removal ends there."""
+    top = tmp_path / ".explain"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    for name in ("a", "b"):
+        (top / name / "inner").mkdir(parents=True)
+    kept: list[Path] = []
+    real = explain._remove_files
+
+    def moving(folder: int, keep_going: bool) -> list[str]:
+        """Move the first folder entered out of the tree once the removal is below it."""
+        found = os.fstat(folder)
+        for name, other in (("a", "b"), ("b", "a")):
+            inner = top / name / "inner"
+            if not kept and inner.exists() and os.path.samestat(found, inner.stat()):
+                kept.append(_leave(elsewhere / other))
+                (top / name).rename(elsewhere / name)
+        return real(folder, keep_going)
+
+    monkeypatch.setattr(explain, "_remove_files", moving)
+    if keep_going:
+        explain._remove_tree(top, keep_going=True)
+    else:
+        with pytest.raises(OSError) as caught:
+            explain._remove_tree(top)
+        assert caught.value.strerror == "a folder in it was moved away while it was being removed"
+    assert [p.read_text(encoding="utf-8") for p in kept] == [LEFT_PERF_DATA]

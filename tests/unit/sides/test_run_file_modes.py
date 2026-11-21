@@ -398,6 +398,24 @@ def test_a_folder_above_a_launch_folder_replaced_by_a_link_leaves_what_it_names_
     assert stat.S_IMODE(notes.stat().st_mode) == 0o644
 
 
+@pytest.mark.parametrize(
+    "parts",
+    [("..", "home"), ("artifacts", "..", "..", "home"), ("artifacts", "..", "artifacts")],
+    ids=["up-at-once", "down-then-up", "down-up-down"],
+)
+def test_a_folder_named_with_a_climb_under_an_open_run_folder_is_not_held(
+    tmp_path: Path, parts: tuple[str, ...]
+) -> None:
+    """Below the run folder by its names means no '..' on the way, wherever the path ends."""
+    run = tmp_path / "run"
+    (run / "artifacts" / "0007-new").mkdir(parents=True)
+    (tmp_path / "home").mkdir()
+    with OpenFolder(run) as held:
+        assert held.holds(run / "artifacts" / "0007-new") is True
+        assert held.holds(run.joinpath(*parts)) is False
+        assert held.open_below(run.joinpath(*parts)) is None
+
+
 def test_a_launch_folder_below_an_open_run_folder_ends_owner_only(tmp_path: Path) -> None:
     run = tmp_path / "run"
     launch = run / "artifacts" / "0007-new"

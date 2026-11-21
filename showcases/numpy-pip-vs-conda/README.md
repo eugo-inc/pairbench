@@ -61,5 +61,4 @@ The elementwise operations, which have no size on the page, use 4,194,304 (2^22)
 
 ## Expected result
 
-[`expected/`](expected/) holds no result yet. A result is published only after a real run has
-been approved, with the class of machine that produced it.
+[`expected/`](expected/) holds no result yet.

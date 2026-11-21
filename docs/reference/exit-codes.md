@@ -158,6 +158,10 @@ doctor`.
 
 **Cause.** The run was interrupted: by Ctrl-C, a termination request, a hangup or a quit
 request. The current launch is torn down and the capture's end record says `interrupted`.
+The exit code is 130 for each of them, not 128 plus the signal's number, which a shell
+reports for a program a signal ends (143 for `SIGTERM`, 129 for `SIGHUP`, 131 for
+`SIGQUIT`): the tool catches the signal and ends the command itself. A script that stops
+pairbench with `kill` sees 130, as after Ctrl-C.
 
 **Fix.** Run again. The rounds that completed can be analysed with `pairbench compare
 --allow-incomplete`.

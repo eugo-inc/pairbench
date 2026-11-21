@@ -591,3 +591,72 @@ def test_a_command_whose_terminal_closes_ends_as_an_interrupt(tmp_path: Path) ->
             process.wait()
 
     assert code == EXIT_INTERRUPTED
+
+
+# Gives each ending signal its default action, as a shell does, then becomes pairbench.
+AT_DEFAULT_ACTIONS = """
+import os, signal, sys
+for name in ("SIGHUP", "SIGQUIT", "SIGTERM"):
+    if hasattr(signal, name):
+        signal.signal(getattr(signal, name), signal.SIG_DFL)
+os.execv(sys.executable, [sys.executable, "-m", "pairbench", *sys.argv[1:]])
+"""
+# The command the gate runs: it says it has started, then waits while its parent lives.
+STARTED_WHILE_ITS_PARENT_LIVES = """
+import os, pathlib, sys, time
+parent = os.getppid()
+pathlib.Path(sys.argv[1]).touch()
+end = time.monotonic() + 60
+while os.getppid() == parent and time.monotonic() < end:
+    time.sleep(0.05)
+"""
+# The exit code a shell sees when an ending signal stops pairbench, whatever the signal.
+SIGNALLED_EXIT_CODE = 130
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX signals")
+@pytest.mark.parametrize("name", ENDING)
+def test_an_ending_signal_sent_to_pairbench_gives_exit_code_130(tmp_path: Path, name: str) -> None:
+    started = tmp_path / "started"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            AT_DEFAULT_ACTIONS,
+            "gate",
+            "wait-quiet",
+            "--set",
+            "gates.quiet.max_busy_cores=100000",
+            "--set",
+            "gates.quiet.samples=1",
+            "--set",
+            "gates.quiet.interval_s=0.05",
+            "--",
+            sys.executable,
+            "-c",
+            STARTED_WHILE_ITS_PARENT_LIVES,
+            str(started),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+        cwd=tmp_path,
+        env=source_environment(),
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while not started.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert started.exists()
+        process.send_signal(getattr(signal, name))
+        _, err = process.communicate(timeout=60)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+
+    assert EXIT_INTERRUPTED == SIGNALLED_EXIT_CODE
+    assert process.returncode == SIGNALLED_EXIT_CODE
+    assert err.splitlines()[-2:] == ["E_INTERRUPTED: interrupted", DOCS_LINE + "e_interrupted"]

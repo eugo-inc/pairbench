@@ -2392,24 +2392,434 @@ def test_publish_mode_removes_an_earlier_sidecar_from_the_folder_when_the_new_on
     assert (published / RESULTS).read_bytes() == (folder / RESULTS).read_bytes()
 
 
-@pytest.mark.parametrize("spelled", ["run", "link-to-run"])
-def test_publish_mode_into_the_run_folder_itself_keeps_its_private_sidecar(
-    writer: ModuleType, tmp_path: Path, spelled: str
-) -> None:
-    printed, typed, count = PRIVATE_ROWS["a-64-hex-secret"]
-    folder = with_report(showcase_run(tmp_path / "run", typed, printed))
-    (tmp_path / "link-to-run").symlink_to(folder, target_is_directory=True)
+# A --publish value that names no folder, or names the run folder or a folder inside it, is
+# refused before any file is read or written: the shared copies would land among the run's own
+# private files, and the removal that keeps a published folder to one run's files would remove
+# the run's own sidecar.
+NO_FOLDER = "nothing written: --publish names no folder; give the folder to publish into\n"
+NAMELESS = (
+    "nothing written: --publish {} names no folder by its last part; give the folder to "
+    "publish into by its name\n"
+)
+INTO_THE_RUN = (
+    "nothing written: --publish names the run folder {}; publish into a folder outside it\n"
+)
+INSIDE_THE_RUN = (
+    "nothing written: --publish names {} inside the run folder {}; publish into a folder "
+    "outside it\n"
+)
 
-    assert run_writer(writer, folder, "--publish", tmp_path / spelled) == (
+
+def files_under(top: Path) -> dict[str, tuple[bytes, int, int, int]]:
+    """Each file and folder under ``top``: its bytes, mode, inode and change time."""
+    found: dict[str, tuple[bytes, int, int, int]] = {}
+    for path in sorted(top.rglob("*")):
+        state = path.lstat()
+        held = path.read_bytes() if path.is_file() and not path.is_symlink() else b""
+        found[path.relative_to(top).as_posix()] = (
+            held,
+            state.st_mode,
+            state.st_ino,
+            state.st_mtime_ns,
+        )
+    return found
+
+
+def private_run_with_its_sidecar(writer: ModuleType, folder: Path) -> Path:
+    """A run folder whose private sidecar an earlier write left, beside a report page."""
+    printed, typed, count = PRIVATE_ROWS["a-64-hex-secret"]
+    with_report(showcase_run(folder, typed, printed))
+    assert run_writer(writer, folder) == (EXIT_OK, "", PRIVATE.format(count))
+    return folder
+
+
+@pytest.mark.parametrize(
+    ("spelled", "said"),
+    [
+        ("", NO_FOLDER),
+        (".", NAMELESS.format(".")),
+        ("./", NAMELESS.format("./")),
+        ("./.", NAMELESS.format("./.")),
+    ],
+    ids=["empty", "dot", "dot-slash", "dot-slash-dot"],
+)
+def test_publish_mode_refuses_a_value_that_names_no_folder_and_writes_nothing(
+    writer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    spelled: str,
+    said: str,
+) -> None:
+    private_run_with_its_sidecar(writer, tmp_path / "run")
+    monkeypatch.chdir(tmp_path)
+    before = files_under(tmp_path)
+
+    assert run_writer(writer, "run", "--publish", spelled) == (EXIT_USAGE, "", said)
+    assert files_under(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    ("at", "run", "spelled", "named"),
+    [
+        (".", "run", "run", "run"),
+        (".", "run", "run/", "run"),
+        (".", "run", "run/.", "run"),
+        (".", "run", "link-to-run", "run"),
+        (".", "link-to-run", "run", "link-to-run"),
+        ("run", ".", "../run", "run"),
+        ("run", ".", "../link-to-run", "run"),
+        (".", "run", "run/inside/..", "run"),
+        (".", "run", "link-to-inside/..", "run"),
+    ],
+    ids=[
+        "by-its-name",
+        "with-a-slash",
+        "with-a-dot",
+        "through-a-link",
+        "named-through-a-link",
+        "from-inside-it",
+        "from-inside-it-through-a-link",
+        "climbing-back-to-it",
+        "climbing-out-of-a-link-into-it",
+    ],
+)
+def test_publish_mode_refuses_the_run_folder_itself_and_keeps_its_private_sidecar(
+    writer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    at: str,
+    run: str,
+    spelled: str,
+    named: str,
+) -> None:
+    folder = private_run_with_its_sidecar(writer, tmp_path / "run")
+    (tmp_path / "link-to-run").symlink_to(folder, target_is_directory=True)
+    (folder / "inside").mkdir()
+    (tmp_path / "link-to-inside").symlink_to(folder / "inside", target_is_directory=True)
+    monkeypatch.chdir(tmp_path / at)
+    before = files_under(tmp_path)
+
+    assert run_writer(writer, run, "--publish", spelled) == (
+        EXIT_USAGE,
+        "",
+        INTO_THE_RUN.format(named),
+    )
+    assert files_under(tmp_path) == before
+    assert mode_of(folder / SIDECAR) == PRIVATE_MODE
+
+
+@pytest.mark.parametrize(
+    ("spelled", "named"),
+    [
+        ("run/inside", "inside"),
+        ("run/a/b", "b"),
+        ("run/./inside", "inside"),
+        ("link-to-run/inside", "inside"),
+        ("published/../run/inside", "inside"),
+        ("run/a/b/..", "a"),
+        ("link-to-b/..", "a"),
+    ],
+    ids=[
+        "one-down",
+        "two-down",
+        "with-a-dot",
+        "through-a-link",
+        "climbing-into-it",
+        "climbing-back-up-in-it",
+        "climbing-out-of-a-link-in-it",
+    ],
+)
+def test_publish_mode_refuses_a_folder_inside_the_run_folder_and_writes_nothing(
+    writer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    spelled: str,
+    named: str,
+) -> None:
+    folder = private_run_with_its_sidecar(writer, tmp_path / "run")
+    (folder / "inside").mkdir()
+    (folder / "a" / "b").mkdir(parents=True)
+    (tmp_path / "link-to-run").symlink_to(folder, target_is_directory=True)
+    (tmp_path / "link-to-b").symlink_to(folder / "a" / "b", target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    before = files_under(tmp_path)
+
+    assert run_writer(writer, "run", "--publish", spelled) == (
+        EXIT_USAGE,
+        "",
+        INSIDE_THE_RUN.format(named, "run"),
+    )
+    assert files_under(tmp_path) == before
+
+
+# A direct call of the publish refuses the run folder and a folder inside it as well.
+NOT_INTO_THE_RUN = "the folder {} is the run folder or a folder inside it"
+
+
+@pytest.mark.parametrize(("into", "named"), [("run", "run"), ("run/inside", "inside")])
+def test_publish_refuses_to_copy_into_the_run_folder_or_a_folder_inside_it(
+    writer: ModuleType, tmp_path: Path, into: str, named: str
+) -> None:
+    folder = private_run_with_its_sidecar(writer, tmp_path / "run")
+    before = files_under(tmp_path)
+
+    with pytest.raises(ValueError) as caught:
+        writer.publish(folder, tmp_path / into, sidecar=False)
+
+    assert str(caught.value) == NOT_INTO_THE_RUN.format(named)
+    assert files_under(tmp_path) == before
+
+
+# A --publish value that names a folder holding the run folder, at any depth, is refused before
+# any file is read or written as well: the run's own capture and sidecar would lie inside the
+# published folder.
+HOLDS_THE_RUN = (
+    "nothing written: --publish names {}, which holds the run folder {} and so its private "
+    "files; publish into a folder that does not hold the run folder\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("made", "run", "spelled", "named"),
+    [
+        ("holder/run", "holder/run", "holder", "holder"),
+        ("holder/run", "holder/run", "holder/", "holder"),
+        ("holder/run", "holder/run", "./holder/.", "holder"),
+        ("T/a/b/run", "T/a/b/run", "T", "T"),
+        ("T/a/b/run", "T/a/b/run", "T/a", "a"),
+        ("holder/run", "holder/run", "link-to-top", "holder"),
+        ("T/a/b/run", "T/a/b/run", "link-to-top/a", "a"),
+        ("holder/run", "holder/run", "holder/run/..", "holder"),
+        ("holder/run", "holder/run", "elsewhere/../holder", "holder"),
+        ("holder/run", "holder/run", "holder/run/inside/../..", "holder"),
+        ("holder/run", "link-to-top/run", "holder", "holder"),
+        ("holder/run", "near/run-link", "near", "near"),
+        ("holder/run", "near/run-link", "holder", "holder"),
+        ("holder/run", "holder/run", "absent/../holder", "holder"),
+        ("holder/run", "holder/run", "holder/absent/..", "holder"),
+        ("T/a/b/run", "T/a/b/run", "T/absent/x/../..", "T"),
+    ],
+    ids=[
+        "one-level-up",
+        "one-level-up-with-a-slash",
+        "one-level-up-with-dots",
+        "two-levels-up",
+        "one-of-two-levels-up",
+        "through-a-link",
+        "through-a-link-two-levels-up",
+        "climbing-out-of-the-run-folder",
+        "climbing-through-another-folder",
+        "climbing-out-of-a-folder-inside-it",
+        "the-run-named-through-a-link",
+        "a-folder-that-holds-a-link-to-the-run-folder",
+        "the-folder-the-link-to-the-run-folder-leads-into",
+        "climbing-out-of-a-folder-that-does-not-exist",
+        "climbing-out-of-a-folder-in-it-that-does-not-exist",
+        "climbing-out-of-two-folders-that-do-not-exist",
+    ],
+)
+def test_publish_mode_refuses_a_folder_that_holds_the_run_folder_and_writes_nothing(
+    writer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    made: str,
+    run: str,
+    spelled: str,
+    named: str,
+) -> None:
+    folder = private_run_with_its_sidecar(writer, tmp_path / made)
+    (folder / "inside").mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    top = tmp_path / made.split("/")[0]
+    (tmp_path / "link-to-top").symlink_to(top, target_is_directory=True)
+    (tmp_path / "near").mkdir()
+    (tmp_path / "near" / "run-link").symlink_to(folder, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    before = files_under(tmp_path)
+
+    assert run_writer(writer, run, "--publish", spelled) == (
+        EXIT_USAGE,
+        "",
+        HOLDS_THE_RUN.format(named, Path(run).name),
+    )
+    assert files_under(tmp_path) == before
+    assert mode_of(folder / SIDECAR) == PRIVATE_MODE
+
+
+@pytest.mark.parametrize(
+    "spelled",
+    ["../work", "absent/..", "absent/x/../..", "runs/absent/../.."],
+    ids=[
+        "out-and-back-in",
+        "out-of-a-folder-that-does-not-exist",
+        "out-of-two-folders-that-do-not-exist",
+        "out-of-the-runs-and-a-folder-that-does-not-exist",
+    ],
+)
+def test_publish_mode_refuses_the_working_folder_named_by_a_path_that_climbs_back_to_it(
+    writer: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelled: str
+) -> None:
+    folder = private_run_with_its_sidecar(writer, tmp_path / "work" / "runs" / "run")
+    monkeypatch.chdir(tmp_path / "work")
+    before = files_under(tmp_path)
+
+    assert run_writer(writer, "runs/run", "--publish", spelled) == (
+        EXIT_USAGE,
+        "",
+        HOLDS_THE_RUN.format("work", "run"),
+    )
+    assert files_under(tmp_path) == before
+    assert mode_of(folder / SIDECAR) == PRIVATE_MODE
+
+
+# A direct call of the publish refuses a folder that holds the run folder as well.
+HOLDS_THE_RUN_FOLDER = "the folder {} holds the run folder"
+
+
+@pytest.mark.parametrize(
+    ("into", "named"),
+    [
+        ("T/holder", "holder"),
+        ("T", "T"),
+        ("T/absent/..", "T"),
+        ("T/holder/absent/x/../..", "holder"),
+    ],
+    ids=[
+        "one-level-up",
+        "two-levels-up",
+        "climbing-out-of-a-folder-that-does-not-exist",
+        "climbing-out-of-two-folders-that-do-not-exist",
+    ],
+)
+def test_publish_refuses_to_copy_into_a_folder_that_holds_the_run_folder(
+    writer: ModuleType, tmp_path: Path, into: str, named: str
+) -> None:
+    folder = private_run_with_its_sidecar(writer, tmp_path / "T" / "holder" / "run")
+    before = files_under(tmp_path)
+
+    with pytest.raises(ValueError) as caught:
+        writer.publish(folder, tmp_path / into, sidecar=False)
+
+    assert str(caught.value) == HOLDS_THE_RUN_FOLDER.format(named)
+    assert files_under(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    ("run", "spelled", "published"),
+    [
+        ("run", "run/../published", "published"),
+        ("holder/run", "holder/published", "published"),
+        ("holder/run", "other/published", "published"),
+        ("holder/run", "holder/run2", "run2"),
+        ("holder/run2", "holder/run", "run"),
+        ("holder/run", "holder/ru", "ru"),
+        ("holder/run", "link-to-holder/published", "published"),
+    ],
+    ids=[
+        "named-through-the-run-folder",
+        "a-folder-beside-it",
+        "a-folder-in-another-parent",
+        "a-name-that-starts-with-the-run-folder-name",
+        "a-name-the-run-folder-name-starts-with",
+        "a-name-that-is-the-start-of-the-run-folder-name",
+        "a-folder-beside-it-through-a-link",
+    ],
+)
+def test_publish_mode_into_a_folder_outside_the_run_folder_publishes_the_shared_files(
+    writer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    run: str,
+    spelled: str,
+    published: str,
+) -> None:
+    count = PRIVATE_ROWS["a-64-hex-secret"][2]
+    folder = private_run_with_its_sidecar(writer, tmp_path / run)
+    sidecar = (folder / SIDECAR).read_bytes()
+    (tmp_path / "link-to-holder").symlink_to(tmp_path / "holder", target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+
+    assert run_writer(writer, run, "--publish", spelled) == (
         EXIT_OK,
-        PUBLISHED_WITHOUT_SIDECAR.format(spelled),
+        PUBLISHED_WITHOUT_SIDECAR.format(published),
         KEPT_PRIVATE.format(count),
     )
-    assert sorted(path.name for path in folder.iterdir()) == sorted(
-        [*SHARED, "capture.jsonl", SIDECAR]
-    )
+    for name in SHARED:
+        assert (tmp_path / spelled / name).read_bytes() == (folder / name).read_bytes()
+    assert not (tmp_path / spelled / SIDECAR).exists()
+    assert (folder / SIDECAR).read_bytes() == sidecar
     assert mode_of(folder / SIDECAR) == PRIVATE_MODE
-    assert "5e" * 32 in (folder / SIDECAR).read_text(encoding="utf-8")
+
+
+def test_a_run_folder_named_by_a_dot_is_named_by_its_name_when_it_is_refused(
+    writer: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "empty").mkdir()
+    monkeypatch.chdir(tmp_path / "empty")
+
+    assert run_writer(writer, ".") == (
+        EXIT_USAGE,
+        "",
+        "the folder empty has no results.json, capture.jsonl\n",
+    )
+
+
+# The process-space mark in a write's file name is all zeros when either of its two parts, the
+# boot or the process-number namespace, cannot be read; and the publish refuses a folder that
+# is no place to publish into.
+SPACE_MARK = "all zeros where either cannot be read"
+PUBLISH_REFUSED = (
+    "`--publish` refuses, with exit 2 and before it reads or writes any file, a `FOLDER` that "
+    "is empty, whose last part names no folder, such as `.`, or that is the run folder or a "
+    "folder inside it, through a link or not."
+)
+
+
+def test_the_script_says_what_its_process_space_mark_and_its_publish_refuse(
+    writer: ModuleType, repo_root: Path
+) -> None:
+    said = " ".join((writer.__doc__ or "").replace("``", "`").split())
+    policy = " ".join((repo_root / "SECURITY.md").read_text(encoding="utf-8").split())
+
+    assert SPACE_MARK in said
+    assert "where neither can be read" not in said
+    assert PUBLISH_REFUSED in said
+    assert PUBLISH_REFUSED in policy
+
+
+# The sentence of the script that says a folder holding the run folder is refused as well.
+PUBLISH_REFUSES_A_HOLDER = (
+    "It refuses the same way a `FOLDER` that holds the run folder, at any depth, through a link "
+    "or not, since the run's own private files would then lie inside the published folder."
+)
+
+
+def test_the_script_says_it_refuses_a_folder_that_holds_the_run_folder(writer: ModuleType) -> None:
+    said = " ".join((writer.__doc__ or "").replace("``", "`").split())
+
+    assert PUBLISH_REFUSES_A_HOLDER in said
+
+
+# The policy says what the script and the results schema page say of a publish: a folder that
+# holds the run folder is refused, and every file is checked before the first copy.
+PUBLISH_CHECKS_FIRST = (
+    "It checks every file before it copies any: a publish that fails before its first copy "
+    'leaves `FOLDER` as it was and says "nothing published", and one that fails after it says '
+    '"partly published" and names exactly the files it copied, both with exit 2.'
+)
+
+
+def test_the_policy_says_a_publish_refuses_a_holder_and_checks_every_file_first(
+    repo_root: Path,
+) -> None:
+    policy = " ".join((repo_root / "SECURITY.md").read_text(encoding="utf-8").split())
+    schema = " ".join(
+        (repo_root / "docs/reference/results-schema.md").read_text(encoding="utf-8").split()
+    )
+
+    assert PUBLISH_REFUSES_A_HOLDER in policy
+    assert PUBLISH_CHECKS_FIRST in policy
+    assert PUBLISH_CHECKS_FIRST.removeprefix("It ") in schema
 
 
 @pytest.mark.parametrize(
@@ -3082,15 +3492,18 @@ def test_a_write_whose_own_file_was_removed_exits_2_and_keeps_the_earlier_sideca
     assert temporary_names(pair) == []
 
 
+@pytest.mark.parametrize(
+    "spelled", ["published", "absent/../published"], ids=["by-its-name", "climbing-out-of-another"]
+)
 def test_publish_mode_whose_own_file_was_removed_exits_2_with_a_plain_message(
-    writer: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    writer: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelled: str
 ) -> None:
     folder = showcase_run(tmp_path / "run")
-    published = tmp_path / "published"
+    published = tmp_path / spelled
     rename = os.replace
 
     def removed(source: Any, target: Any) -> None:
-        if Path(target).parent == published:
+        if Path(target).parent.name == "published":
             Path(source).unlink()
         rename(source, target)
 
@@ -3102,7 +3515,253 @@ def test_publish_mode_whose_own_file_was_removed_exits_2_with_a_plain_message(
         "nothing published: the file this run filled for results.json was removed before it "
         "was moved into place\n",
     )
-    assert sorted(path.name for path in published.iterdir()) == []
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["run"]
+
+
+# A publish checks every file it would write or remove before it copies any: a folder at the name
+# of one of them in the published folder is refused, and the published folder is left as it was.
+FOLDER_IN_THE_WAY = (
+    "nothing published: {} in {} is a folder, which a publish neither replaces nor removes; "
+    "remove it or publish into another folder\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "report", "private"),
+    [
+        ("report.html", True, False),
+        ("report.html", False, False),
+        ("results.md", True, False),
+        ("results.json", True, False),
+        (SIDECAR, True, True),
+        (SIDECAR, True, False),
+    ],
+    ids=[
+        "the-report-page-the-run-wrote",
+        "the-report-page-the-run-did-not-write",
+        "the-markdown-results",
+        "the-results",
+        "the-sidecar-kept-private",
+        "the-sidecar-to-be-copied",
+    ],
+)
+def test_publish_into_a_folder_with_a_folder_at_a_published_name_copies_nothing(
+    writer: ModuleType, tmp_path: Path, name: str, report: bool, private: bool
+) -> None:
+    if private:
+        printed, typed, _count = PRIVATE_ROWS["a-64-hex-secret"]
+        folder = showcase_run(tmp_path / "run", typed, printed)
+    else:
+        folder = showcase_run(tmp_path / "run")
+    if report:
+        with_report(folder)
+    published = tmp_path / "published"
+    (published / name).mkdir(parents=True)
+    (published / name / "keep").write_text("made-up\n", encoding="utf-8")
+    before = files_under(published)
+
+    assert run_writer(writer, folder, "--publish", published) == (
+        EXIT_USAGE,
+        "",
+        FOLDER_IN_THE_WAY.format(name, "published"),
+    )
+    assert files_under(published) == before
+    assert mode_of(folder / SIDECAR) == (PRIVATE_MODE if private else default_mode())
+
+
+def listing(folder: Path) -> dict[str, tuple[bytes, int, int, int]] | None:
+    """``files_under`` of ``folder``, or ``None`` when there is no such folder."""
+    return files_under(folder) if folder.exists() else None
+
+
+# A file of the run that cannot be read is found before anything is copied.
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="needs a user that cannot read a file of mode 000; root reads it"
+)
+@pytest.mark.parametrize(
+    "earlier", [False, True], ids=["a-new-folder", "a-folder-published-before"]
+)
+def test_publish_of_a_file_it_cannot_read_copies_nothing(
+    writer: ModuleType, tmp_path: Path, earlier: bool
+) -> None:
+    published = tmp_path / "published"
+    if earlier:
+        first = run_writer(
+            writer, with_report(showcase_run(tmp_path / "earlier")), "--publish", published
+        )
+        assert first[0] == EXIT_OK
+    folder = with_report(showcase_run(tmp_path / "run"))
+    (folder / "report.html").chmod(0)
+    before = listing(published)
+
+    try:
+        result = run_writer(writer, folder, "--publish", published)
+    finally:
+        (folder / "report.html").chmod(0o600)
+
+    assert result == (
+        EXIT_USAGE,
+        "",
+        f"nothing published: [Errno 13] Permission denied: '{folder / 'report.html'}'\n",
+    )
+    assert listing(published) == before
+
+
+# A move that fails after an earlier one landed: the line names exactly the files copied, those
+# not copied, and those of an earlier publish still in the folder; no file a write filled is left.
+FAILED_PART = "made-up full disk"
+
+
+@pytest.mark.parametrize(
+    ("earlier", "failing", "said"),
+    [
+        (
+            False,
+            "results.md",
+            "partly published: copied results.json into published, then stopped: made-up full "
+            "disk; not copied: results.md and report.html\n",
+        ),
+        (
+            True,
+            "report.html",
+            "partly published: copied results.json and results.md into published, then stopped: "
+            "made-up full disk; not copied: report.html; still there from before: report.html and "
+            "hash_inputs.json\n",
+        ),
+    ],
+    ids=["into-a-new-folder", "into-a-folder-published-before"],
+)
+def test_publish_whose_later_move_fails_says_exactly_what_it_copied(
+    writer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    earlier: bool,
+    failing: str,
+    said: str,
+) -> None:
+    published = tmp_path / "published"
+    if earlier:
+        first = run_writer(
+            writer, with_report(showcase_run(tmp_path / "earlier")), "--publish", published
+        )
+        assert first[0] == EXIT_OK
+    printed, typed, _count = PRIVATE_ROWS["a-64-hex-secret"]
+    folder = with_report(showcase_run(tmp_path / "run", typed, printed))
+    before = listing(published) or {}
+    rename = os.replace
+
+    def failing_move(source: Any, target: Any) -> None:
+        if Path(target) == published / failing:
+            raise OSError(FAILED_PART)
+        rename(source, target)
+
+    monkeypatch.setattr(writer.os, "replace", failing_move)
+
+    assert run_writer(writer, folder, "--publish", published) == (EXIT_USAGE, "", said)
+    after = files_under(published)
+    copied = SHARED[: SHARED.index(failing)]
+    for name in copied:
+        assert (published / name).read_bytes() == (folder / name).read_bytes()
+        assert mode_of(published / name) == default_mode()
+    assert sorted(after) == sorted({*copied, *before})
+    for name in before:
+        if name not in copied:
+            assert after[name] == before[name]
+
+
+# A removal of a file an earlier publish left that fails, once every file is copied, says so too.
+def test_publish_whose_removal_of_an_earlier_file_fails_says_what_it_copied(
+    writer: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = tmp_path / "published"
+    first = run_writer(
+        writer, with_report(showcase_run(tmp_path / "earlier")), "--publish", published
+    )
+    assert first[0] == EXIT_OK
+    printed, typed, _count = PRIVATE_ROWS["a-64-hex-secret"]
+    folder = with_report(showcase_run(tmp_path / "run", typed, printed))
+    before = files_under(published)
+    remove = os.unlink
+
+    def failing_removal(path: Any, *args: Any, **kwargs: Any) -> None:
+        if Path(path) == published / SIDECAR:
+            raise OSError("made-up busy file")
+        remove(path, *args, **kwargs)
+
+    monkeypatch.setattr(writer.os, "unlink", failing_removal)
+
+    assert run_writer(writer, folder, "--publish", published) == (
+        EXIT_USAGE,
+        "",
+        "partly published: copied results.json, results.md and report.html into published, then "
+        "stopped: made-up busy file; still there from before: hash_inputs.json\n",
+    )
+    after = files_under(published)
+    assert sorted(after) == sorted([*SHARED, SIDECAR])
+    for name in SHARED:
+        assert (published / name).read_bytes() == (folder / name).read_bytes()
+    assert after[SIDECAR] == before[SIDECAR]
+
+
+# Stands in for `pairbench run` in a showcase publish: copies a prepared run into the folder
+# named after --out.
+COPYING_RUN = """#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --out ]; then
+    mkdir -p "$2" && cp -R "{prepared}/." "$2" && exit 0
+    exit 1
+  fi
+  shift
+done
+exit 1
+"""
+# Stands in for python3: the interpreter that runs the tests.
+THIS_PYTHON = """#!/bin/sh
+exec "{python}" "$@"
+"""
+
+
+def test_a_showcase_publish_into_a_folder_with_a_folder_at_a_published_name_copies_nothing(
+    writer: ModuleType, repo_root: Path, tmp_path: Path
+) -> None:
+    prepared = with_report(showcase_run(tmp_path / "prepared"))
+    checkout = tmp_path / "checkout"
+    showcase = checkout / "showcases" / "made-up"
+    showcase.mkdir(parents=True)
+    for part in ("src", "tools"):
+        (checkout / part).symlink_to(repo_root / part, target_is_directory=True)
+    blocked = showcase / "published" / "report.html"
+    blocked.mkdir(parents=True)
+    (blocked / "keep").write_text("made-up\n", encoding="utf-8")
+    before = files_under(showcase / "published")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    (stubs / "pairbench").write_text(COPYING_RUN.format(prepared=prepared), encoding="utf-8")
+    (stubs / "python3").write_text(THIS_PYTHON.format(python=sys.executable), encoding="utf-8")
+    for stub in stubs.iterdir():
+        stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{stubs}:{os.environ.get('PATH', '')}",
+        "PAIRBENCH_SHOWCASE_PUBLISH": "published",
+    }
+    script = 'set -eu; here=/work/showcases/made-up; cd "$1"; . "$2"; run_pairbench "" --made-up'
+
+    done = subprocess.run(
+        ["sh", "-c", script, "sh", str(showcase), str(repo_root / "showcases" / "publish.sh")],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+        timeout=120,
+    )
+
+    assert (done.returncode, done.stdout, done.stderr) == (
+        EXIT_USAGE,
+        "",
+        FOLDER_IN_THE_WAY.format("report.html", "published"),
+    )
+    assert files_under(showcase / "published") == before
 
 
 # A move that fails while the file it moves is still there is a failed write like any other.

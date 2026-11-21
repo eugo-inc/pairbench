@@ -12,6 +12,7 @@ import itertools
 import json
 import os
 import subprocess
+import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -892,6 +893,83 @@ def test_a_launch_that_leaves_only_the_caller_s_files_starts_no_second_container
     assert _chowns(runner) == []
 
 
+# Folders nested in one another in a launch folder: more than Python calls itself by default.
+DEEP = sys.getrecursionlimit() + 100
+
+
+def _plant_deep(folder: Path, depth: int = DEEP) -> None:
+    """Make ``depth`` folders, each inside the one before, in ``folder``, and a file in the last."""
+    folder.mkdir(parents=True, exist_ok=True)
+    here = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for _ in range(depth):
+            os.mkdir("d", dir_fd=here)
+            below = os.open("d", os.O_RDONLY | os.O_DIRECTORY, dir_fd=here)
+            os.close(here)
+            here = below
+        os.close(os.open("out.json", os.O_WRONLY | os.O_CREAT, 0o600, dir_fd=here))
+    finally:
+        os.close(here)
+
+
+def _clear_deep(top: Path) -> None:
+    """Remove ``top`` by path, deepest folder first, calling nothing recursive."""
+    folders = [top]
+    waiting = [top]
+    while waiting:
+        with os.scandir(waiting.pop()) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    folders.append(Path(entry.path))
+                    waiting.append(Path(entry.path))
+                else:
+                    os.unlink(entry.path)
+    for folder in reversed(folders):
+        os.rmdir(folder)
+
+
+def test_the_entries_of_another_user_are_found_in_folders_nested_past_the_recursion_limit(
+    tmp_path: Path,
+) -> None:
+    assert sys.getrecursionlimit() < DEEP
+    folder = tmp_path / "artifacts" / "0003-new"
+    _plant_deep(folder)
+    try:
+        assert container.foreign_entries(folder, os.getuid()) == []
+        assert len(container.foreign_entries(folder, os.getuid() + 1)) == DEEP + 1
+    finally:
+        _clear_deep(folder)
+
+
+def test_a_link_to_a_folder_is_looked_at_and_not_followed(tmp_path: Path) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    for name in ("a.txt", "b.txt"):
+        (elsewhere / name).write_text("made up\n", encoding="utf-8")
+    folder = tmp_path / "artifacts" / "0003-new"
+    folder.mkdir(parents=True)
+    (folder / "linked").symlink_to(elsewhere, target_is_directory=True)
+    assert container.foreign_entries(folder, os.getuid()) == []
+    assert container.foreign_entries(folder, os.getuid() + 1) == [folder / "linked"]
+
+
+def test_a_launch_that_leaves_a_deep_tree_of_the_caller_s_files_starts_no_second_container(
+    make: Build, tmp_path: Path
+) -> None:
+    folder = tmp_path / "artifacts" / "0003-new"
+    _plant_deep(folder)
+    notes: list[tuple[str, str]] = []
+    try:
+        kind, runner, _host = make()
+        context = _ctx(note=lambda code, message: notes.append((code, message)))
+        outcome = kind.resolve(SIDE, context).launch(_request(folder))
+        assert outcome.rc == 0
+        assert _chowns(runner) == []
+        assert notes == []
+    finally:
+        _clear_deep(folder)
+
+
 def test_files_that_cannot_be_handed_back_give_one_note_naming_the_folder(
     make: Build, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording_host: Any
 ) -> None:
@@ -1072,6 +1150,31 @@ def test_an_error_in_the_hand_back_of_an_interrupted_launch_keeps_the_interrupt(
     with pytest.raises(KeyboardInterrupt):
         resolved.launch(_request(folder))
     # The note names the kind of error only: its text holds a path outside the run folder.
+    reason = "the hand-back stopped on an error (PermissionError)"
+    assert notes == [
+        ("files_not_handed_back", KEPT.format(where="artifacts/0003-new", reason=reason))
+    ]
+
+
+def test_an_error_in_the_hand_back_after_a_launch_that_ended_names_the_folder_and_goes_on(
+    make: Build, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    denial = OSError(13, "made-up denial", str(tmp_path / "made-up-place"))
+
+    def fail() -> None:
+        raise denial
+
+    Owner(monkeypatch)
+    folder = _launch_folder(tmp_path)
+    notes: list[tuple[str, str]] = []
+    kind, runner, _host = make(FakeEngine(on_chown=fail))
+    resolved = kind.resolve(SIDE, _ctx(note=lambda code, message: notes.append((code, message))))
+    with pytest.raises(PermissionError) as raised:
+        resolved.launch(_request(folder))
+    assert raised.value is denial
+    assert len(_chowns(runner)) == 1
+    assert runner.argvs()[-1] == CHOWN_REMOVED
+    # Without the end that says later launches of the side are not named.
     reason = "the hand-back stopped on an error (PermissionError)"
     assert notes == [
         ("files_not_handed_back", KEPT.format(where="artifacts/0003-new", reason=reason))

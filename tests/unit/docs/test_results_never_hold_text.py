@@ -10,7 +10,8 @@ exceptions and links the known limits, and a page of the documentation site
 links them by a relative link that the site's build checks and rewrites.
 
 The same is said in other words: that the shown command or a shared file holds
-nothing that identifies the machine, no host and no user, or is safe to share.
+nothing that identifies the machine, no host and no user, nothing that points back
+to the machine or the person who ran it, or is safe to share.
 Wherever the source, the documentation, the skill, the README, ``llms.txt`` or
 a schema says it of what the shared files hold, it names the known limits; a
 place that says it of something else, which no form of the shown command
@@ -157,7 +158,7 @@ SHARED = re.compile(
 )
 # A word that says a thing is not there, and a verb that takes a thing away.
 NOT_THERE = (
-    r"(?:\b(?:no|never|not|nothing|neither|nor|without|free of|clean of|scrubbed of"
+    r"(?:\b(?:no|never|not|cannot|nothing|neither|nor|without|free of|clean of|scrubbed of"
     r"|stripped of|no trace of)\b|n['\u2019]t\b)"
 )
 TAKES_AWAY = r"(?:drops?|masks?|removes?|redacts?|omits?|strips?|scrubs?|leaves?\s+out)"
@@ -169,6 +170,38 @@ GONE = (
     r"|left out|kept out|out of)"
 )
 BEING = r"(?:is|are|do|does|did|will|must|can|stays?|remains?|gets?|goes|go)"
+# Leading back to someone or something: a verb of pointing, tracing or tying with "back to".
+BACK_TO = (
+    r"(?:points?|pointed|traces?|traced|leads?|led|ties?|tied|links?|linked|maps?|mapped)"
+    r"\s+back\s+to\s+(?:(?:the|your|this|that|a|any)\s+)?"
+)
+# Who ran a run, or the machine it ran on, as a sentence about revealing it says it.
+REVEALS = (
+    r"(?:reveals?|tells?|shows?|discloses?|exposes?|gives?\s+away|says?|betrays?)"
+    r"(?:\s+(?:anyone|anybody|readers?|others|you))?"
+)
+WHICH_MACHINE = rf"(?:on\s+)?(?:which|what)\s+{MACHINE}"
+# Revealing, in the strong verbs only, the machine a run used or ran on: said of anything else,
+# such as which machine a scheduler picks, it is not the claim.
+GIVES_AWAY = r"(?:reveals?|discloses?|exposes?|gives?\s+away|betrays?)"
+MACHINE_USED = (
+    rf"{WHICH_MACHINE}\s+(?:you|it|they|the\s+run)\s+"
+    r"(?:used|ran\s+on|run\s+on|was\s+run\s+on|were\s+run\s+on)"
+)
+WHO_RAN = (
+    r"(?:who\s+(?:you\s+are|ran\s+(?:it|them|the\s+\w+)|made\s+it|started\s+it)"
+    r"|where\s+(?:it|you|they|the\s+\w+)\s+ran)"
+)
+# Details of the machine or the user, in either order of the words: "user details", or details,
+# information or data of, about or on the machine.
+ABOUT_WHOM = rf"(?:{MACHINE}|host|user|personal)"
+DETAILS = (
+    rf"(?:{ABOUT_WHOM}(?:\s+(?:and|or|nor)\s+{ABOUT_WHOM})?"
+    r"\s+(?:details|information|info|data|identifiers?)\b"
+    r"|(?:details|information|info|data)\s+(?:of|about|on)\s+(?:the|your)\s+"
+    r"(?:machine|computer|host|user)"
+    r"(?:\s+(?:and|or)\s+(?:the|your)\s+(?:machine|computer|host|user))?\b)"
+)
 # What stands between two words of one clause: a blank, a quote, a bracket, a hyphen, or a dot
 # inside a file name; never a comma, a colon or a semicolon.
 WITHIN = r"(?:[\s`'\u2019\"()-]|\.(?=\w))+"
@@ -179,7 +212,10 @@ WITHIN = r"(?:[\s`'\u2019\"()-]|\.(?=\w))+"
 # before one; a host or a user, or two joined by "and" or "or", that "never" appear, "are
 # removed", "stay out of" or "don't" appear; keeping a host or a user out; and a verb of holding
 # with "no" before the machine, or a verb of naming or identifying it after a word of
-# ``NOT_THERE`` in the same clause.
+# ``NOT_THERE`` in the same clause; pointing or tracing back to a host or a user, or revealing who
+# ran it, where it ran, which machine or which host, after a word of ``NOT_THERE`` or with
+# "nothing about" after the verb; and details of the machine
+# or the user said to be gone, or after a word of ``NOT_THERE``.
 ABOUT_SHARED = re.compile(
     rf"\b{HOLDING} no {MACHINE}"
     rf"|{NOT_THERE}(?:{WITHIN}\w+){{0,6}}?{WITHIN}(?:names?|identif(?:y|ies))\s+"
@@ -190,16 +226,34 @@ ABOUT_SHARED = re.compile(
     rf"|\b{TAKES_AWAY}\s+(?:(?:the|any|a|an|all|your)\s+)?{WHO}"
     rf"|{WHO}(?:\s+(?:and|or)\s+{WHO})?\s+(?:{BEING}\s+)?(?:(?:all|also|always|ever)\s+)?{GONE}\b"
     rf"|{WHO}\s+{BEING}n['\u2019]t\b"
-    rf"|\bkeeps?\s+(?:(?:the|any|your)\s+)?{WHO}\s+out\b",
+    rf"|\bkeeps?\s+(?:(?:the|any|your)\s+)?{WHO}\s+out\b"
+    rf"|{NOT_THERE}(?:{WITHIN}\w+){{0,6}}?{WITHIN}{BACK_TO}{WHO}"
+    rf"|{NOT_THERE}(?:{WITHIN}\w+){{0,6}}?{WITHIN}{REVEALS}(?:{WITHIN}\w+){{0,3}}?{WITHIN}"
+    rf"(?:{WHO_RAN}|{WHICH_MACHINE}|(?:on\s+)?(?:which|what)\s+host\b)"
+    rf"|\b{REVEALS}\s+(?:nothing|no\s+\w+)\s+(?:about|of|on)\s+(?:{WHO_RAN}|{WHICH_MACHINE})"
+    rf"|{DETAILS}\s+(?:{BEING}\s+)?(?:(?:all|also|always|ever)\s+)?{GONE}\b"
+    rf"|{NOT_THERE}(?:{WITHIN}\w+){{0,6}}?{WITHIN}{DETAILS}",
+    re.IGNORECASE,
+)
+
+# Families that say the claim in any sentence, as ``HOLDS_NOTHING`` does: a word of
+# ``NOT_THERE`` up to six words before pointing, tracing or tying back to the machine, the
+# person or you, or pointing back to "neither" or "no" one; or before revealing which machine or
+# computer a run used or ran on.
+LEADS_NOWHERE = re.compile(
+    rf"{NOT_THERE}(?:{WITHIN}\w+){{0,6}}?{WITHIN}{BACK_TO}(?:{MACHINE}|person\b|people\b|you\b)"
+    rf"|\b{BACK_TO}(?:neither|no|nobody|nothing|none)\b"
+    rf"|{NOT_THERE}(?:{WITHIN}\w+){{0,6}}?{WITHIN}{GIVES_AWAY}(?:{WITHIN}\w+){{0,3}}?{WITHIN}"
+    rf"{MACHINE_USED}",
     re.IGNORECASE,
 )
 
 
 def says_it(text: str) -> bool:
     """Whether a text says what a shared file or the shown command holds: a family of
-    ``HOLDS_NOTHING``, or one of ``ABOUT_SHARED`` in a text that names a shared file or the
-    command."""
-    if HOLDS_NOTHING.search(text):
+    ``HOLDS_NOTHING`` or ``LEADS_NOWHERE``, or one of ``ABOUT_SHARED`` in a text that names a
+    shared file or the command."""
+    if HOLDS_NOTHING.search(text) or LEADS_NOWHERE.search(text):
         return True
     return SHARED.search(text) is not None and ABOUT_SHARED.search(text) is not None
 
@@ -309,6 +363,29 @@ WORDINGS = (
     "Nothing in results.json names the machine.",
     "The results name no machine.",
     "The shared files leave out host names and user names.",
+    # Pointing back to the machine or the person, revealing who ran it or on which computer, and
+    # details of the machine or the user said to be kept out.
+    "Nothing in results.json points back to the machine or to the person who ran it.",
+    "results.json does not reveal who you are or which computer you used.",
+    "Machine and user details never make it into results.json.",
+    "Nothing in it points back to the machine.",
+    "The shared files point back to neither the machine nor the person who ran it.",
+    "report.html can't be traced back to the host.",
+    "It does not reveal which computer you used.",
+    "results.md never reveals who ran it or on which computer.",
+    "The shared results betray nothing about who ran them.",
+    "The results don't say which machine produced them.",
+    "The shown command doesn't tell anyone where it ran.",
+    "Details of the machine and the user never reach the shared files.",
+    "results.json holds no machine or user details.",
+    "User information is kept out of results.md.",
+    # Pointing back to a host or a user, and details of a user after a word that says they are
+    # not there; "cannot" as that word; and information about the machine said not to be there.
+    "Nothing in results.json points back to the user.",
+    "results.json never contains user details.",
+    "report.html cannot be traced back to the host.",
+    "results.json cannot be linked back to your computer.",
+    "The results contain no information about your machine.",
 )
 # Words that are not the claim.
 NOT_THE_CLAIM = (
@@ -364,6 +441,24 @@ NOT_THE_CLAIM = (
     "results.json shows the user name but not the password.",
     "results.json names the machine class it ran on.",
     "The client leaves out the host name when it reads a socket.",
+    # Sentences of a client, a server, a person or the private capture, with the words of the
+    # claims that point back, reveal or keep details out.
+    "A client that connects without a host name uses the loopback address.",
+    "Machine and user details go into the capture, which stays private.",
+    "Ask the person who ran the benchmark which computer they used.",
+    "The client does not reveal who you are to the server unless --user is given.",
+    "The server points back to the client that sent the request.",
+    "results.json does not reveal which case was slower.",
+    "The proxy does not point back to the host that sent the request.",
+    "The client does not reveal which host it connects to.",
+    "User details are never sent to the server.",
+    "The scheduler does not say which machine it picks until the run starts.",
+    "The docs never say which host to use.",
+    # Sentences with "cannot" or information about the machine that are not the claim.
+    "The proxy cannot be traced back to the host that sent the request.",
+    "results.json cannot be read without its sidecar.",
+    "The capture holds information about your machine and stays private.",
+    "The server sends no information about your machine unless asked.",
 )
 # A place points to the known limits of the security policy by the heading's words or its anchor.
 KNOWN_LIMITS = re.compile(
@@ -453,6 +548,19 @@ PLANTED = (
     ("results.json lists no hostnames, except the known limits of the shown command.", True),
     (
         f"results.json lists no hostnames, except the forms the [policy]({PLANTED_LINK}) lists.",
+        False,
+    ),
+)
+# The claims that point back, reveal or keep details out, planted the same way.
+PLANTED_REWORDED = (
+    ("Nothing in results.json points back to the machine or to the person who ran it.", True),
+    ("results.json does not reveal who you are or which computer you used.", True),
+    ("Machine and user details never make it into results.json.", True),
+    ("report.html cannot be traced back to the host.", True),
+    ("The results contain no information about your machine.", True),
+    (
+        "Machine and user details never make it into results.json, except the forms the "
+        f"[policy]({PLANTED_LINK}) lists.",
         False,
     ),
 )
@@ -646,7 +754,7 @@ def test_a_block_is_split_into_sentences_outside_code_spans() -> None:
     ]
 
 
-@pytest.mark.parametrize(("claim", "refused"), PLANTED)
+@pytest.mark.parametrize(("claim", "refused"), PLANTED + PLANTED_REWORDED)
 def test_a_planted_claim_on_a_page_needs_the_linked_exception_in_its_sentence(
     tmp_path: Path, claim: str, refused: bool
 ) -> None:

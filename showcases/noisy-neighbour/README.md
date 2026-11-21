@@ -50,5 +50,4 @@ container, the interpreter and the loop.
 
 ## Expected result
 
-[`expected/`](expected/) holds no result yet. A result is published only after a real run has
-been approved, with the class of machine that produced it.
+[`expected/`](expected/) holds no result yet.

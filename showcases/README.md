@@ -3,7 +3,8 @@
 Seven complete experiments. Each folder holds a `README.md`, a `pairbench.toml`, a `run.sh`
 that runs it with one command, a `sides.lock` with the image digests, the workload files, and
 `expected/`. Every image is public and pinned by digest. Every workload honours
-`PAIRBENCH_WORK_FACTOR`.
+`PAIRBENCH_WORK_FACTOR`. A container a `run.sh` starts itself, outside pairbench, gets
+`--memory-swap` at the value of its `--memory`, so it has no swap beyond its memory limit.
 
 No showcase has an approved result yet; each `expected/` folder says so in one line.
 
@@ -19,7 +20,9 @@ code. The results hide each side's command, which the sidecar holds, so a showca
 stays private and its three result files are published without it. A reader of a published
 showcase whose sidecar was kept private cannot recompute its hashes; the showcase's public
 recipe, its `pairbench.toml`, `run.sh` and `sides.lock`, says what each side ran. `run.sh`
-refuses the variable when the showcase is reached elsewhere.
+refuses the variable when the showcase is reached elsewhere, and a value that names no folder
+inside the showcase to publish into, or that reaches, through a link, the showcase itself, a
+folder that holds it or `pairbench-runs`, each with its own line on standard error.
 
 | # | Showcase | Sides | Driver |
 |---|---|---|---|

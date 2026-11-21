@@ -8,6 +8,7 @@ import ast
 import gzip
 import importlib.util
 import json
+import os
 import re
 import shlex
 import sys
@@ -946,6 +947,141 @@ def test_a_folder_that_is_not_empty_is_refused(
     assert "not empty" in capsys.readouterr().err
 
 
+# A folder value that climbs out of a folder that does not exist names the folder it climbs
+# back to, and that folder is refused when it holds files, as one named directly is. The
+# checkout itself, named so, is refused as the folder that would hold the private folder, below.
+NOT_EMPTY = "the folder {} exists and is not empty\n"
+
+
+@pytest.mark.parametrize(
+    ("typed", "named"),
+    [("kept/absent/..", "kept"), ("kept/sub/absent/../..", "kept")],
+    ids=["back-to-a-folder-in-it", "two-levels-back-to-a-folder-in-it"],
+)
+@pytest.mark.parametrize("dry", [[], ["--dry-run"]], ids=["run", "dry-run"])
+def test_a_folder_value_that_climbs_back_into_a_folder_with_files_is_refused(
+    launch_cost: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    typed: str,
+    named: str,
+    dry: list[str],
+) -> None:
+    checkout = tmp_path / "checkout"
+    (checkout / "kept").mkdir(parents=True)
+    (checkout / "kept" / "kept.txt").write_text("x", encoding="utf-8")
+    before = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
+    monkeypatch.chdir(checkout)
+    run = FakeRun(EXIT_OK)
+
+    code = launch_cost.main([typed, "--machine-class", MADE_UP_CLASS, *dry], run=run, repo=checkout)
+
+    printed = capsys.readouterr()
+    assert code == EXIT_USAGE
+    assert run.commands == []
+    assert printed.out == ""
+    assert printed.err == NOT_EMPTY.format(named)
+    assert sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*")) == before
+
+
+# A folder that would hold the private folder the run writes under pairbench-runs: refused before
+# anything runs, empty or absent, by whatever path it is named.
+HOLDS_THE_PRIVATE_FOLDER = (
+    "the folder {} would hold the run's private folder, which is written under pairbench-runs; "
+    "name another folder inside the repository\n"
+)
+
+
+def listed(top: Path) -> list[str]:
+    """Every path under ``top``, links not followed."""
+    found = []
+    for folder, folders, files in os.walk(top):
+        for name in (*folders, *files):
+            found.append((Path(folder) / name).relative_to(top).as_posix())
+    return sorted(found)
+
+
+@pytest.mark.parametrize(
+    ("typed", "runs", "named"),
+    [
+        ("pairbench-runs", "absent", "pairbench-runs"),
+        ("pairbench-runs", "empty", "pairbench-runs"),
+        ("pairbench-runs/", "empty", "pairbench-runs"),
+        ("kept/../pairbench-runs", "absent", "pairbench-runs"),
+        ("link-to-runs", "empty", "pairbench-runs"),
+        ("link-to-runs/", "empty", "pairbench-runs"),
+        ("absent/..", "absent", "checkout"),
+        ("link-to-checkout", "absent", "checkout"),
+    ],
+    ids=[
+        "the-private-runs-folder-absent",
+        "the-private-runs-folder-empty",
+        "the-private-runs-folder-with-a-slash",
+        "climbing-back-to-it",
+        "through-a-link",
+        "through-a-link-with-a-slash",
+        "the-checkout-climbing-back-to-it",
+        "the-checkout-through-a-link",
+    ],
+)
+@pytest.mark.parametrize("dry", [[], ["--dry-run"]], ids=["run", "dry-run"])
+def test_a_folder_that_would_hold_the_private_folder_is_refused_before_anything_runs(
+    launch_cost: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    typed: str,
+    runs: str,
+    named: str,
+    dry: list[str],
+) -> None:
+    # An empty checkout stands in for one whose only files are the run's own.
+    checkout = tmp_path / "checkout"
+    (checkout / "kept").mkdir(parents=True)
+    if runs == "empty":
+        (checkout / "pairbench-runs").mkdir()
+    (checkout / "link-to-runs").symlink_to(checkout / "pairbench-runs", target_is_directory=True)
+    (checkout / "link-to-checkout").symlink_to(checkout, target_is_directory=True)
+    before = listed(tmp_path)
+    monkeypatch.chdir(checkout)
+    run = FakeRun(EXIT_OK)
+
+    code = launch_cost.main([typed, "--machine-class", MADE_UP_CLASS, *dry], run=run, repo=checkout)
+
+    printed = capsys.readouterr()
+    assert code == EXIT_USAGE
+    assert run.commands == []
+    assert printed.out == ""
+    assert printed.err == HOLDS_THE_PRIVATE_FOLDER.format(named)
+    assert listed(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    "typed", ["pairbench-runs2", "pairbench-run", "kept", "kept/pairbench-runs"]
+)
+def test_a_folder_beside_the_private_runs_folder_is_accepted(
+    launch_cost: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    typed: str,
+) -> None:
+    checkout = tmp_path / "checkout"
+    (checkout / "pairbench-runs").mkdir(parents=True)
+    monkeypatch.chdir(checkout)
+    run = FakeRun(EXIT_OK)
+
+    code = launch_cost.main(
+        [typed, "--machine-class", MADE_UP_CLASS, "--dry-run"], run=run, repo=checkout
+    )
+
+    printed = capsys.readouterr()
+    assert (code, printed.err) == (EXIT_OK, "")
+    assert run.commands == []
+    assert printed.out.splitlines()[1].endswith(f"--publish {typed}")
+
+
 def test_a_folder_outside_the_repository_is_refused(
     launch_cost: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -962,6 +1098,73 @@ def test_a_folder_outside_the_repository_is_refused(
     assert capsys.readouterr().err == (
         "the folder elsewhere is not inside the repository, which the run reaches at /work\n"
     )
+
+
+def test_a_folder_value_that_climbs_out_of_the_repository_names_where_it_lands(
+    launch_cost: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "checkout").mkdir()
+    run = FakeRun(EXIT_OK)
+
+    code = launch_cost.main(
+        [str(tmp_path / "elsewhere" / "absent" / ".."), "--machine-class", MADE_UP_CLASS],
+        run=run,
+        repo=tmp_path / "checkout",
+    )
+
+    printed = capsys.readouterr()
+    assert code == EXIT_USAGE
+    assert run.commands == []
+    assert printed.out == ""
+    assert printed.err == (
+        "the folder elsewhere is not inside the repository, which the run reaches at /work\n"
+    )
+
+
+# The two lines that refuse a folder value naming no folder, before anything runs.
+NO_OUT_FOLDER = "the folder is given as an empty value; give the folder to write\n"
+NAMELESS_OUT_FOLDER = (
+    "the folder {typed} names no folder by its last part; give the folder to write by its name\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("typed", "refused"),
+    [
+        ("", NO_OUT_FOLDER),
+        (".", NAMELESS_OUT_FOLDER.format(typed=".")),
+        ("./", NAMELESS_OUT_FOLDER.format(typed="./")),
+        ("./.", NAMELESS_OUT_FOLDER.format(typed="./.")),
+    ],
+    ids=["empty", "dot", "dot-slash", "dot-slash-dot"],
+)
+@pytest.mark.parametrize("holds", ["nothing", "a file"])
+@pytest.mark.parametrize("dry", [[], ["--dry-run"]], ids=["run", "dry-run"])
+def test_a_folder_value_that_names_no_folder_is_refused_by_what_was_typed(
+    launch_cost: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    typed: str,
+    refused: str,
+    holds: str,
+    dry: list[str],
+) -> None:
+    if holds == "a file":
+        (tmp_path / "kept.txt").write_text("x", encoding="utf-8")
+    before = sorted(path.name for path in tmp_path.iterdir())
+    monkeypatch.chdir(tmp_path)
+    run = FakeRun(EXIT_OK)
+
+    code = launch_cost.main([typed, "--machine-class", MADE_UP_CLASS, *dry], run=run, repo=tmp_path)
+
+    printed = capsys.readouterr()
+    assert code == EXIT_USAGE
+    assert run.commands == []
+    assert printed.out == ""
+    assert printed.err == refused
+    assert "  " not in printed.err
+    assert sorted(path.name for path in tmp_path.iterdir()) == before
 
 
 def test_a_passing_run_runs_privately_and_publishes_through_the_sidecar_check(
@@ -1053,6 +1256,7 @@ def test_a_publish_the_writer_refuses_writes_no_class_of_machine(
         "Standard_M176ds-44_3_v3",
         "Standard_M896ixds_24_v3",
         "Standard_ND96is_flex_H100_v5",
+        "Standard_ND96is_noIB_H100_v5",
         "Standard_NC128lds_xl_RTXPRO6000BSE_v6",
         "Standard_NM16ads_MA35D",
         "Standard_D48vds_v7",

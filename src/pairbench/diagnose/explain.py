@@ -25,8 +25,9 @@ caller prints the notes.
 Each launch keeps its files in a folder under ``.explain/`` in the run
 folder while it is read: one folder per side, named by the side's place in
 the order of the sides and its name in a file name, so no side name can
-lead out of ``.explain/``. The folder is removed afterwards, so the run
-folder holds only ``diagnostics.json`` and the files under ``profiles/``.
+lead out of ``.explain/``. The folder is removed afterwards, however deep
+the folders a launch leaves in it go, so the run folder holds only
+``diagnostics.json`` and the files under ``profiles/``.
 
 A finding whose text would read as naming a cause, because a side, function
 or shared-object name holds such a word, is left out, and one note per
@@ -35,6 +36,7 @@ subject names the finding ids that were left out.
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 from collections.abc import Iterable, Mapping, Sequence
@@ -133,15 +135,16 @@ def _make_anew(launches: Path) -> None:
     """Make the folder the explain launches keep their files in, new and empty.
 
     What a stopped explain step left under that name, a folder or a link, is
-    removed first. Every launch folder is then made in it, so an instrument
-    writes its output, such as the ``perf.data`` of ``perf record``, only into
-    a folder made for its launch, never into one that could already hold it.
+    removed first, however deep its folders go. Every launch folder is then
+    made in it, so an instrument writes its output, such as the ``perf.data``
+    of ``perf record``, only into a folder made for its launch, never into one
+    that could already hold it.
     """
     try:
         if launches.is_symlink() or (launches.exists() and not launches.is_dir()):
             launches.unlink()
         elif launches.exists():
-            shutil.rmtree(launches)
+            _remove_tree(launches)
         launches.mkdir()
     except OSError as exc:
         raise Refusal(
@@ -149,6 +152,135 @@ def _make_anew(launches: Path) -> None:
             f"the folder {LAUNCHES} in the run folder cannot be made anew for the launches: "
             f"{exc.strerror}",
         ) from None
+
+
+# Opens a folder by one name as found: a name that is a link or not a folder is refused.
+_OPEN_FOLDER: Final = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0)
+)
+# The removal opens, lists and removes names relative to an open folder.
+_CAN_REMOVE_BY_HANDLE: Final = (
+    os.open in os.supports_dir_fd
+    and os.unlink in os.supports_dir_fd
+    and os.rmdir in os.supports_dir_fd
+    and os.scandir in os.supports_fd
+    and hasattr(os, "O_NOFOLLOW")
+    and hasattr(os, "O_DIRECTORY")
+)
+# Why a folder of launches is not removed: a folder in it moved while it was being removed.
+_MOVED: Final = "a folder in it was moved away while it was being removed"
+# Why a folder of launches is not removed where no folder can be opened by handle.
+_TOO_DEEP: Final = "it holds folders nested too deeply to remove"
+
+
+def _remove_tree(top: Path, *, keep_going: bool = False) -> None:
+    """Remove the folder ``top`` and everything in it, however deep its folders go.
+
+    The removal goes down one folder at a time, removing through each open
+    folder the files and links it holds, and comes back up through each
+    folder's entry for its parent, checking that it lands in the folder it
+    came from. So it calls nothing recursively, holds two descriptors at most
+    however deep the folders go, and removes a link without following it.
+    What is already gone counts as removed. The first entry that cannot be
+    removed raises ``OSError``; with ``keep_going``, that entry is left with
+    the folders that hold it, and the rest is removed. Where the system cannot
+    open or remove a name relative to an open folder, ``shutil.rmtree``
+    removes the tree, and a tree too deep for it is an ``OSError`` too.
+    """
+    if not _CAN_REMOVE_BY_HANDLE:
+        _remove_by_path(top, keep_going=keep_going)
+        return
+    try:
+        here = os.open(top, _OPEN_FOLDER)
+    except OSError as error:
+        _unless_kept_going(error, keep_going)
+        return
+    try:
+        # Each folder still being emptied: its identity, its name in the folder
+        # above it, and the folders in it not yet entered.
+        open_folders = [(_identity(here), "", _remove_files(here, keep_going))]
+        while open_folders:
+            waiting = open_folders[-1][2]
+            if waiting:
+                name = waiting.pop()
+                try:
+                    below = os.open(name, _OPEN_FOLDER, dir_fd=here)
+                except OSError as error:
+                    _unless_kept_going(error, keep_going)
+                    continue
+                os.close(here)
+                here = below
+                open_folders.append((_identity(here), name, _remove_files(here, keep_going)))
+                continue
+            name = open_folders.pop()[1]
+            if not open_folders:
+                break
+            above = os.open("..", _OPEN_FOLDER, dir_fd=here)
+            os.close(here)
+            here = above
+            if _identity(here) != open_folders[-1][0]:
+                raise OSError(errno.ENOTEMPTY, _MOVED)
+            try:
+                os.rmdir(name, dir_fd=here)
+            except OSError as error:
+                _unless_kept_going(error, keep_going)
+    except OSError:
+        if keep_going:
+            return
+        raise
+    finally:
+        os.close(here)
+    try:
+        os.rmdir(top)
+    except OSError as error:
+        _unless_kept_going(error, keep_going)
+
+
+def _remove_files(folder: int, keep_going: bool) -> list[str]:
+    """Remove the files and links in the open ``folder``; return the names of the folders in it."""
+    folders: list[str] = []
+    others: list[str] = []
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                try:
+                    is_folder = entry.is_dir(follow_symlinks=False)
+                except OSError:
+                    is_folder = False
+                (folders if is_folder else others).append(entry.name)
+    except OSError as error:
+        _unless_kept_going(error, keep_going)
+        return []
+    for name in others:
+        try:
+            os.unlink(name, dir_fd=folder)
+        except OSError as error:
+            _unless_kept_going(error, keep_going)
+    return folders
+
+
+def _identity(descriptor: int) -> tuple[int, int]:
+    """The device and inode of the file open as ``descriptor``."""
+    found = os.fstat(descriptor)
+    return found.st_dev, found.st_ino
+
+
+def _unless_kept_going(error: OSError, keep_going: bool) -> None:
+    """Raise ``error``, unless what it is about is already gone or the removal keeps going."""
+    if not keep_going and not isinstance(error, FileNotFoundError):
+        raise error
+
+
+def _remove_by_path(top: Path, *, keep_going: bool) -> None:
+    """Remove the folder ``top`` by its path, as where no folder can be opened by handle."""
+    try:
+        shutil.rmtree(top, ignore_errors=keep_going)
+    except RecursionError:
+        if not keep_going:
+            raise OSError(errno.ENOTEMPTY, _TOO_DEEP) from None
 
 
 def _left_out_notes(left_out: Mapping[str, Sequence[str]], baseline: str | None) -> list[Note]:
@@ -504,7 +636,7 @@ def explain_run(experiment: Experiment, results: Results, *, out: Path) -> Diagn
             _explain_side(session, experiment, side, folder, facts, step)
     finally:
         session.close()
-        shutil.rmtree(launches, ignore_errors=True)
+        _remove_tree(launches, keep_going=True)
 
     files = _write_profiles(out, step.profiles, name_map, subjects, baseline, step.notes)
     top = experiment.explain.top
@@ -670,7 +802,7 @@ def record_stacks(
             )
     finally:
         session.close()
-        shutil.rmtree(launches, ignore_errors=True)
+        _remove_tree(launches, keep_going=True)
     subjects = [n for n in chosen if n != baseline]
     files = _write_profiles(folder, profiles, name_map, subjects, baseline, [])
     return (*files.folded, *files.flame, *files.folded_diff, *files.flame_diff)

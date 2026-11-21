@@ -37,6 +37,17 @@ SKILL_CODE_MEANING = re.compile(r"^\| `(E_[A-Z_]+)` \| [0-9 or]+ \| (.*?) \|$", 
 KEY_CELL = re.compile(r"`([a-z_]+(?:\.[A-Za-z_]+)+)`")
 # Flags argparse adds by itself, and the flag that only separates the workload.
 NOT_DOCUMENTED = frozenset({"--help"})
+# Every ending signal ends a command with exit code 130, the code of an interrupt, not the
+# code a shell gives a program that signal ends.
+SIGNAL_EXIT = (
+    "The exit code is 130 for each of them, not 128 plus the signal's number, which a shell "
+    "reports for a program a signal ends (143 for `SIGTERM`, 129 for `SIGHUP`, 131 for "
+    "`SIGQUIT`): the tool catches the signal and ends the command itself."
+)
+SKILL_SIGNAL_EXIT_ROW = (
+    "| 130 | interrupted: Ctrl-C, `SIGTERM`, `SIGHUP` or `SIGQUIT`, each with 130, not 128 plus "
+    "the signal's number (143 for `SIGTERM`) | the capture is marked `interrupted` |"
+)
 # The command whose section says it takes every flag of another command.
 SAME_FLAGS_AS = {"plan": "run"}
 
@@ -98,6 +109,19 @@ def test_every_exit_code_is_documented(repo_root: Path) -> None:
     rows = {int(number) for number in EXIT_ROW.findall(page(repo_root, EXIT_CODES_PAGE))}
 
     assert rows == set(errors.EXIT_CODES)
+
+
+def test_an_ending_signal_is_documented_to_exit_with_130(repo_root: Path) -> None:
+    text = page(repo_root, EXIT_CODES_PAGE)
+    entry = text.split("### Exit code 130\n", 1)[1].split("\n#", 1)[0]
+    rows = [
+        line
+        for line in page(repo_root, SKILL_EXIT_CODES).splitlines()
+        if line.startswith("| 130 |")
+    ]
+
+    assert SIGNAL_EXIT in " ".join(entry.split())
+    assert rows == [SKILL_SIGNAL_EXIT_ROW]
 
 
 def test_the_skill_names_every_text_code(repo_root: Path) -> None:

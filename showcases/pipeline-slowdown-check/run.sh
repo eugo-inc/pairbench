@@ -13,7 +13,7 @@ engine=${PAIRBENCH_SHOWCASE_ENGINE:-docker}
 image=$(sed -n 's/^image = "\(python:[^"]*\)"$/\1/p' pairbench.toml | head -n 1)
 
 if [ ! -d .deps/pytest/pytest_benchmark ]; then
-  "$engine" run --rm --memory 2g -v "$here:/showcase" "$image" \
+  "$engine" run --rm --memory 2g --memory-swap 2g -v "$here:/showcase" "$image" \
     python -m pip install --no-cache-dir --target /showcase/.deps/pytest \
     pytest==9.2.0 pytest-benchmark==5.3.1
 fi

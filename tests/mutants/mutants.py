@@ -392,8 +392,8 @@ MUTANTS: tuple[Mutant, ...] = (
         id="M33",
         title="publish a sidecar that cannot be shared",
         file="tools/hash_inputs.py",
-        old="        if source.is_file() and (sidecar or name != SIDECAR):",
-        new="        if source.is_file():",
+        old="        if (folder / name).is_file() and (sidecar or name != SIDECAR)",
+        new="        if (folder / name).is_file()",
         test=(
             "tests/unit/docs/test_hash_inputs.py::"
             "test_publish_mode_copies_the_three_shared_files_and_keeps_a_private_sidecar_in_the_run"
