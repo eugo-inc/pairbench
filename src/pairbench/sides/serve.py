@@ -51,15 +51,19 @@ when the server wrote it before its first answer. At the first answer the
 reader marks how much output the server has written, read or still waiting in
 the pipe, and the phases wait, up to ``READER_CATCH_UP_S``, until the reader
 has read up to the mark, so a reader that falls behind loses no phase within
-that wait; a line it reads late is timed late. Two loud notes, each once per
-side, say so in the results: ``startup_phases_read_late`` names the phases
-whose line was read after the first answer, and ``startup_phases_left_out``
-names the phases without a time when the wait ran out before the reader
-reached the mark. Only the rounds, whose start-up phases the results hold,
-give these notes; a warm-up, a launch of the explain step or a profiler gives
-none. Without ``serve.phases`` the
-built-in patterns of ``BUILTIN_PHASES`` apply. They are the start-up lines of
-the vLLM OpenAI-compatible server, taken from its public source at release
+that wait; a line it reads late is timed late. Two loud notes say so in the
+results: ``startup_phases_read_late`` names the phases whose line was read
+after the first answer, and ``startup_phases_left_out`` names the phases
+without a time when the wait ran out before the reader reached the mark. A
+launch of the rounds hands them back in ``LaunchOutcome.notes``, naming the
+launch's entry, and the run gives each once per entry once the round is
+complete: for a twin under the twin's own name, and for the positive control
+only when one of the phases it names is a primary case, even when the control
+is then not judged. A note names every phase it found, primary or not. A
+failed or interrupted round gives none, and so does a
+warm-up, a launch of the explain step or a profiler. Without ``serve.phases``
+the built-in patterns of ``BUILTIN_PHASES`` apply. They are the start-up lines
+of the vLLM OpenAI-compatible server, taken from its public source at release
 v0.33.0 (https://github.com/vllm-project/vllm/tree/v0.33.0):
 ``vllm/v1/worker/gpu_model_runner.py`` ("Model loading took"),
 ``vllm/v1/engine/core.py`` ("init engine (profile, create kv cache, warmup
@@ -218,9 +222,9 @@ NOTE_GPU_MEMORY_UNREADABLE: Final = "gpu_memory_unreadable"
 NOTE_PHASES_READ_LATE: Final = "startup_phases_read_late"
 # The loud note given when the reader had not caught up and a start-up phase has no time.
 NOTE_PHASES_LEFT_OUT: Final = "startup_phases_left_out"
-# The launches whose start-up phases the results hold, which the two notes above speak for.
-# The results leave the warm-ups out, and the explain step and the profilers launch a side
-# outside the capture; those give no note.
+# The launches that hand the two notes above back: the rounds, whose start-up phases the
+# results may hold. The results leave the warm-ups out, and the explain step and the
+# profilers launch a side outside the capture; those hand back none.
 NOTED_PHASES: Final[frozenset[str]] = frozenset({"round"})
 
 # Two servers never run at the same time in one process.
@@ -1009,6 +1013,32 @@ def phases_left_out_note(side: str, left_out: Sequence[str], wait_s: float) -> s
         f"a line read by then are left out: {', '.join(left_out)} have no time; this note is "
         "given once for each side"
     )
+
+
+def phase_notes(name: str, reading: PhaseReading) -> list[api.LaunchNote]:
+    """Return the notes of a launch of entry ``name``: phases timed late, phases left out.
+
+    Each note speaks for the cases of the phases it names. The run gives them
+    once per entry, after the round (``LaunchOutcome.notes``).
+    """
+    notes: list[api.LaunchNote] = []
+    if reading.late:
+        notes.append(
+            api.LaunchNote(
+                NOTE_PHASES_READ_LATE,
+                phases_read_late_note(name, reading.late),
+                cases=tuple(phase_case(phase) for phase in reading.late),
+            )
+        )
+    if reading.left_out:
+        notes.append(
+            api.LaunchNote(
+                NOTE_PHASES_LEFT_OUT,
+                phases_left_out_note(name, reading.left_out, READER_CATCH_UP_S),
+                cases=tuple(phase_case(phase) for phase in reading.left_out),
+            )
+        )
+    return notes
 
 
 # ---------------------------------------------------------------------------
@@ -1975,8 +2005,6 @@ class ServeResolved:
         self._waits = waits
         self._phases = phase_patterns(spec, side.name)
         self._hand_back_noted = False
-        # The phase notes given so far: each is given once per side.
-        self._phase_notes: set[str] = set()
 
     @property
     def side(self) -> Side:
@@ -2069,6 +2097,7 @@ class ServeResolved:
             # their own limits.
             failure: _Failure | None = None
             samples: list[api.Sample] = []
+            notes: list[api.LaunchNote] = []
             timing: dict[str, float] = {}
             usage: dict[str, float] = {}
             started = time.monotonic()
@@ -2087,7 +2116,7 @@ class ServeResolved:
                 )
             try:
                 try:
-                    failure = self._serve(handle, request, samples, timing, usage, started)
+                    failure = self._serve(handle, request, samples, notes, timing, usage, started)
                 finally:
                     handle.stop()
                 stopped = time.monotonic()
@@ -2123,6 +2152,7 @@ class ServeResolved:
             samples=tuple(samples),
             pid=getattr(handle, "pid", None),
             usage=usage,
+            notes=tuple(notes),
         )
 
     def _hand_back(self, handle: api.ServerHandle, folder: Path, *, stopped: bool = False) -> None:
@@ -2162,25 +2192,12 @@ class ServeResolved:
         self._hand_back_noted = True
         self._ctx.note(NOTE_FILES_NOT_HANDED_BACK, files_kept_note(name, folder, reason))
 
-    def _note_phases(self, reading: PhaseReading) -> None:
-        """Say once per side that phases were timed late, and once that phases were left out.
-
-        Called for the rounds only (``NOTED_PHASES``).
-        """
-        name = self._side.name
-        if reading.late and NOTE_PHASES_READ_LATE not in self._phase_notes:
-            self._phase_notes.add(NOTE_PHASES_READ_LATE)
-            self._ctx.note(NOTE_PHASES_READ_LATE, phases_read_late_note(name, reading.late))
-        if reading.left_out and NOTE_PHASES_LEFT_OUT not in self._phase_notes:
-            self._phase_notes.add(NOTE_PHASES_LEFT_OUT)
-            message = phases_left_out_note(name, reading.left_out, READER_CATCH_UP_S)
-            self._ctx.note(NOTE_PHASES_LEFT_OUT, message)
-
     def _serve(
         self,
         handle: api.ServerHandle,
         request: api.LaunchRequest,
         samples: list[api.Sample],
+        notes: list[api.LaunchNote],
         timing: dict[str, float],
         usage: dict[str, float],
         started: float,
@@ -2228,7 +2245,7 @@ class ServeResolved:
             for name, seconds in reading.times.items():
                 samples.append(startup_sample(phase_case(name), seconds))
             if request.phase in NOTED_PHASES:
-                self._note_phases(reading)
+                notes += phase_notes(request.name, reading)
         if request.load is not None:
             begin = getattr(handle, "begin_load", None)
             end = getattr(handle, "end_load", None)

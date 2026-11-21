@@ -55,14 +55,16 @@ These Python packages are installed only when you ask for the extra. None is bun
 The documentation site is built from `docs/` with the packages below. npm installs the
 packages of the lockfile in `site/`; of Pagefind's programs, one for each system, it installs
 the one for the machine that builds the site. None of them is in the Python package. The
-built pages carry the scripts and styles of Astro, Starlight, Expressive Code and Pagefind.
-Pagefind's highlighter carries mark.js. Pagefind's search interface carries the Svelte
-runtime and the `bcp-47` parser of language tags with the three character tests it uses,
-built into the interface's prebuilt scripts, so the site's lockfile does not list them. The
-Pagefind program writes the scripts of its component interface into the built site too, with
-`adequate-little-templates` and the same `bcp-47` parser built in. The versions of the
-packages built into the two interfaces are the ones that Pagefind's own lockfiles for them
-install at the version the site locks
+built pages carry the scripts and styles of Astro, Starlight, Expressive Code and Pagefind;
+the colours of their code blocks are those of Starlight's code themes, which Starlight makes
+from the Night Owl theme. Pagefind's highlighter carries mark.js. Pagefind's search interface
+carries the Svelte runtime and the `bcp-47` parser of language tags with the three character
+tests it uses, built into the interface's prebuilt scripts, so the site's lockfile does not
+list them. The Pagefind program writes the scripts of its component interface into the
+built site too, with `adequate-little-templates` and the same `bcp-47` parser built in, and
+the script of its modular interface, which is Pagefind's own code with none of these packages
+built in. The versions of the packages built into the two interfaces are the ones that
+Pagefind's own lockfiles for them install at the version the site locks
 (<https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_ui/default/package-lock.json>,
 <https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_ui/component/package-lock.json>),
 and the source of each is its licence file at that version. `adequate-little-templates` has
@@ -79,12 +81,13 @@ published from. The site map plug-in runs only while the site is built.
 | `@pagefind/default-ui` 1.6.0 | the search interface, through Starlight | MIT | <https://github.com/Pagefind/pagefind> |
 | `svelte` 4.2.20 | the runtime of the search interface, inside its prebuilt scripts | MIT | <https://github.com/sveltejs/svelte/blob/svelte@4.2.20/LICENSE.md> |
 | `adequate-little-templates` 1.0.2 | renders the markup of Pagefind's component interface, inside its prebuilt scripts | MIT | <https://github.com/bglw/adequate-little-templates/blob/47d207b7840a5e7ea847e1f630454d81ee3ad16e/LICENSE> |
-| `bcp-47` 2.1.2 | reads the language tag of a page, so each search interface picks its translation; inside the prebuilt scripts of both | MIT | <https://github.com/wooorm/bcp-47/blob/2.1.2/license> |
+| `bcp-47` 2.1.2 | reads the language tag of a page, so each search interface picks its translation; inside the prebuilt scripts of the search interface and of the component interface | MIT | <https://github.com/wooorm/bcp-47/blob/2.1.2/license> |
 | `is-alphabetical` 2.0.1 | a character test of `bcp-47`, inside the same scripts | MIT | <https://github.com/wooorm/is-alphabetical/blob/2.0.1/license> |
 | `is-alphanumerical` 2.0.1 | a character test of `bcp-47`, inside the same scripts | MIT | <https://github.com/wooorm/is-alphanumerical/blob/2.0.1/license> |
 | `is-decimal` 2.0.1 | a character test of `bcp-47`, inside the same scripts | MIT | <https://github.com/wooorm/is-decimal/blob/2.0.1/license> |
 | `@astrojs/sitemap` 3.7.5 | writes the site map while the site is built; none of it is in the built pages | MIT | <https://github.com/withastro/astro/tree/main/packages/integrations/sitemap> |
 | mark.js 8.11.1 | highlights the words a search found, inside Pagefind's highlighter | MIT | <https://github.com/julmot/mark.js> |
+| Night Owl, in Starlight 0.42.8 | the colours of the code blocks: Starlight makes its dark and light code themes from Night Owl's, and Expressive Code writes them into the styles of the built pages | MIT | <https://github.com/sdras/night-owl-vscode-theme>, <https://unpkg.com/@astrojs/starlight@0.42.8/dist/integrations/expressive-code/themes/night-owl-dark.js> |
 
 Pagefind's search programs, `pagefind/wasm.en.pagefind` and `pagefind/wasm.unknown.pagefind`
 in the built site, are WebAssembly built from Rust, which the search scripts run in the
@@ -95,20 +98,42 @@ at the version that Pagefind 1.6.0 locks
 <https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_web/Cargo.lock>). The lock file also
 names crates that are not in the programs: a procedural macro or a build script's dependency,
 which runs only while the programs are built, and an optional crate that no enabled feature
-turns on. The table lists the crates compiled in, and what the files name in their `producers`
-section: the compiler with its standard library, and the tools that made them. The licence of
-each crate is the one its own `Cargo.toml` states at that version, and its source is that file.
-The compiler's version is given without its build date.
+turns on. Pagefind builds the programs with the standard library compiled from its source,
+`-Z build-std=panic_abort,std`
+(<https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_web/local_build.sh>), with the
+features Cargo turns on for it by default, `backtrace` and `panic-unwind`, as the book of the
+Cargo that the compiler's commit carries says
+(<https://github.com/rust-lang/cargo/blob/31d3246e0e8d3a80d4a90b54aa48ff180adb408b/doc/book/src/reference/unstable.md#build-std-features>),
+so the crates the standard library depends on for the WebAssembly target are compiled in too,
+each at the version the library's own lock file names at the compiler's commit
+(<https://github.com/rust-lang/rust/blob/f9ceb4a4d45a471eed7bd8c40dddb7c38e749e21/library/std/Cargo.toml>,
+<https://github.com/rust-lang/rust/blob/f9ceb4a4d45a471eed7bd8c40dddb7c38e749e21/library/Cargo.lock>).
+The table lists the crates compiled in, and what the files name in their `producers` section:
+the compiler with its standard library, and the tools that made them. A crate compiled in is
+listed even where the files do not show that the programs keep any of its code. The licence
+of each crate is the one its own `Cargo.toml` states at that version, and its source is that
+file. The compiler's version is given without its build date.
 
 | Crate and version | What it is in the programs | Licence | Source |
 |---|---|---|---|
+| `addr2line` 0.27.1 | reads debug information for the standard library's backtraces, a dependency of `std` | Apache-2.0 OR MIT | <https://docs.rs/crate/addr2line/0.27.1/source/Cargo.toml.orig> |
+| `adler2` 2.0.1 | computes the Adler-32 checksum, a dependency of `miniz_oxide` | 0BSD OR MIT OR Apache-2.0 | <https://docs.rs/crate/adler2/2.0.1/source/Cargo.toml.orig> |
 | `bit-set` 0.11.1 | a set of bits, a dependency of `pagefind_web` | Apache-2.0 OR MIT | <https://docs.rs/crate/bit-set/0.11.1/source/Cargo.toml.orig> |
 | `bit-vec` 0.10.1 | a vector of bits, a dependency of `bit-set` | Apache-2.0 OR MIT | <https://docs.rs/crate/bit-vec/0.10.1/source/Cargo.toml.orig> |
-| `cfg-if` 1.0.4 | a macro of conditional code, a dependency of `wasm-bindgen` | MIT OR Apache-2.0 | <https://docs.rs/crate/cfg-if/1.0.4/source/Cargo.toml.orig> |
+| `cfg-if` 1.0.4 | a macro of conditional code, a dependency of `wasm-bindgen` and of `std` | MIT OR Apache-2.0 | <https://docs.rs/crate/cfg-if/1.0.4/source/Cargo.toml.orig> |
+| `compiler_builtins` 0.1.160 | the functions the compiler calls for operations the target has no instruction for, which it links into every program; the files do not show which of them the programs keep | MIT AND Apache-2.0 WITH LLVM-exception AND (MIT OR Apache-2.0) | <https://github.com/rust-lang/rust/blob/f9ceb4a4d45a471eed7bd8c40dddb7c38e749e21/library/compiler-builtins/compiler-builtins/Cargo.toml> |
+| `dlmalloc` 0.2.14 | the memory allocator of the standard library on WebAssembly with no operating system, a dependency of `std` | MIT/Apache-2.0 | <https://docs.rs/crate/dlmalloc/0.2.14/source/Cargo.toml.orig> |
+| `gimli` 0.34.0 | reads the DWARF debug format, a dependency of `addr2line` | MIT OR Apache-2.0 | <https://docs.rs/crate/gimli/0.34.0/source/Cargo.toml.orig> |
+| `hashbrown` 0.17.1 | the hash table under the standard library's maps and sets, a dependency of `std` | MIT OR Apache-2.0 | <https://docs.rs/crate/hashbrown/0.17.1/source/Cargo.toml.orig> |
 | `hifijson` 0.5.0 | reads JSON, a dependency of `pagefind_web` | MIT | <https://docs.rs/crate/hifijson/0.5.0/source/Cargo.toml.orig> |
+| `libc` 0.2.191 | the bindings to a system's C library, a dependency of `std` | MIT OR Apache-2.0 | <https://docs.rs/crate/libc/0.2.191/source/Cargo.toml.orig> |
+| `memchr` 2.8.3 | searches bytes, a dependency of `object` | Unlicense OR MIT | <https://docs.rs/crate/memchr/2.8.3/source/Cargo.toml.orig> |
 | `minicbor` 2.3.1 | reads the CBOR of the search index, a dependency of `pagefind_web`; the files name the path of its source, `minicbor-2.3.1/src/decode/decoder.rs` | BlueOak-1.0.0 | <https://docs.rs/crate/minicbor/2.3.1/source/Cargo.toml.orig> |
+| `miniz_oxide` 0.9.1 | decompresses compressed debug sections for the standard library's backtraces, a dependency of `std` | MIT OR Zlib OR Apache-2.0 | <https://docs.rs/crate/miniz_oxide/0.9.1/source/Cargo.toml.orig> |
+| `object` 0.39.1 | reads object files for the standard library's backtraces, a dependency of `std` | Apache-2.0 OR MIT | <https://docs.rs/crate/object/0.39.1/source/Cargo.toml.orig> |
 | `once_cell` 1.21.4 | values set once, a dependency of `wasm-bindgen` | MIT OR Apache-2.0 | <https://docs.rs/crate/once_cell/1.21.4/source/Cargo.toml.orig> |
 | `pagefind_stem` 1.0.0 | the stemmer, a dependency of `pagefind_web`; Snowball 3.0.0 wrote its word tables, and the notices of rust-stemmers (MIT) and of Snowball are in its `src/lib.rs` | MIT, and BSD-3-Clause for its Snowball tables | <https://docs.rs/crate/pagefind_stem/1.0.0/source/Cargo.toml.orig>, <https://docs.rs/crate/pagefind_stem/1.0.0/source/src/lib.rs>, <https://github.com/snowballstem/snowball/blob/v3.0.0/COPYING> |
+| `rustc-demangle` 0.1.28 | turns symbol names back into Rust paths for the standard library's backtraces, a dependency of `std` | MIT/Apache-2.0 | <https://docs.rs/crate/rustc-demangle/0.1.28/source/Cargo.toml.orig> |
 | `unicode-ident` 1.0.24 | tells which characters may make up an identifier, a dependency of `wasm-bindgen-shared` | (MIT OR Apache-2.0) AND Unicode-3.0 | <https://docs.rs/crate/unicode-ident/1.0.24/source/Cargo.toml.orig> |
 | `wasm-bindgen` 0.2.129 | the bindings between WebAssembly and JavaScript, a dependency of `pagefind_web` | MIT OR Apache-2.0 | <https://docs.rs/crate/wasm-bindgen/0.2.129/source/Cargo.toml.orig> |
 | `wasm-bindgen-shared` 0.2.129 | a part of `wasm-bindgen` shared with its tools, a dependency of `wasm-bindgen` | MIT OR Apache-2.0 | <https://docs.rs/crate/wasm-bindgen-shared/0.2.129/source/Cargo.toml.orig> |

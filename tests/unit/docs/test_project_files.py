@@ -82,6 +82,26 @@ COMPONENT_UI_PACKAGES = {
     "is-alphanumerical": "2.0.1",
     "is-decimal": "2.0.1",
 }
+# The program writes the script of its modular interface into the built site too. It is
+# Pagefind's own code: the language tag parser, which its package lists for its build in
+# https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_ui/modular/package.json, is not in
+# the script, as the built site shows.
+MODULAR_UI_SAYS = (
+    "the script of its modular interface, which is Pagefind's own code with none of these "
+    "packages built in"
+)
+# The interfaces the language tag parser is built into, as its row names them, and the scripts
+# of the built site that hold it: each holds the parser's list of tags, which names this one.
+BCP47_ROW_SAYS = (
+    "inside the prebuilt scripts of the search interface and of the component interface"
+)
+LANGUAGE_TAG_PARSER_SCRIPTS = ("pagefind/pagefind-component-ui.js", "pagefind/pagefind-ui.js")
+LANGUAGE_TAG_PARSER_TAG = '"art-lojban"'
+# The theme Starlight makes its code themes from, read in the copy Starlight 0.42.8 ships,
+# https://unpkg.com/@astrojs/starlight@0.42.8/dist/integrations/expressive-code/themes/night-owl-dark.js
+NIGHT_OWL_ROW = "| Night Owl, in Starlight 0.42.8 |"
+NIGHT_OWL_LICENCE = "MIT"
+NIGHT_OWL_SOURCE = "<https://github.com/sdras/night-owl-vscode-theme>"
 # The prebuilt script of the interface that the site's pages load, and how it names the source
 # of each package built into it: a comment line "// node_modules/NAME/PATH".
 SEARCH_UI_SCRIPT = "site/node_modules/@pagefind/default-ui/npm_dist/mjs/ui-core.mjs"
@@ -115,16 +135,30 @@ SEARCH_PROGRAM_TOOLS = ("rustc", "std", "walrus", "wasm-bindgen")
 # https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_web/Cargo.lock: the dependencies of
 # its dependencies too, each at the version the lock file names, and none that only runs while
 # the programs are built (a procedural macro, a build script's dependency) or that no enabled
-# feature turns on.
+# feature turns on. With them are the crates from crates.io that the standard library depends
+# on for the WebAssembly target with the features Cargo turns on for it by default, as Pagefind
+# compiles the standard library from its source with the programs (see STD_BUILT_CRATES below):
+# the dependencies of its backtrace support too, and not hashbrown's default hasher, which the
+# standard library leaves off.
 COMPILED_CRATES_READ = "1.6.0"
 COMPILED_CRATES = {
+    "addr2line": ("0.27.1", "Apache-2.0 OR MIT"),
+    "adler2": ("2.0.1", "0BSD OR MIT OR Apache-2.0"),
     "bit-set": ("0.11.1", "Apache-2.0 OR MIT"),
     "bit-vec": ("0.10.1", "Apache-2.0 OR MIT"),
     "cfg-if": ("1.0.4", "MIT OR Apache-2.0"),
+    "dlmalloc": ("0.2.14", "MIT/Apache-2.0"),
+    "gimli": ("0.34.0", "MIT OR Apache-2.0"),
+    "hashbrown": ("0.17.1", "MIT OR Apache-2.0"),
     "hifijson": ("0.5.0", "MIT"),
+    "libc": ("0.2.191", "MIT OR Apache-2.0"),
+    "memchr": ("2.8.3", "Unlicense OR MIT"),
     "minicbor": ("2.3.1", "BlueOak-1.0.0"),
+    "miniz_oxide": ("0.9.1", "MIT OR Zlib OR Apache-2.0"),
+    "object": ("0.39.1", "Apache-2.0 OR MIT"),
     "once_cell": ("1.21.4", "MIT OR Apache-2.0"),
     "pagefind_stem": ("1.0.0", "MIT, and BSD-3-Clause for its Snowball tables"),
+    "rustc-demangle": ("0.1.28", "MIT/Apache-2.0"),
     "unicode-ident": ("1.0.24", "(MIT OR Apache-2.0) AND Unicode-3.0"),
     "wasm-bindgen": ("0.2.129", "MIT OR Apache-2.0"),
     "wasm-bindgen-shared": ("0.2.129", "MIT OR Apache-2.0"),
@@ -132,6 +166,34 @@ COMPILED_CRATES = {
 }
 # Where a crate's licence is read: its Cargo.toml.orig as published at that version.
 CRATE_SOURCE = "<https://docs.rs/crate/{name}/{version}/source/Cargo.toml.orig>"
+# Pagefind builds the programs with -Z build-std=panic_abort,std
+# (https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_web/local_build.sh) and no
+# -Z build-std-features, so the standard library is built with the features Cargo turns on for
+# it by default, read in the book of the Cargo that the compiler's commit carries as its
+# src/tools/cargo, and the crates of its own lock file at the compiler's commit that it depends
+# on for the target are compiled in: those from crates.io above, and compiler_builtins, whose
+# source is in the compiler's repository.
+STD_COMMIT = "f9ceb4a4d45a471eed7bd8c40dddb7c38e749e21"
+CARGO_COMMIT = "31d3246e0e8d3a80d4a90b54aa48ff180adb408b"
+STD_BUILT_CRATES = {
+    "compiler_builtins": (
+        "0.1.160",
+        "MIT AND Apache-2.0 WITH LLVM-exception AND (MIT OR Apache-2.0)",
+        f"<https://github.com/rust-lang/rust/blob/{STD_COMMIT}/library/compiler-builtins/"
+        "compiler-builtins/Cargo.toml>",
+    ),
+}
+BUILD_STD = "`-Z build-std=panic_abort,std`"
+BUILD_STD_FEATURES = (
+    "the features Cargo turns on for it by default, `backtrace` and `panic-unwind`, as the book "
+    "of the Cargo that the compiler's commit carries says "
+    f"(<https://github.com/rust-lang/cargo/blob/{CARGO_COMMIT}/doc/book/src/reference/"
+    "unstable.md#build-std-features>)"
+)
+STD_KEPT = (
+    "A crate compiled in is listed even where the files do not show that the programs keep any "
+    "of its code."
+)
 # Snowball writes the stemmer's word tables; its licence is in its COPYING file at
 # the release the generated files name ("Generated from english.sbl by Snowball 3.0.0").
 SNOWBALL_COPYING = "<https://github.com/snowballstem/snowball/blob/v3.0.0/COPYING>"
@@ -527,6 +589,45 @@ def test_the_third_party_notices_list_every_crate_compiled_into_the_search_progr
         ]:
             wrong[name] = found
     assert wrong == {}
+
+
+def test_the_third_party_notices_list_the_crates_of_the_standard_library_build(
+    repo_root: Path,
+) -> None:
+    assert _locked_version(repo_root, PAGEFIND) == COMPILED_CRATES_READ
+    listed = crates_listed(repo_root)
+    rows = [line for line in _site_section(repo_root) if line.startswith("| `")]
+    wrong: dict[str, list[str]] = {}
+    for name, (version, licence, source) in STD_BUILT_CRATES.items():
+        found = [row for row in rows if row.startswith(f"| `{name}` {version} |")]
+        if (name, version) not in listed or [_cells(row)[2:] for row in found] != [
+            [licence, source]
+        ]:
+            wrong[name] = found
+    assert wrong == {}
+    text = " ".join(_site_section(repo_root))
+    parts = (BUILD_STD, BUILD_STD_FEATURES, STD_KEPT, STD_COMMIT)
+    assert [part for part in parts if part not in text] == []
+
+
+def test_the_third_party_notices_say_the_modular_interface_carries_none_of_the_packages(
+    repo_root: Path,
+) -> None:
+    assert _locked_version(repo_root, PAGEFIND) == SEARCH_UI_READ
+    text = " ".join(_site_section(repo_root))
+    (row,) = [line for line in _site_section(repo_root) if line.startswith("| `bcp-47` ")]
+
+    assert MODULAR_UI_SAYS in text
+    assert BCP47_ROW_SAYS in row
+
+
+def test_the_third_party_notices_name_the_theme_of_the_code_blocks(repo_root: Path) -> None:
+    rows = [line for line in _site_section(repo_root) if line.startswith(NIGHT_OWL_ROW)]
+
+    assert len(rows) == 1
+    cells = _cells(rows[0])
+    assert cells[2] == NIGHT_OWL_LICENCE
+    assert cells[3].split(", ")[0] == NIGHT_OWL_SOURCE
 
 
 def test_the_stemmer_row_names_the_licence_of_its_snowball_tables(repo_root: Path) -> None:

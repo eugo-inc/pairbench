@@ -815,6 +815,21 @@ class LaunchRequest:
 
 
 @dataclass(frozen=True)
+class LaunchNote:
+    """A loud note about one launch, handed back for the run to give.
+
+    ``code`` and ``message`` are the note's text code and its words, which
+    name the launch's entry (``LaunchRequest.name``). ``cases`` are the cases
+    the note speaks for, such as the start-up phases a serving side timed
+    late.
+    """
+
+    code: str
+    message: str
+    cases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class LaunchOutcome:
     """What one launch gave back.
 
@@ -865,6 +880,14 @@ class LaunchOutcome:
     in one start after all, for example because the shell of an image was
     refused when writing a run's output file: it gives the reason in one
     line, and the run goes on without the positive control.
+
+    ``notes`` are the loud notes the side has about the launch, such as a
+    serving side's start-up phases timed late. The run gives each once per
+    entry and code, after the round the launch is in has completed: for a
+    twin under the twin's own name, and for the positive control only when a
+    case the note speaks for is primary, even when the control is then not
+    judged. A failed or interrupted round gives none, and so does every launch
+    outside the rounds.
     """
 
     rc: int
@@ -877,6 +900,7 @@ class LaunchOutcome:
     usage: Mapping[str, float] = field(default_factory=dict)
     second_pid: int | None = None
     cannot_repeat: str | None = None
+    notes: tuple[LaunchNote, ...] = ()
 
     def __post_init__(self) -> None:
         unknown = sorted(set(self.usage) - set(USAGE_KEYS))

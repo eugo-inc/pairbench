@@ -738,7 +738,9 @@ def test_a_resolved_side_tells_the_command_it_runs_and_how_many_rounds_it_holds(
         "usage",
         "second_pid",
         "cannot_repeat",
+        "notes",
     ]
+    assert [f.name for f in dataclasses.fields(api.LaunchNote)] == ["code", "message", "cases"]
 
 
 def test_the_read_only_look_up_is_a_method_beside_resolve() -> None:

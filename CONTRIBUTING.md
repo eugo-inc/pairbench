@@ -35,7 +35,8 @@ The pages are Markdown files under `docs/`, readable as they are. Each page open
 matter that holds a `description` of one line, then the title, then a direct answer of one or
 two sentences. `site/navigation.json` lists every page in the order of the site's sidebar.
 The site is built with Starlight; building it needs Node.js 22.23.4 or newer, the version the
-pinned Astro asks for, and nothing else in the repository does:
+pinned Astro asks for, and nothing else in the repository does. The build runs Node.js, npm
+and, in a git checkout, git; none of the three ships in the site:
 
 ```
 python3 tools/docs_site.py build    # checks the pages, runs npm ci in site/, builds site/dist
@@ -52,13 +53,23 @@ The build checks in three steps:
    the repository, and that each anchor such a link names is one the text gives. That is the
    id of a heading, an id written in the page, or the anchor of a config key or flag, on a
    page of the site or in a Markdown file of the repository, and a line, `#L<n>`, or a range
-   of lines, `#L<a>-L<b>`, of any other file of the repository. A link to a file of the
-   repository by its address on the forge, the `Source` address of `pyproject.toml` followed
-   by `/blob/main/` or `/tree/main/`, must name a file or folder the repository has, and its
-   anchor is checked the same way; so must such an address written as an autolink,
-   `<address>`, or bare. In a git checkout the repository has the files git tracks
-   and the folders that hold them, so a link to a file a build leaves, such as one in
-   `site/dist/`, is refused.
+   of lines, `#L<a>-L<b>`, of any other file of the repository, or of a Markdown file shown as
+   plain text, `?plain=1`. A link to a file of the repository by its address on the forge, the
+   `Source` address of `pyproject.toml` followed by `/blob/main/`, `/tree/main/`,
+   `/blame/main/` or `/raw/main/`, or by the same owner and name on the forge's host of raw
+   files followed by `/main/`, must name a file or folder the repository has, and its anchor
+   is checked the same way; a blame or raw page shows a file only, and a raw file has no
+   anchor. So must such an address written as an autolink, `<address>`, bare, with its scheme
+   or starting with `www.` wherever the site shows it as a link, in quotes or brackets too,
+   such as the `src` of an image, or as the `href` of a link written in HTML. A page that
+   names a repository of the project other than its public one, of the same owner with a name
+   that starts with the project's, by its address on the forge, on its host of raw files, on
+   its interface for programs, of its archives or of its pages, or by its ssh address, and in
+   code too, is refused.
+   In a git checkout the repository has the files git tracks and the folders that hold them,
+   so a link to a file a build leaves, such as one in `site/dist/`, is refused; a checkout
+   that holds `.git` where git is missing, cannot start or refuses to read it is refused, and
+   a copy without `.git` is checked by the files it holds.
 2. After `npm ci`, while Astro builds: a warning or an error in Astro's output.
 3. On the built site: every link, anchor and asset, the anchors Starlight adds and a link
    written in HTML among them; the share image it publishes; and that nothing is fetched from
@@ -67,15 +78,18 @@ The build checks in three steps:
 The first step reads, and turns into an address of the site, a link in each of these forms:
 
 - `[text](target)`, `[text](target "title")`, `[text](target 'title')`,
-  `[text](target (title))` and `[text](<target>)`;
+  `[text](target (title))` and `[text](<target>)`, each with or without spaces or one line
+  break around the target inside the parentheses;
 - a reference link, `[text][label]`, `[label][]` or `[label]`, through its definition
   `[label]: target`, which starts its own line (after at most three spaces) and holds the
-  target on that line; a title may follow the target.
+  target on that line or the next; a title may follow the target.
 
-It leaves three forms as they are: a definition whose target is on the next line, a bare
-target that holds a space or a parenthesis, and a link written in HTML. Step 3 checks them on the
-built site, where such a link to a page of `docs/` is a link to nothing; write them in a
-form above.
+A relative target may end in a query, such as `README.md?plain=1#L3`, which the forge shows
+as plain text with its lines.
+
+It leaves two forms as they are: a bare target that holds a space or a parenthesis, and a
+relative link written in HTML. Step 3 checks them on the built site, where such a link to a
+page of `docs/` is a link to nothing; write them in a form above.
 
 A share image, in `site/public/` or in the built site, that differs from what
 `tools/share_image.py` draws fails the build; the message names how it differs, such as an

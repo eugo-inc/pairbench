@@ -659,8 +659,10 @@ def test_the_start_up_phases_do_not_depend_on_the_reader_keeping_up(
     # Each phase is timed by when its line was read: after the first answer, by the slow reader.
     first = cases["startup/first_answer_s"]
     assert [cases[phase] > first for phase in STARTUP_CASES[2:]] == [True, True, True]
-    # The results say so; the reader caught up, so no phase is left out.
-    assert notes == [(NOTE_PHASES_READ_LATE, READ_LATE_MESSAGE)]
+    # The launch hands the note back for the run to give; the reader caught up, so no phase is
+    # left out, and the side gives no note of its own.
+    assert outcome.notes == (READ_LATE_NOTE,)
+    assert notes == []
     log = (tmp_path / "launch" / api.ARTIFACT_SERVER_LOG).read_text(encoding="utf-8")
     assert log.splitlines()[: len(FILLER_LINES) + len(VLLM_LINES)] == [*FILLER_LINES, *VLLM_LINES]
 
@@ -672,6 +674,13 @@ READ_LATE_MESSAGE = (
     "timed when pairbench reads its line, and the reader of the server's output fell behind; "
     "this note is given once for each side"
 )
+# The cases of the three built-in start-up phases, which the two notes speak for.
+PHASE_CASES = (
+    "startup/weights_loaded_s",
+    "startup/engine_ready_s",
+    "startup/server_started_s",
+)
+READ_LATE_NOTE = api.LaunchNote(NOTE_PHASES_READ_LATE, READ_LATE_MESSAGE, cases=PHASE_CASES)
 # How long the phases wait for the reader in the next test, and the most the held reader waits
 # to be let go, in seconds.
 CATCH_UP_S = 0.2
@@ -683,6 +692,7 @@ LEFT_OUT_MESSAGE = (
     "then are left out: weights_loaded, engine_ready, server_started have no time; this note "
     "is given once for each side"
 )
+LEFT_OUT_NOTE = api.LaunchNote(NOTE_PHASES_LEFT_OUT, LEFT_OUT_MESSAGE, cases=PHASE_CASES)
 
 
 def test_a_reader_that_has_not_caught_up_leaves_phases_out_and_the_results_say_so(
@@ -703,8 +713,10 @@ def test_a_reader_that_has_not_caught_up_leaves_phases_out_and_the_results_say_s
     notes: list[tuple[str, str]] = []
     resolved = host_kind().resolve(side, ctx(notes=notes))
     cases: list[list[str]] = []
+    handed: list[tuple[api.LaunchNote, ...]] = []
     try:
-        # Two launches of the side: the second leaves its phases out too, and gives no note.
+        # Two launches of the side: each leaves its phases out and hands its note back; the
+        # run gives it once for the side.
         for seq in (3, 4):
             let_go.clear()
             folder = tmp_path / f"000{seq}-new"
@@ -713,11 +725,13 @@ def test_a_reader_that_has_not_caught_up_leaves_phases_out_and_the_results_say_s
             outcome = resolved.launch(request(folder, seq=seq, load=load))
             assert outcome.rc == 0
             cases.append([sample.case for sample in outcome.samples])
+            handed.append(outcome.notes)
     finally:
         let_go.set()
 
     assert cases == [list(STARTUP_CASES[:2]), list(STARTUP_CASES[:2])]
-    assert notes == [(NOTE_PHASES_LEFT_OUT, LEFT_OUT_MESSAGE)]
+    assert handed == [(LEFT_OUT_NOTE,), (LEFT_OUT_NOTE,)]
+    assert notes == []
 
 
 # The launches whose start-up phases the results hold, and those whose phases they leave out.
@@ -728,8 +742,9 @@ UNMEASURED_PHASES = ("warmup", "explain", "profile", "cost")
 @pytest.mark.usefixtures("late_output")
 def test_only_a_round_says_its_phases_were_read_late(script: Path, tmp_path: Path) -> None:
     # The results leave out the warm-ups, and the explain step and the profilers resolve each
-    # side by themselves and launch it outside the capture, so those launches give no note
-    # however late the reader reads; the note comes from the rounds, once for each side.
+    # side by themselves and launch it outside the capture, so those launches hand back no
+    # note however late the reader reads; each launch of the rounds hands its note back, named
+    # by the launch's entry, and the side gives none itself.
     side, _port = host_side(script, {"lines": [*FILLER_LINES, *VLLM_LINES]})
     notes: list[tuple[str, str]] = []
     kind = host_kind()
@@ -741,6 +756,7 @@ def test_only_a_round_says_its_phases_were_read_late(script: Path, tmp_path: Pat
             request(folder, seq=seq, phase=phase, round=0, pos=None, load=Load())
         )
         assert launched.rc == 0
+        assert launched.notes == ()
         first = {s.case: s.value for s in launched.samples}["startup/first_answer_s"]
         late = [s.case for s in launched.samples if s.case in STARTUP_CASES[2:]]
         assert [{s.case: s.value for s in launched.samples}[c] > first for c in late] == [
@@ -751,12 +767,27 @@ def test_only_a_round_says_its_phases_were_read_late(script: Path, tmp_path: Pat
     assert notes == []
 
     measured = kind.resolve(side, ctx(notes=notes))
+    handed: list[tuple[api.LaunchNote, ...]] = []
     for seq, phase in enumerate(MEASURED_PHASES, start=len(UNMEASURED_PHASES) + 1):
         folder = tmp_path / f"{seq:04d}-{phase}"
         folder.mkdir()
         launched = measured.launch(request(folder, seq=seq, phase=phase, load=Load()))
         assert launched.rc == 0
-    assert notes == [(NOTE_PHASES_READ_LATE, READ_LATE_MESSAGE)]
+        handed.append(launched.notes)
+    assert handed == [(READ_LATE_NOTE,), (READ_LATE_NOTE,)]
+    # A twin's launch names the twin.
+    folder = tmp_path / "0007-twin"
+    folder.mkdir()
+    twin = measured.launch(request(folder, seq=7, name="new~same", load=Load()))
+    assert twin.rc == 0
+    assert twin.notes == (
+        api.LaunchNote(
+            NOTE_PHASES_READ_LATE,
+            READ_LATE_MESSAGE.replace("side new:", "side new~same:"),
+            cases=PHASE_CASES,
+        ),
+    )
+    assert notes == []
 
 
 @pytest.mark.parametrize("phase", UNMEASURED_PHASES)
@@ -785,6 +816,7 @@ def test_a_launch_the_results_leave_out_leaves_phases_out_without_a_note(
 
     assert launched.rc == 0
     assert [sample.case for sample in launched.samples] == list(STARTUP_CASES[:2])
+    assert launched.notes == ()
     assert notes == []
 
 

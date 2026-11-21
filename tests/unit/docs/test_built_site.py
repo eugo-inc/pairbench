@@ -40,6 +40,8 @@ from pairbench.model import CONFIG_KEYS, TOOL_VERSION
 
 from .conftest import load_tool
 from .test_project_files import (
+    LANGUAGE_TAG_PARSER_SCRIPTS,
+    LANGUAGE_TAG_PARSER_TAG,
     SEARCH_PROGRAM_CRATES,
     SEARCH_PROGRAMS,
     crates_listed,
@@ -627,6 +629,18 @@ def test_every_crate_the_search_programs_name_is_in_the_third_party_notices(
     assert programs == sorted(SEARCH_PROGRAMS)
     assert named == SEARCH_PROGRAM_CRATES
     assert sorted(set(named.items()) - crates_listed(REPO)) == []
+
+
+def test_the_language_tag_parser_is_in_the_search_scripts_the_third_party_notices_name(
+    built: Path,
+) -> None:
+    holding = sorted(
+        path.relative_to(built).as_posix()
+        for path in (built / "pagefind").glob("*.js")
+        if LANGUAGE_TAG_PARSER_TAG in path.read_text(encoding="utf-8")
+    )
+
+    assert holding == sorted(LANGUAGE_TAG_PARSER_SCRIPTS)
 
 
 def test_every_public_python_name_has_its_anchor(built: Path) -> None:

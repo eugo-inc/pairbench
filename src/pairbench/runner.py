@@ -53,6 +53,7 @@ from pairbench.api import (
     Instrument,
     InstrumentedCommand,
     InstrumentedLaunch,
+    LaunchNote,
     LaunchOutcome,
     LaunchPhase,
     LaunchRequest,
@@ -672,7 +673,11 @@ class _ControlStopped(Exception):
 
 @dataclasses.dataclass
 class _Measured:
-    """What one launch gave: its record, the cases read, and the launch's own outcome."""
+    """What one launch gave: its record, the cases read, and the launch's own outcome.
+
+    ``notes`` are the notes the side handed back about the launch, which the
+    rounds give once the round is complete.
+    """
 
     launch: Launch
     samples: list[Sample]
@@ -680,6 +685,7 @@ class _Measured:
     default: list[str]
     seconds: float
     witness: Witness
+    notes: tuple[LaunchNote, ...] = ()
 
 
 def _energy_samples(reading: EnergyReading, *, control: bool) -> list[Sample]:
@@ -1020,6 +1026,7 @@ class _Run:
             default=default,
             seconds=end - start,
             witness=witness,
+            notes=outcome.notes,
         )
 
     def driver_for(self, entry: Side) -> Driver:
@@ -1607,6 +1614,8 @@ def _rounds(run: _Run, plan: Plan, control: Side | None) -> None:
         by_round.setdefault(row.round, []).append(row)
     stopped = False
     for round_, rows in by_round.items():
+        # The notes of the round's launches, given once the round is complete.
+        held: list[tuple[Side, LaunchNote]] = []
         for row in rows:
             entry = entries[row.name]
             if stopped and entry.role == "control":
@@ -1634,6 +1643,7 @@ def _rounds(run: _Run, plan: Plan, control: Side | None) -> None:
                 elif new:
                     run.write(CasesRecord(cases=tuple(new)))
                 run.write_measured(measured)
+            held += [(entry, note) for note in measured.notes]
             run.round_witnesses.append(
                 RoundWitness(round=round_, name=entry.name, witness=measured.witness)
             )
@@ -1641,7 +1651,23 @@ def _rounds(run: _Run, plan: Plan, control: Side | None) -> None:
             run.write(CasesRecord(cases=tuple(first_round)))
             run.discovered = True
             _cases_known(run, primaries)
+        _launch_notes(run, held)
         run.rounds_completed = round_
+
+
+def _launch_notes(run: _Run, held: Sequence[tuple[Side, LaunchNote]]) -> None:
+    """Give the notes a complete round's launches handed back, once per entry and code.
+
+    The results hold what the subject, the baseline and their twins measured,
+    and of the positive control only its primary cases: a note of the control
+    is given only when a case it speaks for is primary.
+    """
+    for entry, note in held:
+        if entry.role == "control" and not any(
+            case in run.known and run.known[case].primary for case in note.cases
+        ):
+            continue
+        run.notes.once(note.code, note.message, key=entry.name)
 
 
 def _identify_again(run: _Run) -> None:

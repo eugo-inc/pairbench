@@ -22,14 +22,26 @@ Astro project with Starlight in ``site/``. One build runs three steps:
    heading, an id written in the page, or the anchor of a config key or flag, on
    a page of the site or in a Markdown file of the repository, and a line,
    ``#L<n>``, or a range of lines, ``#L<a>-L<b>``, of any other file of the
-   repository. A link to a file of the repository by its address on the forge,
-   the ``Source`` address of ``pyproject.toml`` followed by ``/blob/main/`` or
-   ``/tree/main/``, must name a file or folder the repository has, and its anchor
-   is checked the same way; so must such an address written as an autolink,
-   ``<address>``, or bare. In a git checkout the repository has the files git
+   repository, or of a Markdown file shown as plain text, ``?plain=1``. A link
+   to a file of the repository by its address on the forge, the ``Source``
+   address of ``pyproject.toml`` followed by ``/blob/main/``, ``/tree/main/``,
+   ``/blame/main/`` or ``/raw/main/``, or by the same owner and name on the
+   forge's host of raw files followed by ``/main/``, must name a file or folder
+   the repository has, and its anchor is checked the same way; a blame or raw
+   page shows a file only, and a raw file has no anchor. So must such an address
+   written as an autolink, ``<address>``, bare, with its scheme or starting with
+   ``www.`` wherever the site shows it as a link, in quotes or brackets too, such
+   as the ``src`` of an image, or as the ``href`` of a link written in HTML. A
+   page that names a repository of the project other than its public one, of the
+   same owner with a name that starts with the project's, by its address on the
+   forge, on its host of raw files, on its interface for programs, of its
+   archives or of its pages, or by its ssh address, and in code too, is refused.
+   In a git checkout the repository has the files git
    tracks and the folders that hold them, so a link to a file a build leaves,
-   such as one in ``site/dist/``, is refused. A build these checks refuse
-   removes, writes and installs nothing.
+   such as one in ``site/dist/``, is refused; a checkout that holds ``.git``
+   where git is missing, cannot start or refuses to read it is refused, and a
+   copy without ``.git`` is checked by the files it holds. A build these checks
+   refuse removes, writes and installs nothing.
 2. Astro builds the pages, the search index and the sitemap into ``site/dist/``.
    A warning or an error in its output fails the build.
 3. finish: write the Markdown copy of every page beside it, the llms files,
@@ -50,8 +62,9 @@ Usage::
     python3 tools/docs_site.py llms --check
     python3 tools/docs_site.py check     # check a site already built in site/dist
 
-Only the standard library is used. Node and the packages of ``site/`` are needed
-for the Astro step alone; ``npm ci`` installs them from the lockfile.
+Only the standard library is used. Node, npm and the packages of ``site/`` are
+needed for the Astro step alone; ``npm ci`` installs the packages from the
+lockfile. git is needed in a git checkout, to read which files git tracks.
 """
 
 from __future__ import annotations
@@ -64,6 +77,7 @@ import os
 import posixpath
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tomllib
@@ -137,22 +151,37 @@ FRONT_LINE = re.compile(r"^([a-z_]+):\s*(.*)$")
 TITLE = re.compile(r"^# (.+)$")
 FENCE = re.compile(r"^\s*(```|~~~)")
 # A link written [text](target): the target bare or in angle brackets, then an optional title
-# in double quotes, single quotes or parentheses.
+# in double quotes, single quotes or parentheses. Spaces and tabs, with at most one line break,
+# may stand around the target inside the parentheses.
 LINK = re.compile(
-    r"\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\((<[^<>\n]*>|[^()\s]+)"
-    r"(\s+(?:\"[^\"]*\"|'[^']*'|\([^()]*\)))?\)"
+    r"\[(?P<text>(?:[^\[\]]|\[[^\[\]]*\])*)\]\((?P<lead>[ \t]*(?:\n[ \t]*)?)"
+    r"(?P<target><[^<>\n]*>|[^()\s]+)"
+    r"(?P<title>\s+(?:\"[^\"]*\"|'[^']*'|\([^()]*\)))?(?P<tail>[ \t]*(?:\n[ \t]*)?)\)"
 )
 # The definition of a reference link, [label]: target, on a line of its own after at most three
-# spaces; the target is on the same line, and a title may follow it. A footnote's [^label]: is
-# no link.
-DEFINITION = re.compile(r"^( {0,3}\[(?!\^)[^\[\]]+\]:[ \t]*)(<[^<>\n]*>|\S+)", re.MULTILINE)
+# spaces; the target is on the same line or the next, ends at a space or the end of its line, and
+# the end of its line or a title follows it. A footnote's [^label]: is no link.
+DEFINITION = re.compile(
+    r"^(?P<label> {0,3}\[(?!\^)[^\[\]]+\]:[ \t]*(?:\n[ \t]*)?)(?P<target><[^<>\n]*>|\S+(?!\S))"
+    r"(?=[ \t]*(?:$|[\"'(]))",
+    re.MULTILINE,
+)
 CODE_SPAN = re.compile(r"(`+).+?\1")
-# An address written as a link of its own: an autolink, <https://...>, or a bare address, which
-# GitHub Flavored Markdown shows as a link. A bare address ends at a space, a bracket, a
-# parenthesis or a quote; a full stop, comma or other mark that ends a sentence after it is no
-# part of it.
-AUTOLINK = re.compile(r"<(https?://[^<>\s]+)>")
-BARE_ADDRESS = re.compile(r"(?<![\w(<\[/=\"'`])https?://[^\s<>()\[\]\"'`]+")
+# An address written as a link of its own: an autolink, <https://...>; a bare address, with its
+# scheme or starting with www. and none, which GitHub Flavored Markdown shows as a link; and the
+# href of a link written in HTML. Schemes and attribute names are read in any capitals. A bare
+# address is read where the site's renderer shows it as a link: one with its scheme after
+# anything but a letter, and one that starts with www. after anything but a letter, a digit or a
+# colon; so it is read in quotes and brackets too, as in the src of an image or an href without
+# quotes written in HTML. It ends at a space, a bracket, a parenthesis or a quote; a full stop,
+# comma or other mark that ends a sentence after it is no part of it. One may follow a
+# parenthesis, but not the "](" that opens the target of a link, which is read as the link.
+ADDRESS_AUTOLINK = re.compile(r"<(https?://[^<>\s]+)>", re.IGNORECASE)
+BARE_ADDRESS = re.compile(
+    r"(?<!\]\()(?:(?<![A-Za-z])https?://|(?<![A-Za-z0-9:])www\.)[^\s<>()\[\]\"'`]+",
+    re.IGNORECASE,
+)
+HREF = re.compile(r"\bhref\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", re.IGNORECASE)
 SENTENCE_MARKS = ".,:;!?*_~"
 ADDRESS_LINE = re.compile(r"^const (SITE|BASE) = '([^']*)';$", re.MULTILINE)
 KEY_CELL = re.compile(r"`([a-z_]+(?:\.[A-Za-z_]+)+)`")
@@ -162,9 +191,11 @@ SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
 # #L<n>, or of a range of its lines, #L<a>-L<b>, each number in the digits 0 to 9.
 SOURCE_FORM = re.compile(r"https://[^/\s?#]+/[^/\s?#]+/[^/\s?#]+/?")
 LINE_ANCHOR = re.compile(r"L([0-9]+)(?:-L([0-9]+))?")
-# The pages on which the forge shows a file or a folder of a branch, and the one branch a link to
-# the repository by its address names.
-FORGE_PAGES = frozenset({"blob", "tree"})
+# The pages on which the forge shows a file or a folder of a branch: a file, a folder, a file's
+# lines with the commit that last changed each, and a file's bytes alone; the host that serves a
+# file's bytes for each forge; and the one branch a link to the repository by its address names.
+FORGE_PAGES = frozenset({"blob", "tree", "blame", "raw"})
+RAW_HOSTS = {"github.com": "raw.githubusercontent.com"}
 BRANCH = "main"
 # Hosts whose scripts, fonts or counters a page must never load.
 TRACKERS = re.compile(
@@ -406,17 +437,26 @@ def _code_spans(line: str) -> list[tuple[int, int]]:
 
 def written_addresses(text: str) -> list[str]:
     """The addresses a Markdown text writes as links of their own outside code: each autolink,
-    ``<address>``, and each bare address, without the marks that end a sentence after it."""
+    ``<address>``, each bare address, ``www.`` ones with no scheme among them, without the marks
+    that end a sentence after it, and the ``href`` of each link written in HTML that has a
+    scheme. A relative ``href`` is left to the check of the built site."""
     found: list[str] = []
     block: list[str] = []
+
+    def outside(match: re.Match[str], spans: list[tuple[int, int]]) -> bool:
+        return not any(start <= match.start() < end for start, end in spans)
 
     def flush() -> None:
         joined = "\n".join(block)
         spans = _code_spans(joined)
-        for pattern in (AUTOLINK, BARE_ADDRESS):
+        for pattern in (ADDRESS_AUTOLINK, BARE_ADDRESS):
             for match in pattern.finditer(joined):
-                if not any(start <= match.start() < end for start, end in spans):
+                if outside(match, spans):
                     found.append(match.group(match.lastindex or 0).rstrip(SENTENCE_MARKS))
+        for match in HREF.finditer(joined):
+            target = match.group(1) if match.group(1) is not None else match.group(2)
+            if outside(match, spans) and SCHEME.match(target):
+                found.append(target)
         block.clear()
 
     for _index, line, prose in prose_lines(text):
@@ -474,11 +514,14 @@ def rewrite_links(text: str, change: Callable[[str], str]) -> str:
             "\n".join(block),
             LINK,
             lambda found: (
-                f"[{found.group(1)}]({_changed(found.group(2), change)}{found.group(3) or ''})"
+                f"[{found['text']}]({found['lead']}{_changed(found['target'], change)}"
+                f"{found['title'] or ''}{found['tail']})"
             ),
         )
         joined = outside_code(
-            joined, DEFINITION, lambda found: found.group(1) + _changed(found.group(2), change)
+            joined,
+            DEFINITION,
+            lambda found: found["label"] + _changed(found["target"], change),
         )
         out.append(joined)
         block.clear()
@@ -507,7 +550,8 @@ class Linker:
         if written.startswith("#") or SCHEME.match(written):
             return written
         path, _, fragment = written.partition("#")
-        anchor = f"#{fragment}" if fragment else ""
+        path, mark, query = path.partition("?")
+        anchor = (f"?{query}" if mark else "") + (f"#{fragment}" if fragment else "")
         joined = posixpath.normpath(posixpath.join(DOCS, posixpath.dirname(page), path))
         if joined.startswith("../") or joined == "..":
             raise SiteError(f"docs/{page}: the link {written!r} leaves the repository")
@@ -702,23 +746,47 @@ def line_anchor_refusal(fragment: str, name: str, lines: int) -> str | None:
     return None
 
 
+CANNOT_TELL = "so the build cannot tell which files git tracks"
+WITHOUT_GIT = "or build from a copy without .git"
+
+
 def tracked_paths(repo: Path) -> frozenset[str] | None:
     """The files git tracks in the checkout ``repo``, read from its index, and the folders that
-    hold them. ``None`` when ``repo`` is no git checkout (it has no ``.git``) or git does not
-    answer; then the files ``repo`` holds stand in for them. git reads the checkout at ``repo``
-    whatever repository or index the environment names."""
-    git = shutil.which("git")
-    if git is None or not (repo / ".git").exists():
+    hold them. ``None`` when ``repo`` is no git checkout (it has no ``.git``); then the files
+    ``repo`` holds stand in for them. git reads the checkout at ``repo`` whatever repository or
+    index the environment names.
+
+    A checkout where git cannot answer, because git is missing, cannot start or refuses to read
+    it (as it does a checkout another user owns), is refused: the files it holds would let a
+    link to a file git does not track pass. git's own words are printed above the refusal."""
+    if not (repo / ".git").exists():
         return None
+    git = shutil.which("git")
+    if git is None:
+        raise SiteError(
+            f"the checkout holds .git and git is not on the search path, {CANNOT_TELL}: "
+            f"install git, {WITHOUT_GIT}"
+        )
     env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
     try:
         done = subprocess.run(
-            [git, "ls-files", "-z"], cwd=repo, env=env, capture_output=True, check=False
+            [git, "ls-files", "-z"], cwd=repo, env=env, stdout=subprocess.PIPE, check=False
         )
-    except OSError:
-        return None
+    except OSError as error:
+        raise SiteError(
+            f"git could not start ({error.strerror}) in a checkout that holds .git, "
+            f"{CANNOT_TELL}: check that git runs, {WITHOUT_GIT}"
+        ) from None
     if done.returncode != 0:
-        return None
+        ended = (
+            f"was stopped by {signal_words(-done.returncode)}"
+            if done.returncode < 0
+            else f"failed with exit code {done.returncode}"
+        )
+        raise SiteError(
+            f"git ls-files {ended} in a checkout that holds .git, {CANNOT_TELL}: fix what git "
+            f"printed above, {WITHOUT_GIT}"
+        )
     found: set[str] = set()
     for name in done.stdout.split(b"\0"):
         parts = os.fsdecode(name).split("/") if name else []
@@ -730,39 +798,91 @@ def _host(host: str | None) -> str:
     return (host or "").lower().removeprefix("www.")
 
 
-def repository_link(source: str, written: str) -> tuple[str, str, str, bool] | None:
+def repository_link(source: str, written: str) -> tuple[str, str, str, str, bool] | None:
     """For a link to a file or folder of the repository by its address on the forge, such as
-    ``{source}/blob/main/README.md?plain=1#L3``: the branch it names, the path in the
-    repository, the anchor, and whether the forge shows the file as plain text. ``None`` for a
-    link to anything else. The host, the owner and the name are read in any capitals, the host
-    with or without ``www.``."""
+    ``{source}/blob/main/README.md?plain=1#L3``, or on the forge's host of raw files, such as
+    ``https://raw.githubusercontent.com/OWNER/NAME/main/README.md``: the branch it names, the
+    path in the repository, the anchor, the page that shows it (``blob``, ``tree``, ``blame``
+    or ``raw``) and whether that page shows the file as plain text. ``None`` for a link to
+    anything else. The host, the owner and the name are read in any capitals, the host with or
+    without ``www.``, and a branch may be named in full, ``refs/heads/main``, on the raw host."""
     try:
         link, home = urlsplit(written), urlsplit(source)
     except ValueError:
         return None
-    if link.scheme.lower() not in {"http", "https"} or _host(link.hostname) != _host(home.hostname):
+    if link.scheme.lower() not in {"http", "https"}:
         return None
+    host, home_host = _host(link.hostname), _host(home.hostname)
     owner = home.path.strip("/").lower().split("/")
     parts = link.path.split("/")[1:]
-    if len(parts) < 4 or [p.lower() for p in parts[:2]] != owner or parts[2] not in FORGE_PAGES:
+    if [p.lower() for p in parts[:2]] != owner:
         return None
-    path = unquote("/".join(parts[4:]))
-    plain = parse_qs(link.query).get("plain") == ["1"]
-    return unquote(parts[3]), posixpath.normpath(path) if path else ".", link.fragment, plain
+    if host == home_host and len(parts) >= 4 and parts[2] in FORGE_PAGES:
+        page, branch, rest = parts[2], parts[3], parts[4:]
+    elif host == RAW_HOSTS.get(home_host) and len(parts) >= 3:
+        page, branch, rest = "raw", parts[2], parts[3:]
+        if [p.lower() for p in parts[2:4]] == ["refs", "heads"] and len(parts) >= 5:
+            branch, rest = parts[4], parts[5:]
+    else:
+        return None
+    path = unquote("/".join(rest))
+    plain = page == "blame" or parse_qs(link.query).get("plain") == ["1"]
+    joined = posixpath.normpath(path) if path else "."
+    return unquote(branch), joined, link.fragment, page, plain
+
+
+# An address of a repository on a host of the forge, or its ssh address, ``git@HOST:OWNER/NAME``:
+# the host and what follows it, and the repository's name. The forms it is read in: on the forge
+# or a host under it, such as its interface for programs, ``api.HOST/repos/OWNER/NAME``, or the
+# host of its archives, ``codeload.HOST/OWNER/NAME``; on the forge's host of raw files; and on
+# the host of the pages the forge serves for an owner, ``OWNER.PAGES/NAME``.
+REPOSITORY_ON = r"(?<![\w.-])(?:www\.)?((?:{forms})/([\w.-]+))"
+ON_FORGE = r"(?:[\w-]+\.)*{host}(?:/repos)?[/:]{owner}"
+ON_RAW_HOST = r"{host}[/:]{owner}"
+ON_PAGES = r"{owner}\.{host}"
+PAGES_HOSTS = {"github.com": "github.io"}
+
+
+def other_repository(source: str, text: str) -> str | None:
+    """Where ``text`` first names a repository of the project on the forge other than its public
+    one, ``source``: one of the same owner whose name starts with the project's, such as
+    ``NAME-next`` or ``NAME.wiki``, by its address on the forge, on a host under it, on its host
+    of raw files or on the host of its pages, or by its ssh address, in any capitals and with or
+    without ``.git``, in code too; ``None`` when it names none."""
+    home = urlsplit(source)
+    host = _host(home.hostname)
+    owner, name = home.path.strip("/").split("/")[:2]
+    on = {"owner": re.escape(owner)}
+    forms = [ON_FORGE.format(host=re.escape(host), **on)]
+    if raw := RAW_HOSTS.get(host):
+        forms.append(ON_RAW_HOST.format(host=re.escape(raw), **on))
+    if pages := PAGES_HOSTS.get(host):
+        forms.append(ON_PAGES.format(host=re.escape(pages), **on))
+    pattern = re.compile(REPOSITORY_ON.format(forms="|".join(forms)), re.IGNORECASE)
+    for found in pattern.finditer(text):
+        named = found.group(2).rstrip(".").lower().removesuffix(".git")
+        if named != name.lower() and named.startswith(name.lower()):
+            return found.group(1).rstrip(".")
+    return None
 
 
 def check_anchors(build: Build) -> None:
     """Refuse a link to an anchor that the file it names does not have, wherever the text
     tells: the page itself, another page of the site, a Markdown file of the repository by its
     headings, and any other file of the repository by its lines, ``#L<n>``, and ranges of them,
-    ``#L<a>-L<b>``. Refuse a link to a file of the repository by its address on the forge,
-    ``SOURCE/blob/main/PATH`` or ``SOURCE/tree/main/PATH`` with ``SOURCE`` as ``pyproject.toml``
-    gives it, that names another branch or a path the repository does not have; its anchor is
-    checked as a relative link's is, and so is such an address written as an autolink,
-    ``<address>``, or bare. In a git checkout the repository has the files git tracks
-    and the folders that hold them, so a link, by its path or by its address, to a file a build
-    leaves is refused. The anchor of a folder, and a link to another host or to another
-    repository, are not checked here."""
+    ``#L<a>-L<b>``, or a Markdown file's when the link asks for it as plain text,
+    ``?plain=1``. Refuse a link to a file of the repository by its address on the forge,
+    ``SOURCE/blob/main/PATH``, ``SOURCE/tree/main/PATH``, ``SOURCE/blame/main/PATH`` or
+    ``SOURCE/raw/main/PATH`` with ``SOURCE`` as ``pyproject.toml`` gives it, or on the forge's
+    host of raw files, that names another branch or a path the repository does not have, a
+    folder on a blame or raw page, or an anchor on a raw page; its anchor is checked as a
+    relative link's is, and so is such an address written as an autolink, ``<address>``,
+    bare, with its scheme or starting with ``www.`` wherever the site shows it as a link, or as
+    the ``href`` of a link written in HTML. Refuse a page that names a repository of the
+    project other than its public one, anywhere in its text. In a git checkout the repository
+    has the files git tracks and the folders that hold them, so a link, by its path or by its
+    address, to a file a build leaves is refused. The anchor of a folder, and a link to another
+    host or to a repository of another project, are not checked here."""
     anchors = {path: site_anchors(page) for path, page in build.pages.items()}
     headings: dict[str, frozenset[str]] = {}
     lines: dict[str, int] = {}
@@ -791,6 +911,8 @@ def check_anchors(build: Build) -> None:
 
     def relative(page: str, written: str) -> str | None:
         path, hashed, fragment = written.partition("#")
+        path, _, query = path.partition("?")
+        plain = parse_qs(query).get("plain") == ["1"]
         if not path:
             mine = f"{DOCS}/{page}"
             if not hashed or fragment in anchors[page]:
@@ -806,10 +928,10 @@ def check_anchors(build: Build) -> None:
             return None
         if not has(joined):
             return "names nothing in the repository"
-        return refusal(joined, fragment, False) if hashed else None
+        return refusal(joined, fragment, plain) if hashed else None
 
-    def addressed(found: tuple[str, str, str, bool]) -> str | None:
-        branch, joined, fragment, plain = found
+    def addressed(found: tuple[str, str, str, str, bool]) -> str | None:
+        branch, joined, fragment, shown, plain = found
         if branch != BRANCH:
             return (
                 f"names the branch {branch!r}; a link to a file of the repository by its "
@@ -817,13 +939,25 @@ def check_anchors(build: Build) -> None:
             )
         if joined.startswith(("../", "/")) or joined == ".." or not has(joined):
             return "names nothing in the repository"
+        if shown in {"blame", "raw"} and not (build.repo / joined).is_file():
+            return f"names the folder {joined}, which the forge shows on a tree page only"
+        if shown == "raw" and fragment:
+            return f"names an anchor of the raw file {joined}, and a raw file has none"
         return refusal(joined, fragment, plain) if fragment else None
 
     for page in build.pages.values():
+        text = "\n".join([*page.meta.values(), page.title, page.body])
+        named = other_repository(build.source, text)
+        if named:
+            raise SiteError(
+                f"docs/{page.path}: {named} names a repository of the project other than its "
+                f"public one, {build.source}"
+            )
 
-        def check(written: str, page: str = page.path) -> str:
-            if SCHEME.match(written):
-                found = repository_link(build.source, written)
+        def check(written: str, page: str = page.path, alone: bool = False) -> str:
+            if alone or SCHEME.match(written):
+                address = written if SCHEME.match(written) else f"http://{written}"
+                found = repository_link(build.source, address)
                 wrong = addressed(found) if found else None
             else:
                 wrong = relative(page, written)
@@ -833,7 +967,7 @@ def check_anchors(build: Build) -> None:
 
         rewrite_links(page.body, check)
         for written in written_addresses(page.body):
-            check(written)
+            check(written, alone=True)
 
 
 # --- prepare --------------------------------------------------------------------------
@@ -1550,6 +1684,15 @@ def _environment() -> dict[str, str]:
     return env
 
 
+def signal_words(number: int) -> str:
+    """A signal by its name and its number, ``signal SIGTERM (15)``, or by its number alone,
+    ``signal 99``, when it has no name."""
+    try:
+        return f"signal {signal.Signals(number).name} ({number})"
+    except ValueError:
+        return f"signal {number}"
+
+
 def install(repo: Path = REPO) -> None:
     """Install the site's packages from the lockfile, exactly as locked. An install that fails
     is refused with the step, how npm ended and what to run next; npm's own output, printed
@@ -1567,7 +1710,10 @@ def install(repo: Path = REPO) -> None:
             "then run python3 tools/docs_site.py build"
         ) from None
     if done.returncode < 0:
-        raise SiteError(f"{step} was stopped by signal {-done.returncode}: {rerun}")
+        raise SiteError(
+            f"{step} was stopped by {signal_words(-done.returncode)}: run {step} again, then "
+            "python3 tools/docs_site.py build"
+        )
     if done.returncode != 0:
         raise SiteError(
             f"{step} failed with exit code {done.returncode}: fix what npm printed above, {rerun}"
@@ -1597,6 +1743,11 @@ def astro_build(repo: Path = REPO) -> str:
             "then python3 tools/docs_site.py build"
         ) from None
     log = done.stdout + done.stderr
+    if done.returncode < 0:
+        raise SiteError(
+            f"astro build in {SITE}/ was stopped by {signal_words(-done.returncode)}: run "
+            "python3 tools/docs_site.py build again"
+        )
     if done.returncode != 0:
         raise SiteError(f"astro build failed:\n{log}")
     flagged = [line for line in log.splitlines() if WARNING.search(line)]

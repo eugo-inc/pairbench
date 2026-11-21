@@ -101,11 +101,15 @@ launch also gives `startup/weights_loaded_s`, `startup/engine_ready_s` and
 `startup/server_started_s`. A phase is timed from the start to the moment pairbench reads its
 line, and counts when the server printed the line before its first answer. After the first
 answer pairbench waits up to 30 s for its reader of the server's output to read what the server
-wrote before it. Two loud notes in the results, each given once per side, say when the reader
-fell behind: `startup_phases_read_late` names the phases whose line was read after the first
-answer, so their time comes after it; `startup_phases_left_out` names the phases that have no
-time because the wait ran out first. Only the rounds give these notes: the warm-ups and the
-launches of `--explain` and of `pairbench profile` are not compared, and give none.
+wrote before it. Two loud notes in the results say when the reader fell behind:
+`startup_phases_read_late` names the phases whose line was read after the first answer, so
+their time comes after it; `startup_phases_left_out` names the phases that have no time
+because the wait ran out first. Each is given once per entry of the lineup, from a round once
+it is complete: for a twin (`old~same`) under the twin's own name, and for the positive control
+(`new~twice`) only when a phase it names is a primary case, as with `--case 'startup/*'`, even
+when the control is then not judged. A note names every phase it found, primary or not. A round
+that fails or is interrupted gives none, and so do the warm-ups and the launches of `--explain`
+and of `pairbench profile`, which are not compared.
 
 Time to first token is GuideLLM's own per-request value. Read what its stopwatch holds in
 [first-token definitions](../method/first-token-definitions.md#guidellm-081).

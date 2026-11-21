@@ -57,18 +57,36 @@ SERVER = "src/pairbench/mcp/server.py"
 IMAGE_REFERENCE = re.compile(r"an image reference (?:you ask|the user asks) for")
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 # A file of the repository named by its address on the forge, in any form: an inline link, a
-# reference definition, an autolink or the address alone. A page of the site names such a file by
-# its path, which the build turns into that address.
-REPOSITORY_ADDRESS = re.compile(r"https://github\.com/eugo-inc/pairbench/(?:blob|tree)/")
+# reference definition, an autolink, the address alone, with or without its scheme, or a link
+# written in HTML; on any page of the forge that shows a file or on its host of raw files; in any
+# capitals. A page of the site names such a file by its path, which the build turns into that
+# address.
+REPOSITORY_ADDRESS = re.compile(
+    r"github\.com/eugo-inc/pairbench/(?:blob|tree|blame|raw)/"
+    r"|raw\.githubusercontent\.com/eugo-inc/pairbench/",
+    re.IGNORECASE,
+)
 # A file of the repository named by its address in each form a page can write it: an inline link,
-# a reference definition, an autolink and the address alone; and the same file named by its path.
+# a reference definition, an autolink, the address alone (after a parenthesis too, and with www.
+# and no scheme), a link written in HTML, other capitals, the blame and raw pages and the host of
+# raw files; and the same file named by its path, and a page of the forge that shows no file.
 BY_ADDRESS = (
     "the [policy](https://github.com/eugo-inc/pairbench/blob/main/SECURITY.md)",
     "[policy]: https://github.com/eugo-inc/pairbench/blob/main/SECURITY.md",
     "see <https://github.com/eugo-inc/pairbench/blob/main/SECURITY.md>",
     "see https://github.com/eugo-inc/pairbench/tree/main/showcases for more",
+    "the policy (https://github.com/eugo-inc/pairbench/blob/main/SECURITY.md)",
+    'the <a href="https://github.com/eugo-inc/pairbench/blob/main/SECURITY.md">policy</a>',
+    "see www.github.com/eugo-inc/pairbench/tree/main/showcases for more",
+    "see HTTPS://GitHub.com/Eugo-Inc/PairBench/blob/main/SECURITY.md",
+    "see https://github.com/eugo-inc/pairbench/blame/main/SECURITY.md",
+    "see https://github.com/eugo-inc/pairbench/raw/main/SECURITY.md",
+    "see https://raw.githubusercontent.com/eugo-inc/pairbench/main/SECURITY.md",
 )
-BY_PATH = "the [policy](../../SECURITY.md) and [showcases](../../showcases/)"
+NOT_BY_ADDRESS = (
+    "the [policy](../../SECURITY.md) and [showcases](../../showcases/)",
+    "report it at https://github.com/eugo-inc/pairbench/issues",
+)
 # The link the reference page writes, the page it is written in, and the address the build
 # turns it into.
 WRITTEN = ("reference/results-schema.md", f"../../{SECURITY}#{LIMITS_ANCHOR}")
@@ -767,8 +785,9 @@ def test_a_file_of_the_repository_named_by_its_address_is_found_in_each_form(
     assert REPOSITORY_ADDRESS.search(written) is not None
 
 
-def test_a_file_of_the_repository_named_by_its_path_is_not_found() -> None:
-    assert REPOSITORY_ADDRESS.search(BY_PATH) is None
+@pytest.mark.parametrize("written", NOT_BY_ADDRESS)
+def test_a_file_of_the_repository_named_by_its_path_or_no_file_is_not_found(written: str) -> None:
+    assert REPOSITORY_ADDRESS.search(written) is None
 
 
 def test_no_page_of_the_site_links_a_file_of_the_repository_by_its_address(

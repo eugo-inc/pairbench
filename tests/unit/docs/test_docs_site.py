@@ -634,9 +634,14 @@ MADE_UP_FILES = {
     UNENDED_FILE: "one = 1\ntwo = 2\nthree = 3",
     MADE_UP_MARKDOWN: "# Made up\n\nA line.\n",
 }
-# The address of another repository on the forge, made up.
+# The address of another repository on the forge, made up, and of a repository of its project
+# beside it.
 OTHER_SOURCE = "https://github.com/made-up-owner/made-up-name"
+OTHER_PROJECT = f"{OTHER_SOURCE}-dev"
 SOURCE_LINE = f'Source = "{SOURCE}"\n'
+# The repository's address on the forge's host of raw files, and written bare with www.
+RAW_SOURCE = "https://raw.githubusercontent.com/eugo-inc/pairbench"
+WWW_SOURCE = "www.github.com/eugo-inc/pairbench"
 
 
 def plant_files(repo: Path) -> None:
@@ -682,6 +687,32 @@ def link_from_another_source(target: str) -> Callable[[Path], None]:
     def spoil(repo: Path) -> None:
         give_source(f'Source = "{OTHER_SOURCE}"\n')(repo)
         link_to_planted(target)(repo)
+
+    return spoil
+
+
+def text_from_another_source(text: str) -> Callable[[Path], None]:
+    """Spoil a copy whose ``pyproject.toml`` names another repository with ``text`` at the end
+    of the FAQ page."""
+
+    def spoil(repo: Path) -> None:
+        give_source(f'Source = "{OTHER_SOURCE}"\n')(repo)
+        add_to_faq(text)(repo)
+
+    return spoil
+
+
+def faq_line_from_another_source(start: str, new: str) -> Callable[[Path], None]:
+    """Spoil a copy whose ``pyproject.toml`` names another repository with ``new`` in place of
+    the one line of the FAQ page that starts with ``start``."""
+
+    def spoil(repo: Path) -> None:
+        give_source(f'Source = "{OTHER_SOURCE}"\n')(repo)
+        page = repo / FAQ
+        lines = page.read_text(encoding="utf-8").splitlines(keepends=True)
+        (at,) = [n for n, line in enumerate(lines) if line.startswith(start)]
+        lines[at] = f"{new}\n"
+        page.write_text("".join(lines), encoding="utf-8")
 
     return spoil
 
@@ -936,6 +967,189 @@ REFUSED_BEFORE_INSTALL = {
         give_source('Source = "https://github.com/pairbench"\n'),
         SOURCE_REMEDY,
     ),
+    "a line anchor written with leading zeros past the end of a file": (
+        link_to_planted(f"../{MADE_UP_FILE}#L004"),
+        f"docs/faq.md: the link '../{MADE_UP_FILE}#L004' names line 4, and {MADE_UP_LINES}",
+    ),
+    "a bare address right after a parenthesis": (
+        add_to_faq(f"Read the rule ({SOURCE}/blob/main/no_such_file.py) first.\n"),
+        f"docs/faq.md: the link '{SOURCE}/blob/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a bare address with its scheme in capitals": (
+        add_to_faq("Read HTTPS://github.com/eugo-inc/pairbench/blob/main/no_such_file.py.\n"),
+        "docs/faq.md: the link 'HTTPS://github.com/eugo-inc/pairbench/blob/main/no_such_file.py' "
+        "names nothing in the repository",
+    ),
+    "an autolink with its scheme in capitals": (
+        add_to_faq("Read <HTTPS://github.com/eugo-inc/pairbench/blob/main/no_such_file.py>.\n"),
+        "docs/faq.md: the link 'HTTPS://github.com/eugo-inc/pairbench/blob/main/no_such_file.py' "
+        "names nothing in the repository",
+    ),
+    "a bare address that starts with www and has no scheme": (
+        add_to_faq(f"Read {WWW_SOURCE}/blob/main/no_such_file.py today.\n"),
+        f"docs/faq.md: the link '{WWW_SOURCE}/blob/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a link written in HTML by its address, in double quotes": (
+        add_to_faq(f'Read <a href="{SOURCE}/blob/main/no_such_file.py">the rule</a>.\n'),
+        f"docs/faq.md: the link '{SOURCE}/blob/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a link written in HTML by its address, in single quotes over two lines": (
+        add_to_faq(f"Read <a class='x'\nHREF='{SOURCE}/tree/main/no_such_folder'>them</a>.\n"),
+        f"docs/faq.md: the link '{SOURCE}/tree/main/no_such_folder' names nothing in the "
+        "repository",
+    ),
+    "a link by its address to the blame page of a file the repository does not have": (
+        link_from_faq(f"{SOURCE}/blame/main/no_such_file.py"),
+        f"docs/faq.md: the link '{SOURCE}/blame/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a link by its address to the raw page of a file the repository does not have": (
+        link_from_faq(f"{SOURCE}/raw/main/no_such_file.py"),
+        f"docs/faq.md: the link '{SOURCE}/raw/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a raw address of a file the repository does not have": (
+        add_to_faq(f"Read <{RAW_SOURCE}/main/no_such_file.py>.\n"),
+        f"docs/faq.md: the link '{RAW_SOURCE}/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a raw address of a branch other than main by its full name": (
+        link_to_planted(f"{RAW_SOURCE}/refs/heads/made-up-branch/{MADE_UP_FILE}"),
+        f"docs/faq.md: the link '{RAW_SOURCE}/refs/heads/made-up-branch/{MADE_UP_FILE}' names the "
+        "branch 'made-up-branch'; a link to a file of the repository by its address names main",
+    ),
+    "a blame page of a line past the end of a file": (
+        link_to_planted(f"{SOURCE}/blame/main/{MADE_UP_FILE}#L4"),
+        f"docs/faq.md: the link '{SOURCE}/blame/main/{MADE_UP_FILE}#L4' names line 4, and "
+        f"{MADE_UP_LINES}",
+    ),
+    "a blame page of a line past the end of a Markdown file": (
+        link_to_planted(f"{SOURCE}/blame/main/{MADE_UP_MARKDOWN}#L4"),
+        f"docs/faq.md: the link '{SOURCE}/blame/main/{MADE_UP_MARKDOWN}#L4' names line 4, and "
+        f"{MADE_UP_MARKDOWN} has lines 1 to 3",
+    ),
+    "an anchor on the raw page of a file": (
+        link_to_planted(f"{SOURCE}/raw/main/{MADE_UP_FILE}#L1"),
+        f"docs/faq.md: the link '{SOURCE}/raw/main/{MADE_UP_FILE}#L1' names an anchor of the raw "
+        f"file {MADE_UP_FILE}, and a raw file has none",
+    ),
+    "the raw page of a folder": (
+        link_to_planted(f"{SOURCE}/raw/main/tools"),
+        f"docs/faq.md: the link '{SOURCE}/raw/main/tools' names the folder tools, which the forge "
+        "shows on a tree page only",
+    ),
+    "the blame page of a folder": (
+        link_to_planted(f"{SOURCE}/blame/main/tools"),
+        f"docs/faq.md: the link '{SOURCE}/blame/main/tools' names the folder tools, which the "
+        "forge shows on a tree page only",
+    ),
+    "a link with spaces inside its parentheses to a page the site does not have": (
+        add_to_faq("Read [the missing part]( guides/no-such-page.md ).\n"),
+        "docs/faq.md: the link 'guides/no-such-page.md' names no page of the site",
+    ),
+    "a link whose target starts the next line inside its parentheses": (
+        add_to_faq("Read [the missing part](\n  guides/no-such-page.md 'A title'\n).\n"),
+        "docs/faq.md: the link 'guides/no-such-page.md' names no page of the site",
+    ),
+    "a definition whose target is on the next line, to an anchor its own page does not have": (
+        add_to_faq("Read [the missing part][gone].\n\n[gone]:\n  #no-such-part\n"),
+        "docs/faq.md: the link '#no-such-part' names an anchor that docs/faq.md does not have",
+    ),
+    "a link by its path to a line past the end of a Markdown file shown as plain text": (
+        link_to_planted(f"../{MADE_UP_MARKDOWN}?plain=1#L4"),
+        f"docs/faq.md: the link '../{MADE_UP_MARKDOWN}?plain=1#L4' names line 4, and "
+        f"{MADE_UP_MARKDOWN} has lines 1 to 3",
+    ),
+    "a link to another repository of the project": (
+        text_from_another_source(f"Read [the notes]({OTHER_PROJECT}/blob/main/README.md).\n"),
+        "docs/faq.md: github.com/made-up-owner/made-up-name-dev names a repository of the "
+        f"project other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project in a block of code": (
+        text_from_another_source(f"```sh\ngit clone {OTHER_PROJECT}.git\n```\n"),
+        "docs/faq.md: github.com/made-up-owner/made-up-name-dev.git names a repository of the "
+        f"project other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project in code, by its ssh address": (
+        text_from_another_source("Run `git clone git@github.com:made-up-owner/made-up-name_x`.\n"),
+        "docs/faq.md: github.com:made-up-owner/made-up-name_x names a repository of the project "
+        f"other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project in other capitals, on the raw host": (
+        text_from_another_source(
+            "See https://RAW.githubusercontent.com/Made-Up-Owner/Made-Up-Name.Wiki/main/a.md.\n"
+        ),
+        "docs/faq.md: RAW.githubusercontent.com/Made-Up-Owner/Made-Up-Name.Wiki names a "
+        f"repository of the project other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project by its address on the forge's interface for programs": (
+        text_from_another_source(
+            "See https://api.github.com/repos/made-up-owner/made-up-name-dev/releases.\n"
+        ),
+        "docs/faq.md: api.github.com/repos/made-up-owner/made-up-name-dev names a repository of "
+        f"the project other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project by the address of its archive": (
+        text_from_another_source(
+            "Get https://codeload.github.com/made-up-owner/made-up-name-dev/zip/refs/heads/main.\n"
+        ),
+        "docs/faq.md: codeload.github.com/made-up-owner/made-up-name-dev names a repository of "
+        f"the project other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project by the address of its pages": (
+        text_from_another_source("See https://Made-Up-Owner.github.io/made-up-name-dev/.\n"),
+        "docs/faq.md: Made-Up-Owner.github.io/made-up-name-dev names a repository of the project "
+        f"other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project in the description of a page": (
+        faq_line_from_another_source(
+            "description: ",
+            'description: "Answers kept at github.com/made-up-owner/made-up-name-dev."',
+        ),
+        "docs/faq.md: github.com/made-up-owner/made-up-name-dev names a repository of the "
+        f"project other than its public one, {OTHER_SOURCE}",
+    ),
+    "another repository of the project in the title of a page": (
+        faq_line_from_another_source(
+            "# Frequently asked questions",
+            "# Frequently asked questions of github.com/made-up-owner/made-up-name-dev",
+        ),
+        "docs/faq.md: github.com/made-up-owner/made-up-name-dev names a repository of the "
+        f"project other than its public one, {OTHER_SOURCE}",
+    ),
+    "a bare address in italics written with underscores": (
+        add_to_faq(f"Read _{SOURCE}/blob/main/no_such_file.py_ first.\n"),
+        f"docs/faq.md: the link '{SOURCE}/blob/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a bare address that starts with www, in italics written with underscores": (
+        add_to_faq(f"Read _{WWW_SOURCE}/blob/main/no_such_file.py_ first.\n"),
+        f"docs/faq.md: the link '{WWW_SOURCE}/blob/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a bare address in double quotes": (
+        add_to_faq(f'The rule is at "{SOURCE}/blob/main/no_such_file.py".\n'),
+        f"docs/faq.md: the link '{SOURCE}/blob/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "a bare address in square brackets": (
+        add_to_faq(f"Read [{SOURCE}/tree/main/no_such_folder] first.\n"),
+        f"docs/faq.md: the link '{SOURCE}/tree/main/no_such_folder' names nothing in the "
+        "repository",
+    ),
+    "a link written in HTML by its address, with no quotes": (
+        add_to_faq(f"Read <a href={SOURCE}/blob/main/no_such_file.py>the rule</a>.\n"),
+        f"docs/faq.md: the link '{SOURCE}/blob/main/no_such_file.py' names nothing in the "
+        "repository",
+    ),
+    "an image written in HTML by its address": (
+        add_to_faq(f'<img src="{SOURCE}/raw/main/no_such_file.png" alt="A part">\n'),
+        f"docs/faq.md: the link '{SOURCE}/raw/main/no_such_file.png' names nothing in the "
+        "repository",
+    ),
 }
 
 
@@ -996,8 +1210,9 @@ def test_a_build_that_is_refused_never_starts_the_install(
 # Links to the made-up files that the first step lets pass, and the target it writes for Astro:
 # a line and a range of a file by its path or by its address, the last line with a line break
 # after it and without one, a range of one line, a folder and the top of the repository by their
-# address, a heading of a Markdown file, a line of one shown as plain text, the address in other
-# capitals, and links that name no file of a repository.
+# address, a heading of a Markdown file, a line of one shown as plain text by its address and by
+# its path, the address in other capitals, links that name no file of a repository, lines written
+# with leading zeros, and a file's blame page and raw page on the forge and on its raw host.
 PASSING_LINKS = {
     f"../{MADE_UP_FILE}": f"{SOURCE}/blob/main/{MADE_UP_FILE}",
     f"../{MADE_UP_FILE}#L1": f"{SOURCE}/blob/main/{MADE_UP_FILE}#L1",
@@ -1018,6 +1233,14 @@ PASSING_LINKS = {
     f"GitHub.com/Eugo-Inc/PairBench/blob/main/{MADE_UP_FILE}#L3",
     f"{OTHER_SOURCE}/blob/main/no_such_file.py": f"{OTHER_SOURCE}/blob/main/no_such_file.py",
     f"{SOURCE}/issues": f"{SOURCE}/issues",
+    f"../{MADE_UP_FILE}#L003": f"{SOURCE}/blob/main/{MADE_UP_FILE}#L003",
+    f"{SOURCE}/blob/main/{MADE_UP_FILE}#L01-L03": f"{SOURCE}/blob/main/{MADE_UP_FILE}#L01-L03",
+    f"../{MADE_UP_MARKDOWN}?plain=1#L3": f"{SOURCE}/blob/main/{MADE_UP_MARKDOWN}?plain=1#L3",
+    f"{SOURCE}/blame/main/{MADE_UP_FILE}#L2": f"{SOURCE}/blame/main/{MADE_UP_FILE}#L2",
+    f"{SOURCE}/blame/main/{MADE_UP_MARKDOWN}#L3": f"{SOURCE}/blame/main/{MADE_UP_MARKDOWN}#L3",
+    f"{SOURCE}/raw/main/{MADE_UP_FILE}": f"{SOURCE}/raw/main/{MADE_UP_FILE}",
+    f"{RAW_SOURCE}/main/{MADE_UP_FILE}": f"{RAW_SOURCE}/main/{MADE_UP_FILE}",
+    f"{RAW_SOURCE}/refs/heads/main/{MADE_UP_FILE}": f"{RAW_SOURCE}/refs/heads/main/{MADE_UP_FILE}",
 }
 
 
@@ -1040,11 +1263,15 @@ def test_the_first_step_lets_a_link_to_a_line_or_a_file_the_repository_has_pass(
 
 
 # Addresses written as links of their own that the first step lets pass and leaves as they are:
-# an autolink and bare addresses of what the repository has, and addresses in code.
+# an autolink and bare addresses of what the repository has, one after a parenthesis and one with
+# www and no scheme among them, a link written in HTML by its address, and addresses in code.
 ALONE_PASSING = (
     f"Read <{SOURCE}/blob/main/{MADE_UP_FILE}#L3> and {SOURCE}/tree/main/tools.\n"
     f"See {SOURCE}/blob/main/{MADE_UP_FILE}#L1-L3, or {OTHER_SOURCE}/blob/main/no_such_file.py.\n"
     f"Not `{SOURCE}/blob/main/no_such_file.py` in code.\n"
+    f"Read it ({SOURCE}/blob/main/{MADE_UP_FILE}#L2) and {WWW_SOURCE}/tree/main/tools.\n"
+    f'Read <a href="{SOURCE}/blob/main/{MADE_UP_FILE}#L1">the rule</a>, not '
+    f'`<a href="{SOURCE}/blob/main/no_such_file.py">` in code.\n'
     "\n"
     "```text\n"
     f"{SOURCE}/blob/main/no_such_file.py\n"
@@ -1065,6 +1292,50 @@ def test_the_first_step_lets_an_address_written_alone_pass_when_the_repository_h
     assert written.endswith(f"\n\n{ALONE_PASSING}")
 
 
+# Bare addresses the site's renderer shows as links after any mark but a letter, and those with
+# www. after any mark but a letter, a digit or a colon, to what the repository has; then the
+# forms it shows as no link, to what the repository does not have: an address glued to a
+# letter, and one with www. glued to a letter, a digit or a colon.
+MARKED_PASSING = (
+    f'Read _{SOURCE}/blob/main/{MADE_UP_FILE}#L3_, "{SOURCE}/tree/main/tools" and '
+    f"[{WWW_SOURCE}/blob/main/{MADE_UP_FILE}].\n"
+    f"Read <a href={SOURCE}/blob/main/{MADE_UP_FILE}>the rule</a> and "
+    f"'_{WWW_SOURCE}/tree/main/tools_'.\n"
+    f'<img src="{SOURCE}/raw/main/{MADE_UP_FILE}" alt="A part">\n'
+    f"Not links: x{SOURCE}/blob/main/no_such_file.py, x{WWW_SOURCE}/blob/main/no_such_file.py,\n"
+    f"1{WWW_SOURCE}/blob/main/no_such_file.py and :{WWW_SOURCE}/blob/main/no_such_file.py.\n"
+)
+
+
+def test_the_first_step_reads_a_bare_address_wherever_the_site_shows_it_as_a_link(
+    docs_site: ModuleType, repo_root: Path, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    copy_build_inputs(repo_root, repo)
+    text_with_planted(MARKED_PASSING)(repo)
+
+    docs_site.prepare(repo)
+
+    assert faq_written(docs_site, repo).endswith(f"\n\n{MARKED_PASSING}")
+
+
+# A line of prose that starts like the definition of a reference link but holds words after its
+# first, which CommonMark reads as no definition.
+NOT_A_DEFINITION = "[Note]: don't run it on a shared machine.\n"
+
+
+def test_the_first_step_reads_no_definition_where_words_follow_the_target(
+    docs_site: ModuleType, repo_root: Path, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    copy_build_inputs(repo_root, repo)
+    add_to_faq(NOT_A_DEFINITION)(repo)
+
+    docs_site.prepare(repo)
+
+    assert faq_written(docs_site, repo).endswith(f"\n\n{NOT_A_DEFINITION}")
+
+
 def test_a_link_by_its_address_to_a_repository_pyproject_does_not_give_is_not_checked(
     docs_site: ModuleType, repo_root: Path, tmp_path: Path
 ) -> None:
@@ -1080,6 +1351,64 @@ def test_a_link_by_its_address_to_a_repository_pyproject_does_not_give_is_not_ch
 
 def faq_written(docs_site: ModuleType, repo: Path) -> str:
     return (repo / docs_site.CONTENT / docs_site.LATEST / "faq.md").read_text(encoding="utf-8")
+
+
+# Text that names the repository pyproject.toml gives, or a repository that is not of its project:
+# the repository with and without .git, by its address and its ssh address, its owner's page,
+# another repository of the owner whose name does not start with the project's, a repository of
+# another owner named for the project, and the repository by the addresses of its pages, its
+# releases on the forge's interface for programs and its archive, and the owner's pages.
+OTHER_REPOSITORIES = (
+    f"Clone {OTHER_SOURCE}.git or `git@github.com:made-up-owner/made-up-name.git`.\n"
+    f"See {OTHER_SOURCE}, https://github.com/made-up-owner,\n"
+    "https://github.com/made-up-owner/another-name and\n"
+    "https://github.com/someone-else/made-up-name-dev.\n"
+    "Its pages are https://made-up-owner.github.io/made-up-name/, its releases\n"
+    "https://api.github.com/repos/made-up-owner/made-up-name/releases, its archive\n"
+    "https://codeload.github.com/made-up-owner/made-up-name/zip/refs/heads/main, and\n"
+    "https://made-up-owner.github.io/ the owner's.\n"
+    f"Its home is {OTHER_SOURCE}. Clone it from {OTHER_SOURCE}.git.\n"
+)
+
+
+def test_the_first_step_lets_a_page_name_the_public_repository_and_others_not_of_its_project(
+    docs_site: ModuleType, repo_root: Path, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    copy_build_inputs(repo_root, repo)
+    text_from_another_source(OTHER_REPOSITORIES)(repo)
+
+    docs_site.prepare(repo)
+
+    assert faq_written(docs_site, repo).endswith(f"\n\n{OTHER_REPOSITORIES}")
+
+
+# Links that hold spaces or a line break around their target inside the parentheses, and a
+# definition whose target is on the next line, to the made-up files; and what the first step
+# writes for Astro in their place.
+SPACED_LINKS = (
+    f"Read [a part]( ../{MADE_UP_FILE}#L2 ) and [a part](\n  ../{MADE_UP_FILE}#L3 'A title'\n).\n"
+    "\n"
+    f"[a label]:\n  ../{MADE_UP_MARKDOWN}#made-up\n"
+)
+SPACED_WRITTEN = (
+    f"Read [a part]( {SOURCE}/blob/main/{MADE_UP_FILE}#L2 ) and [a part](\n"
+    f"  {SOURCE}/blob/main/{MADE_UP_FILE}#L3 'A title'\n).\n"
+    "\n"
+    f"[a label]:\n  {SOURCE}/blob/main/{MADE_UP_MARKDOWN}#made-up\n"
+)
+
+
+def test_the_first_step_reads_a_target_with_spaces_or_a_line_break_around_it(
+    docs_site: ModuleType, repo_root: Path, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    copy_build_inputs(repo_root, repo)
+    text_with_planted(SPACED_LINKS)(repo)
+
+    docs_site.prepare(repo)
+
+    assert faq_written(docs_site, repo).endswith(f"\n\n{SPACED_WRITTEN}")
 
 
 # Links that the first step lets pass in a git checkout, and the target it writes for Astro: a
@@ -1114,18 +1443,41 @@ def test_in_a_git_checkout_the_first_step_lets_a_link_to_what_git_tracks_pass(
     assert faq_written(docs_site, repo).endswith(f"\n\n{faq_links(TRACKED_LINKS.values())}")
 
 
-# A stand-in for git that writes its arguments to a file and fails, as git does in a checkout it
-# will not read.
-GIT_STAND_IN = '#!/bin/sh\nprintf "%s\\n" "$*" >> "{calls}"\nexit 128\n'
-# Links to the files git does not track, and the target the first step writes for each.
-UNTRACKED_LINKS = {
-    f"{SOURCE}/blob/main/{UNTRACKED_FILE}#L1": f"{SOURCE}/blob/main/{UNTRACKED_FILE}#L1",
-    f"../{BUILT_PAGE}": f"{SOURCE}/blob/main/{BUILT_PAGE}",
+# What git prints when it refuses a checkout owned by another user, with a made-up path.
+GIT_REFUSAL = "fatal: detected dubious ownership in repository at '/made-up/checkout'"
+CANNOT_TELL = "so the build cannot tell which files git tracks"
+# Stand-ins for a git that cannot answer in a checkout that holds .git, each writing its
+# arguments to a file first: one that refuses the checkout, as git does with one owned by
+# another user, and one whose interpreter is missing, so it cannot start; and no git at all.
+# What the build prints on stderr for each.
+GIT_FAILURES = {
+    "refuses": (
+        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{{calls}}"\necho "{GIT_REFUSAL}" >&2\nexit 128\n',
+        f"{GIT_REFUSAL}\n"
+        f"docs_site: git ls-files failed with exit code 128 in a checkout that holds .git, "
+        f"{CANNOT_TELL}: fix what git printed above, or build from a copy without .git\n",
+    ),
+    "cannot start": (
+        "#!/no/such/interpreter\n",
+        "docs_site: git could not start (No such file or directory) in a checkout that holds "
+        f".git, {CANNOT_TELL}: check that git runs, or build from a copy without .git\n",
+    ),
+    "missing": (
+        None,
+        f"docs_site: the checkout holds .git and git is not on the search path, {CANNOT_TELL}: "
+        "install git, or build from a copy without .git\n",
+    ),
 }
 
 
-def test_where_git_does_not_answer_the_files_a_checkout_holds_stand_in_for_those_it_tracks(
-    docs_site: ModuleType, repo_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("case", sorted(GIT_FAILURES))
+def test_where_git_cannot_answer_in_a_checkout_the_build_is_refused_and_says_why(
+    docs_site: ModuleType,
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    case: str,
 ) -> None:
     repo = tmp_path / "repo"
     copy_build_inputs(repo_root, repo)
@@ -1133,17 +1485,24 @@ def test_where_git_does_not_answer_the_files_a_checkout_holds_stand_in_for_those
     (repo / ".git").mkdir()
     for name, text in UNTRACKED_FILES.items():
         write(repo, name, text)
-    add_to_faq(faq_links(UNTRACKED_LINKS))(repo)
+    add_to_faq(faq_links([f"../{BUILT_PAGE}"]))(repo)
+    script, said = GIT_FAILURES[case]
     folder, calls = tmp_path / "bin", tmp_path / "git-calls.txt"
     folder.mkdir()
-    (folder / "git").write_text(GIT_STAND_IN.format(calls=calls), encoding="utf-8")
-    (folder / "git").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{folder}{os.pathsep}{os.environ.get('PATH', '')}")
+    (folder / "npm").write_text(NPM_STAND_IN.format(calls=tmp_path / "npm-calls.txt"))
+    (folder / "npm").chmod(0o755)
+    if script is not None:
+        (folder / "git").write_text(script.format(calls=calls), encoding="utf-8")
+        (folder / "git").chmod(0o755)
+    # The search path holds the stand-ins alone, so no other git is found.
+    monkeypatch.setenv("PATH", str(folder))
+    monkeypatch.setattr(docs_site, "REPO", repo)
 
-    docs_site.prepare(repo)
-
-    assert faq_written(docs_site, repo).endswith(f"\n\n{faq_links(UNTRACKED_LINKS.values())}")
-    assert calls.read_text(encoding="utf-8") == "ls-files -z\n"
+    assert docs_site.main(["build"]) == EXIT_REFUSED
+    assert capfd.readouterr() == ("", said)
+    assert not (tmp_path / "npm-calls.txt").exists()
+    if case == "refuses":
+        assert calls.read_text(encoding="utf-8") == "ls-files -z\n"
 
 
 def test_a_copy_without_git_inside_a_git_checkout_is_checked_by_the_files_it_holds(
@@ -1171,25 +1530,42 @@ def test_the_links_are_written_with_the_address_pyproject_gives(
 
 # What the module's docstring and the contributing guide say of the links each step checks: the
 # first, before it removes or writes anything, the links written [text](target) and the
-# reference links, the lines of a file they name, and the links to a file of the repository by
-# its address, as a link, an autolink or bare; the third, on the built site, every link, those
-# written in HTML among them.
+# reference links, the lines of a file they name, a Markdown file's among them when it is shown
+# as plain text, the links to a file of the repository by its address on each page of the forge
+# that shows one and on its host of raw files, as a link, an autolink, bare or in HTML, the
+# names of the project's other repositories, and what it does where git cannot answer; the
+# third, on the built site, every link, those written in HTML among them.
 STEP_ONE_LINKS = "each link written `[text](target)` or as a reference link"
-STEP_ONE_LINES = "a line, `#L<n>`, or a range of lines, `#L<a>-L<b>`, of any other file"
+STEP_ONE_LINES = (
+    "a line, `#L<n>`, or a range of lines, `#L<a>-L<b>`, of any other file of the repository, "
+    "or of a Markdown file shown as plain text, `?plain=1`."
+)
 STEP_ONE_ADDRESSES = (
     "A link to a file of the repository by its address on the forge, the `Source` address of "
-    "`pyproject.toml` followed by `/blob/main/` or `/tree/main/`, must name a file or folder the "
-    "repository has, and its anchor is checked the same way; so must such an address written as "
-    "an autolink, `<address>`, or bare."
+    "`pyproject.toml` followed by `/blob/main/`, `/tree/main/`, `/blame/main/` or `/raw/main/`, "
+    "or by the same owner and name on the forge's host of raw files followed by `/main/`, must "
+    "name a file or folder the repository has, and its anchor is checked the same way; a blame "
+    "or raw page shows a file only, and a raw file has no anchor. So must such an address "
+    "written as an autolink, `<address>`, bare, with its scheme or starting with `www.` "
+    "wherever the site shows it as a link, in quotes or brackets too, such as the `src` of an "
+    "image, or as the `href` of a link written in HTML."
+)
+STEP_ONE_PROJECT = (
+    "A page that names a repository of the project other than its public one, of the same "
+    "owner with a name that starts with the project's, by its address on the forge, on its host "
+    "of raw files, on its interface for programs, of its archives or of its pages, or by its ssh "
+    "address, and in code too, is refused."
 )
 STEP_ONE_TRACKED = (
     "In a git checkout the repository has the files git tracks and the folders that hold them, "
-    "so a link to a file a build leaves, such as one in `site/dist/`, is refused."
+    "so a link to a file a build leaves, such as one in `site/dist/`, is refused; a checkout "
+    "that holds `.git` where git is missing, cannot start or refuses to read it is refused, and "
+    "a copy without `.git` is checked by the files it holds."
 )
 STEP_THREE_LINKS = "a link written in HTML among them"
 CONTRIBUTING = "CONTRIBUTING.md"
 # The forms of a link the contributing guide names: those the first step reads, and those it
-# leaves to the third.
+# leaves to the third, with their count.
 LINK_FORMS_NAMED = (
     "`[text](target)`",
     '`[text](target "title")`',
@@ -1200,20 +1576,25 @@ LINK_FORMS_NAMED = (
     "`[label][]`",
     "`[label]`",
     "`[label]: target`",
-    "a definition whose target is on the next line",
-    "a bare target that holds a space or a parenthesis",
-    "a link written in HTML",
+    "holds the target on that line or the next",
+    "spaces or one line break around the target inside the parentheses",
+    "`README.md?plain=1#L3`",
+    "It leaves two forms as they are: a bare target that holds a space or a parenthesis, and a "
+    "relative link written in HTML.",
 )
+# What the contributing guide says the documentation build runs, none of which ships in the site.
+BUILD_RUNS = "The build runs Node.js, npm and, in a git checkout, git; none of the three ships"
 # A link to an anchor the FAQ page does not have, in each form the first step leaves to the third.
 LEFT_TO_THE_BUILT_SITE = {
     "a link written in HTML": '<a href="#no-such-part">the missing part</a>',
-    "a definition whose target is on the next line": "[the missing part][gone]\n\n[gone]:\n"
-    "  #no-such-part",
+    "a link written in HTML in single quotes": "<a href='#no-such-part'>the missing part</a>",
 }
 # Each form of a link the first step reads, and what it writes when it puts "/made-up/" before
 # each target: a title in double quotes, single quotes or parentheses, a target in angle
-# brackets, and the definition of a reference link, with or without a title, at most three
-# spaces in. A footnote, code and a line four spaces in are left as they are.
+# brackets, spaces, tabs or one line break around the target inside the parentheses, and the
+# definition of a reference link, with or without a title, at most three spaces in, its target on
+# its line or the next. A footnote, code, a line four spaces in and a target after a blank line
+# are left as they are.
 LINK_FORMS = {
     "[text](a.md)": "[text](/made-up/a.md)",
     '[text](a.md "A title")': '[text](/made-up/a.md "A title")',
@@ -1231,6 +1612,13 @@ LINK_FORMS = {
     "[one]: a.md\n[two]: b.md": "[one]: /made-up/a.md\n[two]: /made-up/b.md",
     "[^note]: a.md": "[^note]: a.md",
     "    [label]: a.md": "    [label]: a.md",
+    "[text]( a.md )": "[text]( /made-up/a.md )",
+    "[text](\ta.md\t'A title' )": "[text](\t/made-up/a.md\t'A title' )",
+    "[text](\n  <a.md> 'A title'\n)": "[text](\n  </made-up/a.md> 'A title'\n)",
+    "[label]:\n  a.md 'A title'": "[label]:\n  /made-up/a.md 'A title'",
+    "[label]:  \n<a.md>": "[label]:  \n</made-up/a.md>",
+    "[text](\n\na.md)": "[text](\n\na.md)",
+    "[label]:\n\na.md": "[label]:\n\na.md",
     "`[label]: a.md` and `[text](a.md)`": "`[label]: a.md` and `[text](a.md)`",
     "```\n[label]: a.md\n[text](a.md)\n```": "```\n[label]: a.md\n[text](a.md)\n```",
 }
@@ -1298,6 +1686,7 @@ def test_the_docstring_and_the_contributing_guide_say_which_links_each_step_chec
             STEP_ONE_LINKS,
             STEP_ONE_LINES,
             STEP_ONE_ADDRESSES,
+            STEP_ONE_PROJECT,
             STEP_ONE_TRACKED,
             STEP_THREE_LINKS,
         )
@@ -1315,8 +1704,14 @@ def test_the_contributing_guide_names_each_form_of_link_and_the_step_that_checks
     assert [form for form in LINK_FORMS_NAMED if form not in text] == []
 
 
+def test_the_contributing_guide_says_what_the_documentation_build_runs(repo_root: Path) -> None:
+    text = " ".join((repo_root / CONTRIBUTING).read_text(encoding="utf-8").split())
+
+    assert BUILD_RUNS in text
+
+
 @pytest.mark.parametrize("case", sorted(LEFT_TO_THE_BUILT_SITE))
-def test_the_first_step_leaves_links_in_html_and_definitions_split_over_lines_to_the_built_site(
+def test_the_first_step_leaves_a_relative_link_written_in_html_to_the_built_site(
     docs_site: ModuleType, repo_root: Path, tmp_path: Path, case: str
 ) -> None:
     repo = tmp_path / "repo"
@@ -1410,9 +1805,10 @@ def test_a_build_the_checks_pass_installs_the_packages_it_lacks(
 
 
 # Stand-ins for an npm whose install fails, and what the build prints on stderr after what npm
-# printed: an npm that says why and ends with a made-up exit code, one stopped by a signal, and one
-# whose interpreter is missing, so it cannot start.
+# printed: an npm that says why and ends with a made-up exit code, two stopped by a signal, and
+# one whose interpreter is missing, so it cannot start.
 NEXT_STEP = "then run npm ci in site/ and python3 tools/docs_site.py build"
+AGAIN = "run npm ci in site/ again, then python3 tools/docs_site.py build"
 FAILED_INSTALLS = {
     "exit code": (
         '#!/bin/sh\necho "npm error a made-up cause" >&2\nexit 7\n',
@@ -1422,7 +1818,11 @@ FAILED_INSTALLS = {
     ),
     "signal": (
         "#!/bin/sh\nkill -KILL $$\n",
-        f"docs_site: npm ci in site/ was stopped by signal 9: {NEXT_STEP}\n",
+        f"docs_site: npm ci in site/ was stopped by signal SIGKILL (9): {AGAIN}\n",
+    ),
+    "signal to end": (
+        "#!/bin/sh\nkill -TERM $$\n",
+        f"docs_site: npm ci in site/ was stopped by signal SIGTERM (15): {AGAIN}\n",
     ),
     "no start": (
         "#!/no/such/interpreter\n",
@@ -1472,6 +1872,38 @@ def test_an_astro_that_cannot_start_names_the_step_and_the_next_step(
         "docs_site: astro build in site/ could not start (Permission denied): run npm ci in "
         "site/, then python3 tools/docs_site.py build\n",
     )
+
+
+def test_an_astro_stopped_by_a_signal_names_the_signal_and_the_next_step(
+    docs_site: ModuleType,
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    repo = tmp_path / "repo"
+    copy_build_inputs(repo_root, repo)
+    astro = repo / "site/node_modules/.bin/astro"
+    write(repo, "site/node_modules/.bin/astro", "#!/bin/sh\nkill -KILL $$\n")
+    astro.chmod(0o755)
+    monkeypatch.setattr(docs_site, "REPO", repo)
+
+    assert docs_site.main(["build"]) == EXIT_REFUSED
+    assert capfd.readouterr() == (
+        "",
+        "docs_site: astro build in site/ was stopped by signal SIGKILL (9): run python3 "
+        "tools/docs_site.py build again\n",
+    )
+
+
+# Signals by their number, and how a refusal names each: by its name and its number, or by its
+# number alone when it has no name.
+SIGNAL_WORDS = {9: "signal SIGKILL (9)", 15: "signal SIGTERM (15)", 99: "signal 99"}
+
+
+@pytest.mark.parametrize("number", sorted(SIGNAL_WORDS))
+def test_a_signal_is_named_with_its_number(docs_site: ModuleType, number: int) -> None:
+    assert docs_site.signal_words(number) == SIGNAL_WORDS[number]
 
 
 def test_the_software_runs_on_the_systems_the_package_names(repo_root: Path) -> None:
