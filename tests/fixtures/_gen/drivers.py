@@ -30,18 +30,22 @@ the gpu-kernel showcase's ``kernel_bench`` on one NVIDIA GPU, built inside the
 showcase's pinned CUDA development image by its ``build.sh`` (which pins the
 NVBench commit and the CMake release), and run with ``NVBENCH_OPTIONS`` and
 ``--json`` into the folder a launch gives the driver. The device entry (its
-name and every hardware figure; the id stays), the mean SM clock rate and the
-share of peak memory bandwidth of each state, and the program's path are
-replaced by made-up values. Every other value is kept as the run wrote it,
-including those that describe the GPU: each state's GPU and CPU times, item
-rate, global-memory bandwidth in bytes per second and clock scaling. A path
-left outside the run folder stops the writer, and so does a path in the run
-folder with a step that is not plain (ASCII letters, digits, '.', '_' and '-'),
-a state in which it did not replace exactly one mean clock rate and one share
-of peak memory bandwidth, or in which either summary holds data beside the
-value it replaces, and a summary NVBench measured with CUPTI (a tag that starts
-with nv/cupti/), whose figures the writer cannot vouch for. Its sidecar names
-the image with its digest, the NVBench commit, the command and what was
+name and every hardware figure; the id stays), the mean SM clock rate, its
+ratio to the default clock rate and the share of peak memory bandwidth of each
+state, and the program's path are replaced by made-up values. Every other value
+is kept as the run wrote it, including those that describe the GPU: each
+state's GPU and CPU times, item rate and global-memory bandwidth in bytes per
+second. A path left outside the run folder stops the writer, and so does a path
+in the run folder with a step that is not plain (ASCII letters, digits, '.',
+'_' and '-'), an empty benchmarks or states list, a state in which it did not
+replace exactly one mean clock rate, one clock ratio and one share of peak
+memory bandwidth, or in which any of them holds data beside the value it
+replaces, a tag or hint that is not a string, that differs from one the writer
+looks for only by case or a look-alike character, or that holds a character
+outside printable ASCII, a summary or data entry holding a key NVBench does
+not write, and a summary NVBench measured with CUPTI (a tag that starts with
+nv/cupti/), whose figures the writer cannot vouch for. Its sidecar
+names the image with its digest, the NVBench commit, the command and what was
 replaced.
 
 ``wall`` reads no file and has no fixture.
@@ -54,6 +58,7 @@ import json
 import posixpath
 import re
 import sys
+import unicodedata
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, NoReturn
@@ -172,6 +177,11 @@ NVBENCH_OPTIONS = "--min-samples 10 --timeout 2"
 NVBENCH_RUN_FOLDER = "/pairbench/artifacts/"
 NVBENCH_PROGRAM = "./kernel_bench"
 NVBENCH_CLOCK = "1000000000"
+# A state's mean clock rate over the device's default clock rate gives the mean
+# clock back from the default clock a card's public data states, so it is made
+# up too: the made-up clock over the made-up default clock, written as NVBench
+# writes that number.
+NVBENCH_CLOCK_SCALING = "1"
 # A state's share of the device's peak memory bandwidth gives that peak back
 # from the state's bytes per second, so it is made up too.
 NVBENCH_UTILIZATION = "0.5"
@@ -437,6 +447,34 @@ _RUN_FOLDER = NVBENCH_RUN_FOLDER.rstrip("/")
 # '.', '_' and '-'.
 _PLAIN_STEPS = re.compile(r"(?:/[A-Za-z0-9._-]+)*")
 
+# The summaries whose value the writer replaces or refuses: the field it reads,
+# the text it looks for, whether the field is that text ('is'), ends with it
+# ('ends') or starts with it ('starts'), and how a message names it.
+_LOOKED_FOR = (
+    ("hint", "frequency", "is", "the hint frequency"),
+    ("tag", "/bw/global/utilization", "ends", "a tag ending /bw/global/utilization"),
+    (
+        "tag",
+        "/sm_clock_rate/scaling/percent",
+        "ends",
+        "a tag ending /sm_clock_rate/scaling/percent",
+    ),
+    ("tag", "nv/cupti/", "starts", "a tag starting nv/cupti/"),
+)
+# Characters drawn like a character of a text the writer looks for, in either
+# case, beyond what NFKC and case give: slashes from other blocks (fraction
+# slash, division slash, a box-drawing diagonal, big solidus), and the ASCII
+# characters that Unicode's confusables data draws like 'l', like 'I' (an 'i'
+# in capitals) or like 'o' (UTS #39 version 18.0.0,
+# https://www.unicode.org/Public/18.0.0/security/confusables.txt). The same data
+# draws 'rn' like 'm', which _looks_like reads as 'm'.
+_LOOK_ALIKES = {
+    "/": "\u2044\u2215\u2571\u29f8",
+    "i": "1l|",
+    "l": "1I|",
+    "o": "0",
+}
+
 
 def _texts(node: Any, keys: tuple[str | None, ...] = ()) -> Iterator[tuple[str, bool]]:
     """Yield every key and text of NODE, each with whether it is a state summary's own text.
@@ -527,33 +565,149 @@ def _objects(
     return items
 
 
+def _alike(char: str, proper: str) -> bool:
+    """Whether CHAR is PROPER, PROPER in another case, or drawn like PROPER."""
+    return char.casefold() == proper.casefold() or char in _LOOK_ALIKES.get(proper, "")
+
+
+def _looks_like(text: str, proper: str, how: str) -> bool:
+    """Whether TEXT holds PROPER as HOW says, once case and look-alike characters are set aside.
+
+    TEXT is taken in its NFKC form, without control, format, unassigned and
+    blank characters, with 'rn' read as 'm'; each remaining character of the
+    part compared must be alike the character of PROPER at its place.
+    """
+    shown = "".join(
+        char
+        for char in unicodedata.normalize("NFKC", text)
+        if unicodedata.category(char)[0] not in "CZ"
+    )
+    shown = re.sub("rn", "m", shown, flags=re.IGNORECASE)
+    if how == "is":
+        part = shown
+    elif how == "ends":
+        part = shown[-len(proper) :]
+    else:
+        part = shown[: len(proper)]
+    return len(part) == len(proper) and all(map(_alike, part, proper))
+
+
+def _written(text: str, proper: str, how: str) -> bool:
+    """Whether TEXT holds PROPER exactly as HOW says."""
+    if how == "is":
+        return text == proper
+    return text.endswith(proper) if how == "ends" else text.startswith(proper)
+
+
+def _printable_ascii(text: str) -> bool:
+    return all(" " <= char <= "~" for char in text)
+
+
+# The keys NVBench's JSON printer writes in a summary and in an entry of its
+# data, as nvbench/json_printer.cu at NVBENCH_COMMIT writes them:
+# https://github.com/NVIDIA/nvbench/blob/0f8eb2dd715f90e963a8ab0ff9374097110cc3f9/nvbench/json_printer.cu
+# The writer reads only these, so a figure under any other key could stay in the
+# fixture.
+_SUMMARY_KEYS = frozenset({"tag", "name", "description", "hint", "hide", "data"})
+_DATA_KEYS = frozenset({"name", "type", "value"})
+
+
+def _check_keys(summaries: list[dict[str, Any]], where: str) -> None:
+    """Refuse a summary or data entry holding a key NVBench does not write."""
+    odd: list[str] = []
+    for index, summary in enumerate(summaries):
+        odd += [f"summaries[{index}] {key!a}" for key in summary if key not in _SUMMARY_KEYS]
+        for number, entry in enumerate(summary.get("data", [])):
+            odd += [
+                f"summaries[{index}].data[{number}] {key!a}"
+                for key in entry
+                if key not in _DATA_KEYS
+            ]
+    if odd:
+        _refuse(
+            f"{where}: a key NVBench does not write: {', '.join(odd)}; NVBench writes a "
+            "summary with tag, name, description, hint, hide and data, and each data entry "
+            "with name, type and value, so a figure under another key could stay in the fixture"
+        )
+
+
+def _check_tags_and_hints(summaries: list[dict[str, Any]], where: str) -> None:
+    """Refuse a tag or hint that only looks like one the writer looks for, or is not ASCII.
+
+    NVBench writes every tag and hint as a string in printable ASCII, exactly as
+    its source spells it. A tag or hint that is not a string cannot be compared,
+    so it refuses. A summary whose tag or hint differs from one in _LOOKED_FOR
+    only by case or by a look-alike character would keep its value, so it
+    refuses; so does any other character outside printable ASCII, since a
+    letter drawn like an ASCII one (a Cyrillic 'a', a Greek omicron) has no NFKC
+    form.
+    """
+    near: list[str] = []
+    outside: list[str] = []
+    for index, summary in enumerate(summaries):
+        for field in ("tag", "hint"):
+            text = summary.get(field, "")
+            if not isinstance(text, str):
+                _refuse(f"nvbench.json: {where}.summaries[{index}].{field} is not a string")
+            near += [
+                f"summaries[{index}] {field} {text!a} (like {said})"
+                for looked_for, proper, how, said in _LOOKED_FOR
+                if looked_for == field
+                and not _written(text, proper, how)
+                and _looks_like(text, proper, how)
+            ]
+            if not _printable_ascii(text):
+                outside.append(f"summaries[{index}] {field} {text!a}")
+    if near:
+        _refuse(
+            f"{where}: a tag or hint that differs only by case or a look-alike character from "
+            f"one the writer looks for: {', '.join(near)}; NVBench writes it exactly, so a real "
+            "figure could stay in the fixture"
+        )
+    if outside:
+        _refuse(
+            f"{where}: a tag or hint with a character outside printable ASCII: "
+            f"{', '.join(outside)}; NVBench writes its tags and hints in printable ASCII, so a "
+            "look-alike of one the writer looks for could keep a real figure in the fixture"
+        )
+
+
 def _replace_clock_and_share(state: dict[str, Any], where: str) -> None:
-    """Replace the state's mean clock rate and share of peak memory bandwidth.
+    """Replace the state's mean clock rate, clock ratio and share of peak memory bandwidth.
 
     Refuses unless exactly one value of each was replaced, and when such a
     summary holds data other than its value, so a renamed hint or tag, or a
     figure beside the value, cannot leave a real figure in the fixture. Refuses
-    a summary NVBench measured with CUPTI, whose tag starts with nv/cupti/: the
-    writer cannot vouch for a figure CUPTI read from the device.
+    a tag or hint that only looks like one the writer looks for, or that holds a
+    character outside printable ASCII, and a summary or data entry holding a key
+    NVBench does not write. Refuses a summary NVBench measured with CUPTI, whose
+    tag starts with nv/cupti/: the writer cannot vouch for a figure CUPTI read
+    from the device.
     """
-    replaced = {NVBENCH_CLOCK: 0, NVBENCH_UTILIZATION: 0}
+    replaced = {"clock": 0, "share": 0, "ratio": 0}
     beside: list[str] = []
     cupti: list[str] = []
     summaries = _objects(state, "summaries", f"{where}.summaries", [])
     for index, summary in enumerate(summaries):
-        data = _objects(summary, "data", f"{where}.summaries[{index}].data", [])
+        _objects(summary, "data", f"{where}.summaries[{index}].data", [])
+    _check_keys(summaries, where)
+    _check_tags_and_hints(summaries, where)
+    for index, summary in enumerate(summaries):
+        data = summary.get("data", [])
         tag = str(summary.get("tag", ""))
         if tag.startswith("nv/cupti/"):
             cupti.append(f"summaries[{index}] '{tag}'")
-        made_up = None
+        kind = None
         if summary.get("hint") == "frequency":
-            made_up = NVBENCH_CLOCK
+            kind, made_up = "clock", NVBENCH_CLOCK
         elif tag.endswith("/bw/global/utilization"):
-            made_up = NVBENCH_UTILIZATION
-        for entry in data if made_up else []:
+            kind, made_up = "share", NVBENCH_UTILIZATION
+        elif tag.endswith("/sm_clock_rate/scaling/percent"):
+            kind, made_up = "ratio", NVBENCH_CLOCK_SCALING
+        for entry in data if kind else []:
             if entry.get("name") == "value":
                 entry["value"] = made_up
-                replaced[made_up] += 1
+                replaced[kind] += 1
             else:
                 beside.append(f"summaries[{index}] '{entry.get('name')}'")
     if cupti:
@@ -562,18 +716,19 @@ def _replace_clock_and_share(state: dict[str, Any], where: str) -> None:
             "cannot vouch for a CUPTI figure, so a real figure of the device could stay in the "
             "fixture"
         )
-    clocks, shares = replaced[NVBENCH_CLOCK], replaced[NVBENCH_UTILIZATION]
-    if (clocks, shares) != (1, 1):
+    clocks, shares, ratios = replaced["clock"], replaced["share"], replaced["ratio"]
+    if (clocks, shares, ratios) != (1, 1, 1):
         _refuse(
             f"{where}: values replaced under the hint frequency: {clocks}, under a tag ending "
-            f"/bw/global/utilization: {shares}; each state needs exactly one of each, or a real "
-            "clock rate or bandwidth share could stay in the fixture"
+            f"/bw/global/utilization: {shares}, under a tag ending "
+            f"/sm_clock_rate/scaling/percent: {ratios}; each state needs exactly one of each, or "
+            "a real clock rate, clock ratio or bandwidth share could stay in the fixture"
         )
     if beside:
         _refuse(
-            f"{where}: a clock rate or bandwidth share summary holds data other than its value: "
-            f"{', '.join(beside)}; only the value is replaced, so a real figure could stay in "
-            "the fixture"
+            f"{where}: a clock rate, clock ratio or bandwidth share summary holds data other "
+            f"than its value: {', '.join(beside)}; only the value is replaced, so a real figure "
+            "could stay in the fixture"
         )
 
 
@@ -591,8 +746,20 @@ def nvbench(raw: Path) -> Fixtures:
         if "id" not in device:
             _refuse(f"nvbench.json: devices[{index}] has no id")
     doc["devices"] = [{"id": device["id"], **NVBENCH_DEVICE} for device in devices]
-    for b, bench in enumerate(_objects(doc, "benchmarks", "benchmarks")):
-        for s, state in enumerate(_objects(bench, "states", f"benchmarks[{b}].states")):
+    benchmarks = _objects(doc, "benchmarks", "benchmarks")
+    if not benchmarks:
+        _refuse(
+            "nvbench.json: the benchmarks list is empty; the writer needs a benchmark with a "
+            "state to check"
+        )
+    for b, bench in enumerate(benchmarks):
+        states = _objects(bench, "states", f"benchmarks[{b}].states")
+        if not states:
+            _refuse(
+                f"nvbench.json: the benchmarks[{b}].states list is empty; the writer needs a "
+                "state in each benchmark to check"
+            )
+        for s, state in enumerate(states):
             _replace_clock_and_share(state, f"benchmarks[{b}].states[{s}]")
     # The program's path in argv[0] is the writer's own made-up value.
     checked = {**doc, "meta": {**meta, "argv": meta["argv"][1:], "raw_argv": meta["raw_argv"][1:]}}
@@ -603,6 +770,9 @@ def nvbench(raw: Path) -> Fixtures:
     replaced = (
         "devices: every hardware figure and the name replaced by made-up values, the id kept; "
         f"each summary with the hint frequency (the mean SM clock rate) set to {NVBENCH_CLOCK}; "
+        "each nv/cold/sm_clock_rate/scaling/percent (the mean SM clock rate over the device's "
+        f"default clock rate) set to {NVBENCH_CLOCK_SCALING}, the made-up clock rate over the "
+        "made-up default clock rate; "
         "each nv/cold/bw/global/utilization (a share of the device's peak memory bandwidth) "
         f"set to {NVBENCH_UTILIZATION}; "
         f"the program's path in meta.argv[0] and meta.raw_argv[0] replaced by {NVBENCH_PROGRAM}; "

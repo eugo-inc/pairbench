@@ -10,5 +10,5 @@
   "nvbench_commit": "0f8eb2dd715f90e963a8ab0ff9374097110cc3f9",
   "source": "https://github.com/NVIDIA/nvbench at commit 0f8eb2dd715f90e963a8ab0ff9374097110cc3f9",
   "command": "./kernel_bench --min-samples 10 --timeout 2 --json /pairbench/artifacts/nvbench.json",
-  "replaced": "devices: every hardware figure and the name replaced by made-up values, the id kept; each summary with the hint frequency (the mean SM clock rate) set to 1000000000; each nv/cold/bw/global/utilization (a share of the device's peak memory bandwidth) set to 0.5; the program's path in meta.argv[0] and meta.raw_argv[0] replaced by ./kernel_bench; every other measured time, count, rate and ratio kept as the run wrote it"
+  "replaced": "devices: every hardware figure and the name replaced by made-up values, the id kept; each summary with the hint frequency (the mean SM clock rate) set to 1000000000; each nv/cold/sm_clock_rate/scaling/percent (the mean SM clock rate over the device's default clock rate) set to 1, the made-up clock rate over the made-up default clock rate; each nv/cold/bw/global/utilization (a share of the device's peak memory bandwidth) set to 0.5; the program's path in meta.argv[0] and meta.raw_argv[0] replaced by ./kernel_bench; every other measured time, count, rate and ratio kept as the run wrote it"
 }
