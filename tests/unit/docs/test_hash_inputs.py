@@ -3978,6 +3978,7 @@ def test_the_script_container_may_not_swap_past_its_memory_limit(tmp_path: Path)
     assert command[command.index("--memory-swap") + 1] == SCRIPT_MEMORY
 
 
+@pytest.mark.needs_engine("docker")
 def test_a_real_showcase_script_publishes_a_sidecar_that_can_be_shared(
     needs: Any, repo_root: Path, tmp_path: Path
 ) -> None:
@@ -3999,6 +4000,7 @@ def test_a_real_showcase_script_publishes_a_sidecar_that_can_be_shared(
     assert (private / "published" / "quiet" / "capture.jsonl").is_file()
 
 
+@pytest.mark.needs_engine("docker")
 def test_a_real_showcase_script_publishes_the_shared_files_when_the_sidecar_is_private(
     needs: Any, repo_root: Path, tmp_path: Path
 ) -> None:
@@ -4183,6 +4185,7 @@ def writer_container(
     ]
 
 
+@pytest.mark.needs_engine("docker")
 def test_a_file_a_writer_killed_in_a_container_left_is_kept_while_young_and_removed_when_old(
     needs: Any, writer: ModuleType, repo_root: Path, tmp_path: Path
 ) -> None:
@@ -4225,6 +4228,7 @@ def test_a_file_a_writer_killed_in_a_container_left_is_kept_while_young_and_remo
     ]
 
 
+@pytest.mark.needs_engine("docker")
 def test_two_writers_of_one_process_number_in_two_containers_leave_a_whole_sidecar(
     needs: Any, writer: ModuleType, repo_root: Path, tmp_path: Path
 ) -> None:

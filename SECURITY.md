@@ -120,6 +120,28 @@ of names are not read as you may mean them:
   its folders is read as paths that end at each quote, so the folder names in quotes show:
   `cat '/srv/Zq Files'/x.txt` shows `cat 'Zq Files'x.txt`, and `cat /srv/'Zq Files'/x.txt`
   shows `cat srv'Zq Files'x.txt`.
+- **A home folder under another folder.** A path whose last part is a home folder shows
+  `<hidden>` in its place when that folder is right under `/home` or `/Users`, at the root or
+  reached by climbing with `..`, or is written `~made-up-user`. A home folder kept under any
+  other folder is read as an ordinary folder, so its name shows as the last part:
+  `tool /var/home/user` shows `tool user`. So does a file named after its user
+  (`tool ../made-up-user.txt` shows `tool made-up-user.txt`), and so does a home written
+  `~made-up-user` glued to a short option, which is read as part of the option
+  (`tool -d~made-up-user` shows as typed). Write your own home folder as `~`, which shows as
+  typed, or name a file inside it, and give an option its folder as a word of its own.
+- **A home folder's name in a case id.** A case id keeps the name of a home folder, since in
+  the name of a test or a benchmark such a name is often no home, and two ids that differ only
+  there are two cases. A word that starts with `~` and a name, with nothing after it, shows as
+  typed (`test_invert[~mask]`, `test_dtor[~Widget]`), and a path that ends at a folder right
+  under `/home` or `/Users`, at the root or reached by climbing with `..`, is cut to that
+  folder's name, as any path in a case id is cut to its last part, since a route reads the same
+  (`test_get[/users/1]` shows `test_get[1]`). So a user's home shows its name:
+  `test_read[~made-up-user]` shows as typed, `test_read[/home/user]` shows `test_read[user]`,
+  and so does a case that `hyperfine` names after the command `ls ~made-up-user` or
+  `ls /home/user`, while the shown command hides that home. A path that goes on into the home
+  is cut to its last part (`test_read[~made-up-user/x.csv]` shows `test_read[x.csv]`). Name a
+  file inside the home, write your own home as `~`, or give the case a name, as hyperfine's
+  `--command-name` gives one.
 - **A path after a variable, or joined in code.** A path that starts with a variable, such as
   `$HOME/Zq Files/x.txt`, is not read as an absolute path, so its folders show as typed. Of a
   path that a program joins from parts, such as `Path('/srv') / 'Zq Files' / 'x.txt'`, each
@@ -269,6 +291,13 @@ of names are not read as you may mean them:
   `redis-cli --cluster call made-up-host:7000 AUTH password` show whole, and so does a rule of
   `ACL SETUSER` such as `>password` in either. A credential form that the argument of any
   program hides, such as `--password password`, is hidden in the value of an option of `ssh`.
+- **A command glued to an option of another name.** Of a program that the config reference
+  does not list with its command options, the text glued with `=` to `--command`, `--cmd`,
+  `--exec` or `--run` is read as the same text given as the next argument. The text glued to
+  an option of any other name is one value, so a client's password in it shows:
+  `made-up-tool '--execute=redis-cli -a password PING'` shows whole. Give such a text as the
+  next argument: `made-up-tool --execute 'redis-cli -a password PING'` shows
+  `made-up-tool --execute 'redis-cli -a <hidden> PING'`.
 - **A password rule in `$'...'` quotes.** A word in the `$'...'` quotes of a shell is not read
   as a rule of `ACL SETUSER`, so in a shell text, as in
   `redis-cli ACL SETUSER app on $'>password'` after `bash -c`, the password shows. In plain
@@ -348,7 +377,8 @@ of names are not read as you may mean them:
   with exit 7 a document filled from one capture when it is filled from the results of another
   analysed apart. Pool the captures with one `pairbench compare`, or fill from the results of
   the same capture. A case that
-  `hyperfine` names after its command is cleaned as the shown command is
+  `hyperfine` names after its command is cleaned as the shown command is, but for the name of a
+  home folder, which it keeps as any case id does
   (`curl https://db.example/x` gives `curl https://<hidden>/x`). A case id in rows given from
   outside, in the text input format or through the Python API, shows as written, an absolute
   path and a secret included (`t[/made/up/x.csv]`). Give a case that takes an address a name

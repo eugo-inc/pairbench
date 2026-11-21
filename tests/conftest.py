@@ -34,7 +34,7 @@ import shutil
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 
@@ -143,14 +143,34 @@ def _fresh_registry() -> Iterator[None]:
     registry.reset()
 
 
+class _Test(Protocol):
+    nodeid: str
+
+    def get_closest_marker(self, name: str) -> object | None: ...
+
+
+UNMARKED_ENGINE = (
+    "this test asks for a container engine without the needs_engine mark: mark it with "
+    "pytest.mark.needs_engine, so a run that leaves out that mark leaves this test out too"
+)
+
+
 class Needs:
     """Ask for an engine, a GPU or an external program from inside a test."""
 
-    def __init__(self, nodeid: str) -> None:
-        self._nodeid = nodeid
+    def __init__(self, node: _Test) -> None:
+        self._node = node
+        self._nodeid = node.nodeid
 
     def engine(self, name: str | None = None) -> str:
-        """Return the name of an available container engine, or skip."""
+        """Return the name of an available container engine, or skip.
+
+        A test that starts a container carries the ``needs_engine`` mark, so a run that
+        leaves out the tests marked so (``-m "not needs_engine"``) starts no container.
+        A test that asks without the mark fails before any engine is looked for.
+        """
+        if self._node.get_closest_marker("needs_engine") is None:
+            pytest.fail(UNMARKED_ENGINE)
         return _engine(self._nodeid, name)
 
     def gpu(self) -> None:
@@ -168,7 +188,7 @@ class Needs:
 
 @pytest.fixture
 def needs(request: pytest.FixtureRequest) -> Needs:
-    return Needs(request.node.nodeid)
+    return Needs(request.node)
 
 
 @dataclass(frozen=True)

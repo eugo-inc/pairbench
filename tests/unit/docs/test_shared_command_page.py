@@ -10,7 +10,10 @@ shows. The other pages that describe the shown command link to it.
 
 from __future__ import annotations
 
+import random
+import re
 import shlex
+import string
 from pathlib import Path
 
 import pytest
@@ -224,32 +227,93 @@ def test_the_section_says_how_runs_with_a_slash_are_judged(repo_root: Path) -> N
     ) in text
 
 
-# The section's examples of a key after folders of small letters, as the page writes each value
-# and what it shows, with ``<key>`` for a made-up key.
-FOLDER_EXAMPLES = (
-    ("srv/data/<key>/out.json", "srv/data/<hidden>/out.json"),
-    ("srv/nfs/<key>/x.bin", "srv/nfs/<hidden>/x.bin"),
-    ("v1/srv/nfs/<key>/x.bin", "v1/srv/nfs/<hidden>/x.bin"),
+# The section's example of a key after folders of small letters, which the readings that leave
+# the folders out hide, as the page writes the value and what it shows.
+FOLDER_EXAMPLE = (
+    "srv/data/EXAMPLETailFakezQ9/zQx9XyTAILRealUP/out.json",
+    "srv/data/<hidden>/out.json",
 )
-FOLDER_EXAMPLE_KEY = "EXAMPLETailFakezQ9/zQx9XyTAILRealUP"
 
 
 def test_the_section_says_how_folders_of_small_letters_around_a_key_are_read(
     repo_root: Path,
 ) -> None:
     text = plain(section(repo_root))
+    value, shown = FOLDER_EXAMPLE
 
     assert (
         "then with the parts of three small letters or more at its ends left out, and then with "
         "those parts and the words of a path before or between them left out"
     ) in text
     assert "The first of these readings that hides a key is the one used." in text
-    for value, shown in FOLDER_EXAMPLES:
-        assert f"`{value}` shows `{shown}`" in text
-        argv = ["client", value.replace("<key>", FOLDER_EXAMPLE_KEY)]
+    assert f"`{value}` shows `{shown}`" in text
+    hidden = shown.replace("<hidden>", model.HIDDEN)
+    assert model.hashed_argv(["client", value]) == ["client", hidden]
+    assert model.public_command(["client", value]) == shlex.join(["client", hidden])
+
+
+# The made-up key the section's ``<key>`` stands for: letters and digits that look random.
+PAGE_KEY = "EXAMPLE7qQ7xK2mP9vL4nR8tW3yZ6bC1dF5gH0jS2kEAw"
+# An example on the page of a value that holds ``<key>`` and what it shows.
+KEY_EXAMPLE = re.compile(r"`([^`]*<key>[^`]*)` shows `([^`]*)`")
+# The examples the section gives so, and how many keys of the page key's shape each is run with.
+KEY_EXAMPLES = (
+    ("../data/<key>/out.json", "..<hidden>.json"),
+    ("srv/data/<key>/out.json", "<hidden>.json"),
+    ("srv/nfs/<key>/x.bin", "<hidden>.bin"),
+    ("v1/srv/nfs/<key>/x.bin", "v1/<hidden>/x.bin"),
+)
+SEEDED_KEYS = 64
+
+
+def test_the_section_names_the_key_its_examples_stand_for(repo_root: Path) -> None:
+    assert (
+        "`<key>` stands for a made-up key of letters and digits that looks random by itself, "
+        f"such as `{PAGE_KEY}`"
+    ) in plain(section(repo_root))
+    assert model.looks_random(PAGE_KEY)
+    assert PAGE_KEY.isalnum()
+
+
+# The section's example of a key shorter than the rule's length with short words of a path on
+# each side of it, as the page writes the value and what it shows.
+SHORT_KEY_EXAMPLE = (
+    "data/au/EXAMPLETailFakezQ9zQx9XyTAILRea/p+em2/out.json",
+    "data/<hidden>/out.json",
+)
+
+
+def test_the_section_writes_its_short_key_example_with_its_key(repo_root: Path) -> None:
+    value, shown = SHORT_KEY_EXAMPLE
+    key = value.split("/")[2]
+
+    assert f"`{value}` shows `{shown}`" in plain(section(repo_root))
+    assert len(key) < model.RANDOM_MIN_LENGTH
+    hidden = shown.replace("<hidden>", model.HIDDEN)
+    assert model.hashed_argv(["client", value]) == ["client", hidden]
+    assert model.public_command(["client", value]) == shlex.join(["client", hidden])
+
+
+def _keys_of_the_page_key_shape() -> list[str]:
+    """The page's key and seeded keys of letters and digits of its length that look random."""
+    rng = random.Random(4171)
+    letters = string.ascii_letters + string.digits
+    keys = ["".join(rng.choice(letters) for _ in PAGE_KEY) for _ in range(SEEDED_KEYS)]
+    return [PAGE_KEY, *(key for key in keys if model.looks_random(key))]
+
+
+def test_every_key_example_of_the_section_shows_what_the_page_says(repo_root: Path) -> None:
+    examples = KEY_EXAMPLE.findall(plain(section(repo_root)))
+    keys = _keys_of_the_page_key_shape()
+
+    assert len(keys) > SEEDED_KEYS // 2
+    for value, shown in examples:
         hidden = shown.replace("<hidden>", model.HIDDEN)
-        assert model.hashed_argv(argv) == ["client", hidden]
-        assert model.public_command(argv) == shlex.join(["client", hidden])
+        for key in keys:
+            typed = value.replace("<key>", key)
+            assert model.hashed_argv(["client", typed]) == ["client", hidden], typed
+            assert model.public_command(["client", typed]) == shlex.join(["client", hidden]), typed
+    assert tuple(examples) == KEY_EXAMPLES
 
 
 def test_the_section_says_hexadecimal_after_0x_follows_the_rule(repo_root: Path) -> None:

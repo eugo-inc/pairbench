@@ -165,7 +165,10 @@ before `CONFIG` names the passes of a compiler, so `pass_config` is shown, while
 that was run, for the "how to reproduce" line, with the spec of each `--side` and the value of
 each `--set` replaced by `<hidden>` (with `report.include_image_refs` an image reference is
 shown), each absolute path, and each relative path that climbs out of its folder with `..`, cut
-to its last part, and the secret part of each form on this list
+to its last part, a path whose last part is a home folder, the folder right under `/home` or
+`/Users` (`/home/user` or `../home/user`, also as the last path of a list such as
+`/usr/bin:/home/user`) or a home written `~made-up-user`, cut to `<hidden>`, as that folder is
+named after its user, and the secret part of each form on this list
 replaced by `<hidden>`. The capture, `capture.jsonl`, keeps the command as typed: it is private
 to the person who ran the benchmark, and pairbench creates it readable and writable by its
 owner only (mode `0600`), as it does the files that hold what each process, load step and
@@ -332,8 +335,8 @@ outside the brackets of an id that has brackets are read only part by part. A pr
 in the brackets is read as the shown command reads it, so a credential's value it gives as a
 string is hidden: `bench[python -c "password = 'made-up'"]` shows
 `bench[python -c "password = '<hidden>'"]`. A refusal that names a case id, such as the
-refusal of a value that is not a finite number or of a case printed twice, names it as the
-reports show it, in `results.json` and `results.md` too, and a refusal of a `--case` pattern
+refusal of a value that is not a finite number, of a case printed twice or of a hyperfine run
+that failed, names it as the reports show it, in `results.json` and `results.md` too, and a refusal of a `--case` pattern
 that matches no case names the pattern with the same forms hidden.
 
 A shell text is read as a shell reads it. It is the text after `-c` when the program before it
@@ -670,7 +673,11 @@ after it stays shown:
   `gcloud compute ssh made-up-vm '--command=mysql -p<hidden>'`,
   `hyperfine '--setup=redis-cli -a VALUE FLUSHALL' ./bench-old` shows
   `hyperfine '--setup=redis-cli -a <hidden> FLUSHALL' ./bench-old`, and
-  `env -Sredis-cli -a VALUE` shows `env -Sredis-cli -a '<hidden>'`. The parser of `hyperfine`
+  `env -Sredis-cli -a VALUE` shows `env -Sredis-cli -a '<hidden>'`. So is the text glued to
+  `--command=`, `--cmd=`, `--exec=` or `--run=` of a program that is none of these and no client
+  with options of its own (`made-up-tool`), read as that text given as the next argument is:
+  `made-up-tool '--command=redis-cli -a VALUE PING'` shows
+  `made-up-tool '--command=redis-cli -a <hidden> PING'`. The parser of `hyperfine`
   also takes an `=` between a short option and its glued text off the text
   ([clap 4.5.20](https://github.com/clap-rs/clap/blob/v4.5.20/clap_builder/src/parser/parser.rs),
   which hyperfine 1.19.0 is built with), so `hyperfine '-s=redis-cli -a VALUE FLUSHALL' ./bench-old`
@@ -767,7 +774,13 @@ after them, so both are hidden there: `redis-cli -a '2>&1' VALUE PING` shows
 `redis-cli -a '<hidden>' '<hidden>' PING`. An option given as the file of a redirection is read
 as the option, as the text holds it either way: `sh -c 'redis-cli > -a VALUE'` shows
 `sh -c 'redis-cli > -a <hidden>'`; so is a rule of `ACL SETUSER` that gives a password
-(`>VALUE`), wherever it stands. A
+(`>VALUE`), wherever it stands. In an argument list, a word that looks like a redirection where a
+Redis command takes a user or setting name is that name, as the client gets it, and the password
+of either reading is hidden: `redis-cli ACL SETUSER '>NAME' '>VALUE'` shows
+`redis-cli ACL SETUSER '>NAME' '><hidden>'`, `redis-cli HELLO 3 AUTH '>NAME' VALUE` shows
+`redis-cli HELLO 3 AUTH '>NAME' '<hidden>'`, and `redis-cli CONFIG SET '<NAME' 1 requirepass VALUE`
+shows `redis-cli CONFIG SET '<NAME' 1 requirepass '<hidden>'`; after such a user name of `HELLO`
+the word after the password is hidden as well. A
 command substitution in a shell text (`$(...)`, a text in backquotes, `<(...)` or `>(...)`) is
 one word of the command it stands in, and its own text is a command of its own, read with the
 client it names: `sh -c './bench --label $(redis-cli -a VALUE get k) -n 5'` shows
@@ -822,7 +835,9 @@ them. So a side with `cmd = ["sh", "-c", "redis-benchmark \"$@\"", "_", "{worklo
 same workload as `-- -a '<hidden>' -n 1000`, and its fingerprint is the same for two passwords. A
 parameter in single quotes or after a backslash is text and is not read so. A command the text
 repeats is read once, and the reads stop after as many characters as the command holds and
-65536 more: an argument a command past that would take is hidden.
+65536 more: an argument a command past that would take is hidden. So two workloads that differ
+only in such arguments, such as two long lists of file names that the text hands to two
+commands, show and hash alike: past that bound the hash does not tell them apart.
 
 An image side that names no `entrypoint` and no `args` gives the shared workload to its image's
 own entrypoint, and the workload is read after that entrypoint as the engine reports it. So with
@@ -999,7 +1014,9 @@ or query value of an address (`http://localhost:8000/v1/files/<hidden>/raw?part=
 absolute path that holds one, and a path that starts with `./`, `../` or `~/`, is hidden whole,
 so no part of the value shows as the last part of the path (`../data/<key>/out.json` shows
 `..<hidden>.json`); so is the path of an address whose host is empty (`sqlite:///...`) and the host and
-path of a `file://` address, which are cut the same way.
+path of a `file://` address, which are cut the same way. Here and below, `<key>` stands for a
+made-up key of letters and digits that looks random by itself, such as
+`EXAMPLE7qQ7xK2mP9vL4nR8tW3yZ6bC1dF5gH0jS2kEAw`.
 
 The rule reads each run of letters, digits, `+`, `/`, `_` and `-`, with up to two `=` of padding
 at its end, which it leaves out. A run that holds a `/` and a `+` or `=` padding, as base64 is
@@ -1014,16 +1031,20 @@ whole and the words around it stay shown: `data/<hidden>/out.json`,
 characters, it is read with up to two short words of a path on each side of it, which a key
 holds at an end by chance: words with no run of three small letters and no `-` or `_`, such as
 `8`, `au`, `j0`, `7b` or `p+em2`. When they make 32 characters or more and what lies between
-them passes tests 2 to 5 below, it is hidden with them: `data/au/<key>/p+em2/out.json` shows
-`data/<hidden>/out.json`. When what lies between them is not hidden so, it is also read with
+them passes tests 2 to 5 below, it is hidden with them:
+`data/au/EXAMPLETailFakezQ9zQx9XyTAILRea/p+em2/out.json` shows `data/<hidden>/out.json`.
+When what lies between them is not hidden so, it is also read with
 up to two of its longer words of a path (three small letters or more, or a `-` or `_`) at each
 of its ends left out, with the parts up to them, then with the parts of three small letters or
 more at its ends left out, and then with those parts and the words of a path before or between
 them left out: a folder that is no word of a path, such as `srv` or `nfs`, may stand before a
-key, and `srv/data/<key>/out.json` shows `srv/data/<hidden>/out.json`, `srv/nfs/<key>/x.bin`
-shows `srv/nfs/<hidden>/x.bin` and `v1/srv/nfs/<key>/x.bin` shows `v1/srv/nfs/<hidden>/x.bin`.
-The first of these readings that hides a key is the one used. When no word of a path comes
-before it, the whole run is hidden (`client <hidden>`). A run stays shown when each part between two `/` reads as a
+key, and `srv/data/EXAMPLETailFakezQ9/zQx9XyTAILRealUP/out.json` shows
+`srv/data/<hidden>/out.json`. The first of these readings that hides a key is the one used.
+When no word of a path comes before it, the whole run is hidden (`client <hidden>`). A folder
+such as `srv` or `nfs` before a key that looks random by itself is hidden with the key:
+`srv/data/<key>/out.json` shows `<hidden>.json`, `srv/nfs/<key>/x.bin` shows `<hidden>.bin`
+and `v1/srv/nfs/<key>/x.bin` shows `v1/<hidden>/x.bin`. A run stays shown when each part
+between two `/` reads as a
 name: it does not look random, and it is hexadecimal or each piece of it between `-` and `_` is
 written in CamelCase or as tags, or fails one of the tests below; and when the run, or what lies
 between its words of a path, looks random as a whole, each part there also holds a `-` or `_`,

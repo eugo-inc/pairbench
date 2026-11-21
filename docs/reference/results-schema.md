@@ -139,7 +139,10 @@ Numbers in this example are made up.
   cut to their last part, also when glued to an option (`-I/a/include` shows `-Iinclude`) or
   written after a redirection (`<in.txt>/a/out`), while the `/` after the arguments of a name
   such as `BM_made_up<A, int>/8` is kept. A relative path that climbs out of its folder with `..`
-  is cut the same way (`../../a/in.csv` shows `in.csv`). A `file://` address with a host and no
+  is cut the same way (`../../a/in.csv` shows `in.csv`). A path whose last part is a home
+  folder, the folder right under `/home` or `/Users` or a home written `~made-up-user`, shows
+  `<hidden>` in place of that folder's name (`../home/user` shows `<hidden>`), while the
+  hashes take it as typed. A `file://` address with a host and no
   path loses the host (`file://made-up-host` shows `file://<hidden>`). Secrets are replaced by `<hidden>` in the forms that
   [what the shared files hide](config.md#what-the-shared-files-hide) lists: the value of a
   credential-like name, the value of a credential header, the user part and the host of an

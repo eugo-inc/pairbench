@@ -202,6 +202,7 @@ def _left_to_the_caller_only(code: int, err: str, out: Path) -> None:
     assert {stat.S_IMODE(path.stat().st_mode) for path in exports} == {OWNER_ONLY}
 
 
+@pytest.mark.needs_engine(ENGINE)
 @ENDINGS
 def test_an_interrupted_launch_of_a_root_image_leaves_its_files_to_the_caller_only(
     needs: Any, tmp_path: Path, ending: signal.Signals, mask: int
@@ -213,6 +214,7 @@ def test_an_interrupted_launch_of_a_root_image_leaves_its_files_to_the_caller_on
     _left_to_the_caller_only(code, err, out)
 
 
+@pytest.mark.needs_engine(ENGINE)
 @ENDINGS
 def test_an_interrupted_serving_launch_of_a_root_image_leaves_its_files_to_the_caller_only(
     needs: Any, tmp_path: Path, ending: signal.Signals, mask: int

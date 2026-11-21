@@ -5,6 +5,7 @@ an engine, a GPU or an external program, and the in-process command line."""
 
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
@@ -220,16 +221,129 @@ def test_the_banner_lists_every_test_that_did_not_run(shared: Any) -> None:
     ]
 
 
+class _Node:
+    """A test as the needs fixture sees it: its id and the marks it carries."""
+
+    def __init__(self, *marks: str) -> None:
+        self.nodeid = "tests/made_up.py::test_x"
+        self._marks = marks
+
+    def get_closest_marker(self, name: str) -> object | None:
+        return name if name in self._marks else None
+
+
+UNMARKED_ENGINE = (
+    "this test asks for a container engine without the needs_engine mark: mark it with "
+    "pytest.mark.needs_engine, so a run that leaves out that mark leaves this test out too"
+)
+
+
 def test_the_needs_fixture_asks_the_same_helpers(
-    shared: Any, needs: Any, monkeypatch: pytest.MonkeyPatch
+    shared: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(shared.shutil, "which", lambda name: f"/made/up/{name}")
     monkeypatch.setattr(shared, "REQUIRE_ENGINE", "")
     monkeypatch.setattr(shared, "GPU_TESTS", True)
+    needs = shared.Needs(_Node("needs_engine"))
     assert needs.engine() == "docker"
     assert needs.engine("podman") == "podman"
     assert needs.tool("made-up-tool") == "/made/up/made-up-tool"
     assert needs.gpu() is None
+
+
+def test_a_test_that_asks_for_an_engine_without_the_mark_fails_before_any_look_up(
+    shared: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    looked: list[str] = []
+    monkeypatch.setattr(
+        shared.shutil, "which", lambda name: looked.append(name) or f"/made/up/{name}"
+    )
+    monkeypatch.setattr(shared, "REQUIRE_ENGINE", "")
+    for name in (None, "docker", "podman"):
+        with pytest.raises(pytest.fail.Exception) as failed:
+            shared.Needs(_Node("needs_tool")).engine(name)
+        assert str(failed.value) == UNMARKED_ENGINE
+    assert looked == []
+    assert shared._unmet == []
+
+
+def test_the_needs_fixture_reads_the_marks_of_the_test_it_serves(
+    request: pytest.FixtureRequest, needs: Any
+) -> None:
+    assert needs._node is request.node
+
+
+def _calls_engine(node: ast.AST, helpers: set[str]) -> bool:
+    for found in ast.walk(node):
+        if not isinstance(found, ast.Call):
+            continue
+        called = found.func
+        if (
+            isinstance(called, ast.Attribute)
+            and called.attr == "engine"
+            and isinstance(called.value, ast.Name)
+            and called.value.id == "needs"
+        ):
+            return True
+        if isinstance(called, ast.Name) and called.id in helpers:
+            return True
+    return False
+
+
+def _tests_that_ask_for_an_engine(tree: ast.Module) -> list[ast.FunctionDef]:
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
+    helpers: set[str] = set()
+    grew = True
+    while grew:
+        grew = False
+        for function in functions:
+            if function.name not in helpers and _calls_engine(function, helpers):
+                helpers.add(function.name)
+                grew = True
+    return [f for f in functions if f.name.startswith("test_") and f.name in helpers]
+
+
+def _module_marks(tree: ast.Module, source: str) -> str:
+    return "".join(
+        ast.get_source_segment(source, node) or ""
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets)
+    )
+
+
+def _marks_of(function: ast.FunctionDef, source: str, names: dict[str, str]) -> str:
+    texts = []
+    for decorator in function.decorator_list:
+        text = ast.get_source_segment(source, decorator) or ""
+        texts.append(text)
+        texts.extend(names.get(word, "") for word in names if word in text)
+    return "".join(texts)
+
+
+def test_every_test_that_asks_for_an_engine_carries_the_needs_engine_mark() -> None:
+    root = Path(__file__).resolve().parents[2]
+    unmarked = []
+    asking = 0
+    for path in sorted(root.rglob("test_*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "needs.engine(" not in source or path == Path(__file__).resolve():
+            continue
+        tree = ast.parse(source)
+        names = {
+            target.id: ast.get_source_segment(source, node) or ""
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        module = _module_marks(tree, source)
+        for function in _tests_that_ask_for_an_engine(tree):
+            asking += 1
+            if "needs_engine" not in module + _marks_of(function, source, names):
+                unmarked.append(f"{path.relative_to(root)}::{function.name}")
+    assert asking >= 13
+    assert unmarked == []
 
 
 def _command_line(monkeypatch: pytest.MonkeyPatch, main: Callable[..., Any]) -> None:

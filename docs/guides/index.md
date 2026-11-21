@@ -83,7 +83,12 @@ file. A driver without such a fixture is marked experimental in `pairbench docto
   user written without a scheme, show in a case id, as the
   [known limits](../../SECURITY.md#known-limits-of-the-shown-command) say, so give a case that
   takes an address a name that holds none. So does a password before a host where the same part
-  of the id gives a credential-like name a value with `=` after the host.
+  of the id gives a credential-like name a value with `=` after the host. A case id, the name of
+  a case that `hyperfine` names after its command included, keeps the name of a home folder: a
+  word that starts with `~` and a name, with nothing after it, as typed, and a path that ends
+  at a folder right under `/home` or `/Users` cut to that folder's name, since such a word is
+  often no home (`test_invert[~mask]`) and such a path is often a route (`test_get[/users/1]`
+  shows `test_get[1]`), so a user's home shows its name; name a file inside the home instead.
 - **File sides.** A `file` side hands each driver one result file per round, from a run made
   elsewhere, and the driver reads it as it would read its own output. A file side may name its
   own driver (`format`); the results then name each side's driver, and sides read by

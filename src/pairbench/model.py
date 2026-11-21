@@ -4279,11 +4279,77 @@ def _last_part(text: str) -> str:
     """Cut an absolute path to its last part; leave every other text as it is.
 
     A relative path that climbs with ``..`` (``_climbs``) is cut the same way,
-    as it may name a folder outside the run folder.
+    as it may name a folder outside the run folder. A path that ends at a
+    home folder (``_ends_at_home``) shows ``<hidden>``, as that last part is
+    a user's name, unless home folders' names are kept (``_HOME_NAMES_KEPT``).
     """
     if not text.startswith(("/", "~")) and not _climbs(text):
         return text
+    if _ends_at_home(text):
+        return HIDDEN
     return text.rstrip("/").rpartition("/")[2] or text[:1]
+
+
+# The folders that hold the home folders of a machine's users, each named after its user,
+# as their names are compared in small letters: ``/home/NAME`` and ``/Users/NAME``.
+_HOME_FOLDERS: Final = frozenset({"home", "users"})
+# A user's home folder written with ``~`` and the user's name, as a shell reads one.
+_TILDE_HOME = re.compile(r"~[A-Za-z_][\w.@-]*")
+# Whether the name of a home folder (``_ends_at_home``) is kept: a word ``~NAME`` with nothing
+# after it (``_TILDE_HOME``) as typed, and a path that ends at ``/home/NAME`` or
+# ``/Users/NAME`` cut to that name as any other path is cut to its last part. It is while a
+# case id is read (``public_case``, and ``public_words`` with ``case``): a name cannot tell
+# such a home from a word such as ``~mask`` or ``~Widget``, or from a route such as
+# ``/users/1`` or ``/home/feed``, and two names that differ only there would show as one.
+# The shown command hides it.
+_HOME_NAMES_KEPT: ContextVar[bool] = ContextVar("_HOME_NAMES_KEPT", default=False)
+
+
+def _ends_at_home(path: str) -> bool:
+    """Say whether ``path`` ends at a home folder, whose name is a user's name.
+
+    That is the folder right under ``/home`` or ``/Users`` at the root
+    (``/home/NAME``, ``/Users/NAME/``), the same folder reached by climbing
+    with ``..`` (``../home/NAME``, ``data/../../home/NAME``) or after a folder
+    and its ``..`` (``/home/a/../NAME``), and a user's home written ``~NAME``.
+    In a list of paths joined by ``:`` or ``,`` (``/usr/bin:/home/NAME``), the
+    last path is the one judged. A path that goes on into the folder
+    (``/home/NAME/data``) and a folder of that name anywhere else
+    (``/srv/home/NAME``) do not, and no path does while home folders' names
+    are kept (``_HOME_NAMES_KEPT``), as they are in a case id.
+    """
+    if _HOME_NAMES_KEPT.get():
+        return False
+    path = _LIST_JOIN.split(path)[-1]
+    parts = [part for part in path.split("/") if part not in ("", ".")]
+    if path.startswith("~"):
+        return len(parts) == 1 and _TILDE_HOME.fullmatch(parts[0]) is not None
+    return _home_parts(parts, path.startswith("/")) or _home_parts(
+        _climbs_undone(parts), path.startswith("/")
+    )
+
+
+# The ``:`` or ``,`` that joins one path to the next in a list of paths: before ``/``, ``~``
+# or ``../``.
+_LIST_JOIN = re.compile(r"[:,](?=[/~]|\.\./)")
+
+
+def _home_parts(parts: list[str], rooted: bool) -> bool:
+    """Say whether the folders ``parts`` of a path end at a home folder (``_ends_at_home``)."""
+    if len(parts) < 2 or parts[-2].lower() not in _HOME_FOLDERS:
+        return False
+    return rooted if len(parts) == 2 else parts[-3] == ".."
+
+
+def _climbs_undone(parts: list[str]) -> list[str]:
+    """Drop each folder of a path with the ``..`` that climbs back out of it."""
+    kept: list[str] = []
+    for part in parts:
+        if part == ".." and kept and kept[-1] != "..":
+            kept.pop()
+        else:
+            kept.append(part)
+    return kept
 
 
 # The start of a relative path that climbs with ``..``: folders of letters, digits, ``_``,
@@ -4706,10 +4772,13 @@ def case_percent_paths(case: str) -> list[str]:
 def _percent_path_cut(found: re.Match[str]) -> str:
     """Cut a path written with percent escapes to ``%2F`` and its last part.
 
-    ``%2Fa%2Fb%2Frun`` shows ``%2Frun``.
+    ``%2Fa%2Fb%2Frun`` shows ``%2Frun``, and a path that ends at a home
+    folder (``_ends_at_home``) shows ``%2F<hidden>``.
     """
     run = found.group(0)
     parts = [part for part in _PERCENT_SLASH.split(run) if part]
+    if parts and _ends_at_home("/" + "/".join(parts)):
+        return run[:3] + HIDDEN
     return run[:3] + parts[-1] if parts else run
 
 
@@ -4852,7 +4921,9 @@ def _path_cutter(
             return local + rest, last
         if start and text[start - 1] == ">" and _template_open(text, start - 1):
             return None
-        if _AUTHORITY_END.search(text, max(0, start - _AUTHORITY_REACH), start):
+        reach = max(0, start - _AUTHORITY_REACH)
+        # An address's host ends at the path only where a ``://`` stands before it.
+        if text.find("://", reach, start) >= 0 and _AUTHORITY_END.search(text, reach, start):
             rest, last = _address_rest(text, start + 1, stop, left, inner, in_case)
             return text[start] + rest, last
         if inside(start):
@@ -4907,12 +4978,29 @@ def _public_text(text: str, *, shell: bool) -> str:
     text = _FILE_AUTHORITY.sub(lambda found: f"{found.group(1)}/", text)
     text = _address_sub(_SOCKET_NO_ROOT, lambda found: f"{found.group(1)}/", text)
     text = _PERCENT_PATH.sub(_percent_path_cut, text)
+    if not _HOME_NAMES_KEPT.get():
+        text = _TILDE_HOME_WORD.sub(HIDDEN, text)
     text = _paths_cut(
         _GLUED_PATH, text, _glued_path_cut, _quote_spans(text) if shell else None, group=2
     )
     return _paths_cut(
         _ABSOLUTE_PATH, text, _path_cutter(text), _quote_spans(text) if shell else None
     )
+
+
+# A user's home folder written ``~NAME`` with no ``/`` after it (``_TILDE_HOME``), as a word
+# of its own: at the start of the text or after a blank, a quote, a bracket, a comma, ``=`` or a
+# lone ``:`` (not after ``::``, as in ``Widget::~Widget``), and at the end of the word: before a
+# blank, a quote, a backquote, ``;``, ``&``, ``|``, a closing bracket, ``,``, ``<``, ``>``, a
+# ``:`` that joins another path of a list, or the end of the text. After ``=`` or ``:``, in an
+# assignment or a list, a ``:`` that joins a variable ends it too (``PATH=~NAME:$PATH``). A name
+# that goes on, as the key patterns ``~jobs:*`` and ``~jobs:$TENANT:*`` of a Redis access rule
+# or the call ``~Widget()`` do, is kept.
+_TILDE_HOME_WORD = re.compile(
+    r"""(?<![^\s'"=:(\[{,])(?<!::)~[A-Za-z_][\w.@-]*"""
+    r"""(?=$|[\s'"`;&|)\]},<>]|:(?:[/~]|\.\./))"""
+    r"""|(?<=[=:])(?<!::)~[A-Za-z_][\w.@-]*(?=:\$)"""
+)
 
 
 # The start of an absolute path at the start of a word: ``/`` or ``~``, maybe after a drive
@@ -5068,9 +5156,15 @@ def public_case(case: str) -> str:
     ``test_load[file://x.bin]``). The secrets of each part of the id and of
     the words in its brackets, or of its words when it has no bracket
     (``_case_secrets_hidden``), and its long random-looking values
-    (``looks_random``) are hidden as the shown command hides them. An id
-    that holds none of these is returned unchanged, and so is an id this
-    function returned.
+    (``looks_random``) are hidden as the shown command hides them. The name
+    of a home folder is kept (``_HOME_NAMES_KEPT``): a word ``~NAME`` with
+    nothing after it shows as typed (``test_invert[~mask]``,
+    ``test_read[~NAME]``), and a path that ends at the folder right under
+    ``/home`` or ``/Users`` is cut to that folder's name as any path is cut
+    to its last part (``test_get[/users/1]`` shows ``test_get[1]``), while
+    ``test_read[~NAME/x.csv]`` shows ``test_read[x.csv]``. An id that holds
+    none of these is returned unchanged, and so is an id this function
+    returned.
     """
     return _public_case(case)[0]
 
@@ -5105,16 +5199,20 @@ def _public_case(case: str) -> tuple[str, bool]:
     every word shown is the word the id holds, and reading the secrets of the
     id a second time would only double the time a long id takes.
     """
-    read = _case_addresses_read(case)
-    left: list[tuple[int, int]] = []
-    cutter = _path_cutter(read, left, _CASE_INNER_PATH, in_case=True)
-    cut = _paths_cut(_CASE_PATH, read, cutter, None)
-    shown = _hidden_random(_case_secrets_hidden(cut), paths=False)
-    dropped = _drops_words(read, left) or (
-        (shown != cut or any(_SPACE.search(read, start, end) for start, end in left))
-        and not _words_kept(_case_tell_words(_case_folders_out(read, left)), shown)
-    )
-    return shown, dropped
+    token = _HOME_NAMES_KEPT.set(True)
+    try:
+        read = _case_addresses_read(case)
+        left: list[tuple[int, int]] = []
+        cutter = _path_cutter(read, left, _CASE_INNER_PATH, in_case=True)
+        cut = _paths_cut(_CASE_PATH, read, cutter, None)
+        shown = _hidden_random(_case_secrets_hidden(cut), paths=False)
+        dropped = _drops_words(read, left) or (
+            (shown != cut or any(_SPACE.search(read, start, end) for start, end in left))
+            and not _words_kept(_case_tell_words(_case_folders_out(read, left)), shown)
+        )
+        return shown, dropped
+    finally:
+        _HOME_NAMES_KEPT.reset(token)
 
 
 def _case_addresses_read(case: str) -> str:
@@ -5306,8 +5404,12 @@ def case_secrets_hidden(case: str) -> str:
     secret give the same text, and an id that holds no path to cut gives
     what ``public_case`` gives.
     """
-    case = _address_sub(_ADDRESS_USER, lambda found: f"{found.group(1)}{HIDDEN}@", case)
-    return _hidden_random(_case_secrets_hidden(case), paths=False)
+    token = _HOME_NAMES_KEPT.set(True)
+    try:
+        case = _address_sub(_ADDRESS_USER, lambda found: f"{found.group(1)}{HIDDEN}@", case)
+        return _hidden_random(_case_secrets_hidden(case), paths=False)
+    finally:
+        _HOME_NAMES_KEPT.reset(token)
 
 
 def case_tell_words(case: str) -> list[str]:
@@ -5325,10 +5427,14 @@ def case_tell_words(case: str) -> list[str]:
     through such a folder tells the id apart as one through a plain folder
     does; and a secret never tells two ids apart.
     """
-    read = _case_addresses_read(case)
-    left: list[tuple[int, int]] = []
-    _paths_cut(_CASE_PATH, read, _path_cutter(read, left, _CASE_INNER_PATH, in_case=True), None)
-    return _case_tell_words(_case_folders_out(read, left))
+    token = _HOME_NAMES_KEPT.set(True)
+    try:
+        read = _case_addresses_read(case)
+        left: list[tuple[int, int]] = []
+        _paths_cut(_CASE_PATH, read, _path_cutter(read, left, _CASE_INNER_PATH, in_case=True), None)
+        return _case_tell_words(_case_folders_out(read, left))
+    finally:
+        _HOME_NAMES_KEPT.reset(token)
 
 
 def _case_tell_words(read: str) -> list[str]:
@@ -5649,7 +5755,7 @@ def _breaks_line(gap: str) -> bool:
     it, so that line break ends no command: ``true && \\`` and an ``eval``
     on the next line are one command line.
     """
-    return "\n" in gap.replace("\\\n", "")
+    return "\n" in gap and "\n" in gap.replace("\\\n", "")
 
 
 # A quoted part of a shell word, or an escaped character, which no quote opens.
@@ -6579,6 +6685,11 @@ TEXT_OPTIONS: Final[Mapping[str, tuple[str, ...]]] = {
 # ``-s TEXT`` there. An older hyperfine takes the rest of such a word as the command line of
 # its shell, and a value in it is hidden when it is read as a text too.
 TEXT_OPTION_FLAGS: Final[Mapping[str, str]] = {"hyperfine": "NiVhS"}
+# Long options that many programs take a command text with. Glued to its text
+# (``--command=TEXT``), such an option of a program that is no client, runner or program of
+# ``TEXT_OPTIONS`` is read as the option and then the text, as the text given as the next
+# argument is: its first word names a client too.
+_COMMAND_OPTIONS: Final[tuple[str, ...]] = ("--command", "--cmd", "--exec", "--run")
 # The programs of ``TEXT_OPTIONS`` whose parser takes one ``=`` between a short option and
 # the value glued to it off the value, so ``-s=TEXT`` and ``-Ns=TEXT`` give ``TEXT``: hyperfine,
 # whose parser is clap 4.5.20 (its ``parse_short_arg``,
@@ -6861,6 +6972,9 @@ def _axis_value(word: str, axis: bool, program: str = "") -> bool:
     plain = _plain_word(word).replace("\\", "")
     if axis:
         return _AXIS_KEY.fullmatch(plain) is not None
+    # Every axis option starts with a dash.
+    if not plain.startswith("-"):
+        return False
     for option in AXIS_OPTIONS:
         glued = option + "=" if option.startswith("--") else option
         if (
@@ -7141,6 +7255,9 @@ class _CommandWalk:
         self.followed: bool | None = None
         # Whether the next word is the file of a redirection that stood alone (``>`` ``out``).
         self.redirect_file = False
+        # Whether the user name just read looked like a redirection (``_typed_name``), so the
+        # word after its password is hidden too, as the password when a shell took the name out.
+        self.unsure_user = False
 
     def _no_shell_ahead(self) -> bool:
         """Say whether a word to be read turns off the shell of a runner that reads it late.
@@ -7331,7 +7448,7 @@ class _CommandWalk:
             return False
         return self.shell_word(word)
 
-    def passes_over(self, word: str) -> bool:
+    def passes_over(self, word: str, *, token: bool = False) -> bool:
         """Say whether a word, not yet read, is one a shell takes out of the command's words.
 
         That is a redirection (``_REDIRECTION_WORD``: ``2>&1``, ``>out``,
@@ -7349,7 +7466,9 @@ class _CommandWalk:
         either way: a rule of ``ACL SETUSER`` that gives a password
         (``>VALUE``, ``<VALUE``, ``\\>VALUE``) and an option standing as the
         file (``> -a VALUE``). A word split out of a shell text with its quotes
-        removed (``split``) may have been quoted, and is read as it stands.
+        removed (``split``) may have been quoted, and is read as it stands, and
+        so is a Redis name that looks like a redirection in an argument list
+        that no shell reads (``_typed_name``).
         """
         if self.rule == _NEXT_ACL_RULES and _hidden_acl_rule(word) is not None:
             return False
@@ -7357,7 +7476,36 @@ class _CommandWalk:
             return not _plain_word(word).startswith("-")
         if self.split:
             return False
-        return _REDIRECTION_WORD.match(word) is not None
+        return _REDIRECTION_WORD.match(word) is not None and not self._typed_name(word, token)
+
+    def _typed_name(self, word: str, token: bool) -> bool:
+        """Say whether a word that looks like a redirection is a Redis name as the program gets it.
+
+        In an argument list that no shell reads (neither ``token`` nor
+        ``shell_word``), such a word in the place of a user name
+        (``_NEXT_USER``, ``_NEXT_ACL_USER``) or of an argument of a client's
+        own command (the user of ``ACL SETUSER``, a name of ``CONFIG SET``) is
+        that name: the client gets it as it stands (``>made-up-user``), and the
+        password after it is the next word. It may have been meant for a shell
+        all the same, which would take it out: the turn of names and values
+        after it is left unknown (``read``), and after a user name of
+        ``_NEXT_USER`` the word after the password is hidden too
+        (``unsure_user``). There a redirection whose file is the next word
+        (``>`` ``out``) is passed over, and that file is hidden as the
+        password it is as typed (``shown_next``). A word in the place of a
+        value that the rule hides is passed over as a redirection.
+        """
+        if token:
+            return False
+        if self.rule == _NEXT_USER:
+            redirect = _REDIRECTION_WORD.match(word)
+            if redirect is not None and redirect.end() == len(word):
+                return False
+        elif self.rule != _NEXT_ACL_USER and (
+            not self.client_command or _hidden_next(self.rule, word) is not None
+        ):
+            return False
+        return not self.shell_word(word)
 
     def shown_next(
         self,
@@ -7398,8 +7546,11 @@ class _CommandWalk:
         a shell would give the option the word after them: they are hidden,
         and the option keeps its rule for the next word.
         """
-        if self.passes_over(word):
+        if self.passes_over(word, token=token):
             passed = None if token else _hidden_next(self.rule, word)
+            # The file of a redirection in the place of a user name is the password as typed.
+            if passed is None and not token and self.redirect_file and self.rule == _NEXT_USER:
+                passed = HIDDEN
             if passed is None:
                 return None
             if self.redirect_file or _BARE_REDIRECTION.fullmatch(word) is not None:
@@ -7432,6 +7583,11 @@ class _CommandWalk:
             self.rule = ""
         self.taken = not (auth and (comment or _read_apart(ahead)))
         if not self.taken:
+            self.rule = _NEXT_SECRET
+        # The password after a user name that looked like a redirection: the next word is the
+        # password as well, where a shell took the name out.
+        if self.unsure_user:
+            self.unsure_user = False
             self.rule = _NEXT_SECRET
         self.value = False
         # The word after a scheme word that is the whole value may be a token: the shown
@@ -7568,13 +7724,20 @@ class _CommandWalk:
         The parts are the option (``--command``), what stands before the text
         in the word (``--command=``, or ``'--command=`` when a quote opens the
         word) and the text as a word of its own (``'TEXT'``), so the word is
-        read as the option and its text written apart are.
+        read as the option and its text written apart are. Where the walk holds
+        no client and no program that starts a command text, the options are
+        ``_COMMAND_OPTIONS``.
         """
+        plain = _plain_word(word)
+        # Every option of the tables, and so every head and group, starts with a dash.
+        if not plain.startswith("-") or self.next_text:
+            return None
         program = self._text_program()
         options = TEXT_OPTIONS.get(program)
-        if not options or self.next_text:
+        if not options and not (self.program or self.leader):
+            options = _COMMAND_OPTIONS
+        if not options:
             return None
-        plain = _plain_word(word)
         quote = _quoted_whole(word)
         heads = [
             (option, head) for option in options if (head := _glued_head(plain, option, program))
@@ -7598,7 +7761,7 @@ class _CommandWalk:
         out of the command (``passes_over``, ``token`` as there) changes
         nothing.
         """
-        if self.passes_over(word):
+        if self.passes_over(word, token=token):
             redirect = None if self.redirect_file else _REDIRECTION_WORD.match(word)
             self.redirect_file = redirect is not None and redirect.end() == len(word)
             return
@@ -7616,6 +7779,15 @@ class _CommandWalk:
         expands = (
             bool(self.client_command) and (token or self.shell_word(word)) and _splits_unknown(word)
         )
+        # So does a name that looks like a redirection (``_typed_name``): it may have been meant
+        # for a shell, which would take it out of the command's words.
+        typed_name = (
+            not self.split
+            and _REDIRECTION_WORD.match(word) is not None
+            and self._typed_name(word, token)
+        )
+        expands = expands or typed_name
+        self.unsure_user = typed_name and pending == _NEXT_USER
         was_value = self.value
         text = self.text(word)
         ends = not self.split and word in _OPERATOR_WORDS and self.shell_word(word)
@@ -7987,7 +8159,7 @@ def _shell_text_split(word: str) -> tuple[str, str] | None:
     ``2>`` redirects the subshell. ``None`` when the word holds no quote and
     no escape, so the shell passes it on as typed.
     """
-    if not any(mark in word for mark in "'\"\\"):
+    if "'" not in word and '"' not in word and "\\" not in word:
         return None
     at = 0
     # The brackets the word opens outside quotes, as ``$(`` does, that a ``)`` of it closes.
@@ -8362,7 +8534,8 @@ def _hidden_quoted_value(word: str, program: str = "", *, inside: str = "") -> s
             value = shown[at:] if shown.startswith(head) else HIDDEN
             closed = mark if word.endswith(mark) and len(word) > at + 1 else ""
             return head + mark + value + closed
-    if not any(quote in word for quote in _QUOTES):
+    # Unquoting only takes characters out, so a word with no blank gives a value with none.
+    if ("'" not in word and '"' not in word) or not _SPACE.search(word):
         return None
     plain = _shell_unquoted(word)
     if _ordinary_value_start(plain) is None or not _SPACE.search(plain):
@@ -8405,6 +8578,9 @@ def _hidden_quoted_parts(
     if split is None:
         return None
     body, after = split if closers else (word, "")
+    # Unquoting only takes characters out, so a word with no blank gives an argument with none.
+    if not _SPACE.search(body):
+        return None
     plain = _shell_unquoted(body)
     if not _SPACE.search(plain):
         return None
@@ -8926,19 +9102,20 @@ def _hidden_words(
         end = found.end()
         operator = found.lastgroup == "operator"
         comment = shell and _shell_comment(word)
+        breaks = _breaks_line(gap)
         # A value the command still waits for is read from the comment's first word.
-        held = walk.comment(word) if comment and not _breaks_line(gap) else None
-        if _breaks_line(gap):
+        held = walk.comment(word) if comment and not breaks else None
+        if breaks:
             remark = None
         elif comment and walk.program:
             remark = _RemarkWalk(walk.program)
         # A comment ends the command before it; its words are read as a command of their own,
         # and on the line of a client's command as the client reads them too (``_RemarkWalk``).
-        if operator or (shell and (_breaks_line(gap) or comment)):
+        if operator or (shell and (breaks or comment)):
             walk.reset()
             shells = _ShellText()
             hiding = False
-        elif _breaks_line(gap):
+        elif breaks:
             walk.end_line()
             # In a program's text a header ends with its line.
             hiding = hiding and not code
@@ -8968,7 +9145,7 @@ def _hidden_words(
                 walk.read(word, token=shell)
                 continue
         # A redirection is no word of the command: the walk and the shell's ``-c`` pass over it.
-        passed = walk.passes_over(word)
+        passed = walk.passes_over(word, token=shell)
         # Whether this word is the text after ``-c`` of a shell, a shell text of its own.
         nested = False if passed else shells.read(word)
         shown_next = walk.shown_next(
@@ -10189,10 +10366,11 @@ def _hidden_code(
     out: list[str] = []
     end = 0
     shells = _ShellText()
-    walk = _CommandWalk(ahead=text) if any(char in text for char in "'\"\\") else None
+    quoted = "'" in text or '"' in text or "\\" in text
+    walk = _CommandWalk(ahead=text) if quoted else None
     # Only a word with a quote or an escape is read again (``_hidden_code_word``), so the
     # reading stops after the last such word and the rest of the text is shown as it is.
-    last = max(text.rfind(char) for char in "'\"\\")
+    last = max(text.rfind("'"), text.rfind('"'), text.rfind("\\"))
     for found in (_SHELL_TOKEN if shell else _SHELL_WORD).finditer(text):
         if found.start() > last:
             break
@@ -10218,7 +10396,10 @@ def _hidden_code(
             nested = walk.shell_run(word) or nested
             nested_words = walk.shell_word(word) or nested
             program = program or (walk.code(word) and not nested_words)
-            walk.read(word, token=shell)
+            # The walk is read for the words after this one; past the last word read again
+            # there is none.
+            if found.end() <= last:
+                walk.read(word, token=shell)
         if axis_value:
             # The axis ``Key`` after an axis option keeps its values; what else the word
             # holds was read with the text (``_after_axis_option``).
@@ -10272,7 +10453,7 @@ def _hidden_code_word(
     it: the word before it is read, and what follows is kept as it stands, so
     ``(eval '...')`` keeps its ``)`` after the quoted text.
     """
-    if not any(char in word for char in "'\"\\"):
+    if "'" not in word and '"' not in word and "\\" not in word:
         return word
     if shell:
         head, closed = _subshell_closed(word)
@@ -11337,8 +11518,13 @@ def _public_side(text: str, include_image_refs: bool) -> str:
     return f"{name}={kind}:{HIDDEN}"
 
 
-def public_words(text: str) -> str:
+def public_words(text: str, *, case: bool = False) -> str:
     """Return a command written as one text, as a results document may show it.
+
+    With ``case``, the text is read as a case id named after its command, and
+    the name of a home folder is kept, as ``public_case`` keeps it
+    (``_HOME_NAMES_KEPT``): a word ``~NAME`` with nothing after it as typed,
+    and ``/home/NAME`` cut to ``NAME``; the shown command hides it.
 
     The text is split as a shell would split it, or into the words
     ``_hidden_words`` reads when its quotes do not pair, and each word is
@@ -11369,6 +11555,12 @@ def public_words(text: str) -> str:
     inner text is read as a command written as one text of its own
     (``_hidden_words``).
     """
+    if case:
+        token = _HOME_NAMES_KEPT.set(True)
+        try:
+            return public_words(text)
+        finally:
+            _HOME_NAMES_KEPT.reset(token)
     masked = _substitutions_masked(text)
     if masked is not None:
         return _substitutions_restored(public_words(masked[0]), masked[1], public_words)
@@ -11500,7 +11692,8 @@ def _read_once(reader: Callable[..., str], arg: str, program: str, **kinds: bool
     """Return ``reader(arg, program, **kinds)``, read once while ``_READ_ARGUMENTS`` keeps it.
 
     The reading of an argument depends on it, on the client, on the kinds
-    of text and on what is hidden (``_ALL_HIDDEN``), and on nothing else.
+    of text, on what is hidden (``_ALL_HIDDEN``) and on whether a home
+    folder's name is kept (``_HOME_NAMES_KEPT``), and on nothing else.
     """
     kept = _READ_ARGUMENTS.get()
     if kept is None:
@@ -11512,6 +11705,7 @@ def _read_once(reader: Callable[..., str], arg: str, program: str, **kinds: bool
         *sorted(kinds.items()),
         _ALL_HIDDEN.get(),
         _SUBSTITUTION_DEPTH.get(),
+        _HOME_NAMES_KEPT.get(),
     )
     found = kept.get(key)
     if found is None:

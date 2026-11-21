@@ -94,7 +94,9 @@ def made(request: pytest.FixtureRequest) -> Iterator[Made]:
     found.remove()
 
 
-@pytest.mark.parametrize("engine", ENGINES)
+@pytest.mark.parametrize(
+    "engine", [pytest.param(engine, marks=pytest.mark.needs_engine(engine)) for engine in ENGINES]
+)
 def test_two_committed_images_compare_at_exactly_2(
     engine: str, needs: Any, made: Made, installed: Installed, tmp_path: Path
 ) -> None:

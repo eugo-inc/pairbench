@@ -139,6 +139,82 @@ def test_a_case_named_after_its_command_hides_the_host_of_an_address(
     assert sample.case == "curl -s https://<hidden>:8443/v1/models http://localhost:8000/v1"
 
 
+# (a command hyperfine names its case after, the case id): a word that starts with ``~`` and a
+# name is kept as typed, as any case id keeps it, while a path into such a home is cut and a
+# credential beside it is hidden.
+TILDE_COMMANDS: dict[str, tuple[str, str]] = {
+    "a tilde word": ("echo ~alpha", "echo ~alpha"),
+    "a bitwise not in code": ("python3 -c 'print(~a)'", "python3 -c print(~a)"),
+    "a tilde word after an assignment": ("python3 -c 'x=~a'", "python3 -c x=~a"),
+    "a tilde word as the last path of a list": ("tool /usr/bin:~zq", "tool bin:~zq"),
+    "a tilde word beside a credential": (
+        "bench --token made-up-4 ~alpha",
+        "bench --token <hidden> ~alpha",
+    ),
+    "a path into a tilde home": ("cat ~zq/data/x.csv", "cat x.csv"),
+}
+
+# (a command hyperfine names its case after, the case id): a path that ends at the folder right
+# under /home or /Users is cut to that folder's name, as any case id cuts it, since a route such
+# as /users/1 reads the same, while a credential beside it is hidden.
+HOME_PATH_COMMANDS: dict[str, tuple[str, str]] = {
+    "a route given as a word": ("python3 app.py --route /users/1", "python3 app.py --route 1"),
+    "a route glued with =": ("python3 app.py --route=/users/1", "python3 app.py --route=1"),
+    "a key of a data store": ("redis-cli GET /users/1", "redis-cli GET 1"),
+    "a page under /home": ("python3 app.py /home/feed", "python3 app.py feed"),
+    "a climbing route": ("python3 app.py ../users/1", "python3 app.py 1"),
+    "a route beside a credential": (
+        "bench --token made-up-4 /users/1",
+        "bench --token <hidden> 1",
+    ),
+    "a path into a home folder": ("cat /home/zq/data/x.csv", "cat x.csv"),
+}
+
+
+@pytest.mark.parametrize("name", list(HOME_PATH_COMMANDS))
+def test_a_case_named_after_its_command_cuts_a_home_folder_path_to_its_name(
+    make_ctx: MakeCtx, tmp_path: Path, name: str
+) -> None:
+    command, case = HOME_PATH_COMMANDS[name]
+    _write(tmp_path, {"results": [{"command": command, "times": [0.25]}]})
+    (sample,) = HyperfineDriver().read(make_ctx(), tmp_path)
+    assert sample.case == case
+
+
+def test_two_commands_that_differ_only_in_a_route_are_two_cases(
+    make_ctx: MakeCtx, tmp_path: Path
+) -> None:
+    results = [
+        {"command": "python3 app.py --route /users/1", "times": [0.25]},
+        {"command": "python3 app.py --route /users/2", "times": [0.5]},
+    ]
+    _write(tmp_path, {"results": results})
+    samples = HyperfineDriver().read(make_ctx(), tmp_path)
+    assert [s.case for s in samples] == ["python3 app.py --route 1", "python3 app.py --route 2"]
+
+
+@pytest.mark.parametrize("name", list(TILDE_COMMANDS))
+def test_a_case_named_after_its_command_keeps_a_tilde_word(
+    make_ctx: MakeCtx, tmp_path: Path, name: str
+) -> None:
+    command, case = TILDE_COMMANDS[name]
+    _write(tmp_path, {"results": [{"command": command, "times": [0.25]}]})
+    (sample,) = HyperfineDriver().read(make_ctx(), tmp_path)
+    assert sample.case == case
+
+
+def test_two_commands_that_differ_only_in_a_tilde_word_are_two_cases(
+    make_ctx: MakeCtx, tmp_path: Path
+) -> None:
+    results = [
+        {"command": "python3 -c 'print(~a)'", "times": [0.25]},
+        {"command": "python3 -c 'print(~b)'", "times": [0.5]},
+    ]
+    _write(tmp_path, {"results": results})
+    samples = HyperfineDriver().read(make_ctx(), tmp_path)
+    assert [s.case for s in samples] == ["python3 -c print(~a)", "python3 -c print(~b)"]
+
+
 def test_a_name_given_to_a_command_is_kept_as_given(make_ctx: MakeCtx, tmp_path: Path) -> None:
     entry = {"command": PRIVATE_COMMAND, "name": "made-up name", "measurements": []}
     entry["measurements"] = [_measurement(0.25)]
@@ -156,6 +232,45 @@ def test_a_refusal_names_the_command_without_its_path_or_credential(
     assert PUBLIC_CASE in caught.value.message
     assert "made-up-1" not in caught.value.message
     assert "/made/up" not in caught.value.message
+
+
+SECRET_NAME = "bench --token made-up-3 /made/up/data/x"
+SHOWN_NAME = "bench --token <hidden> x"
+NO_RUN_TIME = "the command {name!r} has no run time"
+NON_ZERO = (
+    "a run of {name!r} exited with a code other than zero; "
+    "the hyperfine driver reads the times of runs that succeeded"
+)
+NO_EXIT_CODE = (
+    "a run of {name!r} ended without an exit code, as a run stopped by a signal does; "
+    "the hyperfine driver reads the times of runs that succeeded"
+)
+
+
+@pytest.mark.parametrize(
+    ("measurements", "text"),
+    [
+        ([], NO_RUN_TIME),
+        ([_measurement(0.25, code=1)], NON_ZERO),
+        ([_measurement(0.25, code=None)], NO_EXIT_CODE),
+    ],
+)
+@pytest.mark.parametrize(("name", "shown"), [(SECRET_NAME, SHOWN_NAME), ("made-up name", None)])
+def test_a_refusal_names_a_given_name_as_the_reports_show_it(
+    make_ctx: MakeCtx,
+    tmp_path: Path,
+    measurements: list[dict[str, Any]],
+    text: str,
+    name: str,
+    shown: str | None,
+) -> None:
+    entry = {"command": "true", "name": name, "measurements": measurements}
+    _write(tmp_path, {"schema_version": 2, "results": [entry]})
+    with pytest.raises(Refusal) as caught:
+        HyperfineDriver().read(make_ctx(), tmp_path)
+    assert (caught.value.code, caught.value.exit_code) == ("E_LAUNCH_FAILED", 5)
+    expected = text.format(name=name if shown is None else shown)
+    assert caught.value.message == f"{OUTPUT}: results[0]: {expected}"
 
 
 TWO_FOLDERS = (

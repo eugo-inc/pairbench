@@ -110,6 +110,21 @@ def test_the_section_names_every_option_whose_value_is_a_command_text(repo_root:
     assert model.TEXT_OPTIONS == TEXT_OPTIONS
 
 
+def test_the_section_names_every_glued_command_option_of_a_program_no_table_names(
+    repo_root: Path,
+) -> None:
+    text = section(repo_root)
+    options = model._COMMAND_OPTIONS
+    named = ", ".join(f"`{option}=`" for option in options[:-1])
+
+    assert (
+        f"So is the text glued to {named} or `{options[-1]}=` of a program that is none of these "
+        "and no client with options of its own (`made-up-tool`), read as that text given as "
+        "the next argument is"
+    ) in text
+    assert options == ("--command", "--cmd", "--exec", "--run")
+
+
 # Where the section says hyperfine starts a command in a runner's words, each with a client's
 # command glued to ``--setup``, as typed and as shown.
 JOINED_STARTS = {
@@ -273,6 +288,10 @@ SHOWN_EXAMPLES = (
         "hyperfine '--setup=redis-cli -a <hidden> FLUSHALL' ./bench-old",
     ),
     (("env", "-Sredis-cli", "-a", "zqm-made-up"), "env -Sredis-cli -a '<hidden>'"),
+    (
+        ("made-up-tool", "--command=redis-cli -a zqm-made-up PING"),
+        "made-up-tool '--command=redis-cli -a <hidden> PING'",
+    ),
     (
         ("tmux", "new", "-d", "API_KEY=zqm-made-up&&./bench-old"),
         "tmux new -d 'API_KEY=<hidden>&&./bench-old'",
@@ -553,6 +572,43 @@ def test_the_section_example_of_a_shell_text_that_hands_its_arguments_on_is_what
     assert '`cmd = ["sh", "-c", "redis-benchmark \\"$@\\"", "_", "{workload}"]`' in text
     assert f"shows the same workload as `{workload_shown(shown)}`" in text
     assert f"{model._PARAMETER_READ_SPARE} more" in text
+
+
+# A made-up file name of 17 characters: with the blank after it, each takes 18 characters of the
+# argument list.
+FILE_NAME = "made-up-{:05d}.txt"
+
+
+def _file_list_config(names: list[str], text: str) -> dict[str, object]:
+    cmd = ["sh", "-c", text, "_", model.WORKLOAD_PLACEHOLDER]
+    return {"sides": {"a": {"cmd": cmd}}, "workload": {"argv": names}}
+
+
+def test_the_section_says_the_hash_stops_telling_apart_what_is_past_the_bound(
+    repo_root: Path,
+) -> None:
+    text = " ".join(section(repo_root).split())
+    # Two reads of the list take more than the list and the bound; one read takes less.
+    count = model._PARAMETER_READ_SPARE // 18 + 64
+    names = [FILE_NAME.format(number) for number in range(count)]
+    other = [*names[:7], "made-up-other.txt", *names[8:]]
+    two, one = 'cat "$@"; wc -l "$@"', 'cat "$@"'
+
+    assert (
+        f"{model._PARAMETER_READ_SPARE} more: an argument a command past that would take is "
+        "hidden. So two workloads that differ only in such arguments, such as two long lists of "
+        "file names that the text hands to two commands, show and hash alike: past that bound "
+        "the hash does not tell them apart."
+    ) in text
+    assert model.config_sha256(_file_list_config(names, two)) == model.config_sha256(
+        _file_list_config(other, two)
+    )
+    assert model.config_sha256(_file_list_config(names, one)) != model.config_sha256(
+        _file_list_config(other, one)
+    )
+    assert model.config_sha256(_file_list_config(names[:64], two)) != model.config_sha256(
+        _file_list_config(other[:64], two)
+    )
 
 
 def _image_side(recorded: dict[str, object]) -> model.Side:

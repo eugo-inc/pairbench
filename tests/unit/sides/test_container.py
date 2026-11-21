@@ -1787,9 +1787,12 @@ def test_engine_facts_carry_into_the_engine_info() -> None:
 # A tiny public image. The tests below never pull it and never start a
 # container: they only ask the engine about what is already on the machine.
 REAL_IMAGE = "busybox:latest"
+REAL_ENGINES = [
+    pytest.param(engine, marks=pytest.mark.needs_engine(engine)) for engine in ("docker", "podman")
+]
 
 
-@pytest.mark.parametrize("engine", ["docker", "podman"])
+@pytest.mark.parametrize("engine", REAL_ENGINES)
 def test_a_real_engine_s_look_up_matches_its_inspect_output(
     needs: Any, engine: Literal["docker", "podman"]
 ) -> None:
@@ -1809,7 +1812,7 @@ def test_a_real_engine_s_look_up_matches_its_inspect_output(
     assert len(found.fingerprint) == 64
 
 
-@pytest.mark.parametrize("engine", ["docker", "podman"])
+@pytest.mark.parametrize("engine", REAL_ENGINES)
 def test_a_real_engine_reports_to_doctor(needs: Any, engine: str) -> None:
     needs.engine(engine)
     report = ImageKind(environ=dict(os.environ)).doctor()

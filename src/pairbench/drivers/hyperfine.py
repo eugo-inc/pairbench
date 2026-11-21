@@ -59,7 +59,7 @@ from pairbench.drivers.base import (
     refuse_own_option,
     text,
 )
-from pairbench.model import public_words
+from pairbench.model import public_case, public_words
 
 OUTPUT_FILE: Final = "hyperfine.json"
 OWN_OPTIONS: Final[tuple[str, ...]] = ("--export-json",)
@@ -101,7 +101,7 @@ class HyperfineDriver(ToolDriver):
                 given, name, times = _older_entry(entry, where)
             names.append((given, name))
             if not times:
-                raise launch_failed(f"{where}: the command {name!r} has no run time")
+                raise launch_failed(f"{where}: the command {public_case(name)!r} has no run time")
             value, n_inner, reducer = reduce(times)
             samples.append(
                 Sample(
@@ -151,9 +151,13 @@ def _command_name(entry: Mapping[str, Any], where: str) -> tuple[str, str]:
 
     The command often holds a path under a home folder or a credential, so
     the name keeps the last part of every path and hides credential values.
+    It is read as a case id, so the name of a home folder is kept, as any
+    case id keeps it: a word ``~NAME`` with nothing after it as typed
+    (``echo ~alpha``), and ``/home/NAME`` or ``/users/NAME`` cut to ``NAME``
+    (``python3 app.py --route /users/1`` names ``python3 app.py --route 1``).
     """
     command = text(member(entry, "command", where), f"{where}: command")
-    return command, public_words(command)
+    return command, public_words(command, case=True)
 
 
 def _older_entry(entry: Mapping[str, Any], where: str) -> tuple[str, str, list[float]]:
@@ -189,11 +193,11 @@ def _newer_entry(entry: Mapping[str, Any], where: str) -> tuple[str, str, list[f
 def _check_exit_code(code: Any, name: str, where: str, at: str) -> None:
     if code is None:
         raise launch_failed(
-            f"{where}: a run of {name!r} ended without an exit code, as a run stopped by a "
-            "signal does; the hyperfine driver reads the times of runs that succeeded"
+            f"{where}: a run of {public_case(name)!r} ended without an exit code, as a run "
+            "stopped by a signal does; the hyperfine driver reads the times of runs that succeeded"
         )
     if count(code, at) != 0:
         raise launch_failed(
-            f"{where}: a run of {name!r} exited with a code other than zero; "
+            f"{where}: a run of {public_case(name)!r} exited with a code other than zero; "
             "the hyperfine driver reads the times of runs that succeeded"
         )

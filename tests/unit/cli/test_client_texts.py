@@ -392,6 +392,7 @@ def image_sides(work: Path, first: str, second: str) -> str:
 
 
 @pytest.mark.slow
+@pytest.mark.needs_engine(ENGINE)
 @pytest.mark.parametrize("form", sorted(IMAGE_FORMS))
 def test_a_client_an_image_runs_before_the_workload_keeps_its_password_out(
     cli: Cli, work: Path, needs: Any, images: Images, form: str

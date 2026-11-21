@@ -226,6 +226,7 @@ def _output_modes(out: Path) -> set[int]:
     [("0:0", 0o022), ("0:0", 0o002), ("caller", 0o022)],
     ids=["root-umask-022", "root-umask-002", "caller-uid-umask-022"],
 )
+@pytest.mark.needs_engine(ENGINE)
 def test_the_control_runs_and_its_run_files_are_owner_only(
     needs: Any, images: Images, tmp_path: Path, user: str, mask: int
 ) -> None:
@@ -250,6 +251,7 @@ def test_the_control_runs_and_its_run_files_are_owner_only(
 
 
 @pytest.mark.parametrize("mask", [0o022, 0o000], ids=["umask-022", "umask-000"])
+@pytest.mark.needs_engine(ENGINE)
 def test_an_image_of_another_user_runs_no_control_and_says_why(
     needs: Any, images: Images, tmp_path: Path, mask: int
 ) -> None:
@@ -270,6 +272,7 @@ def test_an_image_of_another_user_runs_no_control_and_says_why(
 
 
 @pytest.mark.parametrize("mask", [0o022, 0o002], ids=["umask-022", "umask-002"])
+@pytest.mark.needs_engine(ENGINE)
 def test_the_export_a_tool_writes_in_a_container_is_owner_only_once_the_launch_ends(
     needs: Any, images: Images, tmp_path: Path, mask: int
 ) -> None:
