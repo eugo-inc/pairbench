@@ -8,88 +8,112 @@ Write a workload that prints its timings, run `pairbench run` with two sides, an
 verdict of each case; this page does it for two Python environments and then puts a number from
 the results into a document.
 
-## 1. A workload
+<!-- steps -->
 
-Any command can be a workload. A workload that times itself and prints its timings lets
-pairbench leave the start of the process out; here the script prints one line per case for
-the [`lines` driver](guides/lines.md):
+1. **Install pairbench**, with the tool you use for Python programs:
 
-```python
-import json
-import time
+   <!-- tabs -->
 
-start = time.perf_counter()
-total = sum(i * i for i in range(2_000_000))
-elapsed = time.perf_counter() - start
-print("::pairbench::", json.dumps({"case": "squares", "value": elapsed, "unit": "s"}))
-```
+   **pip**
 
-Save it as `bench.py`.
+   ```
+   pip install pairbench
+   ```
 
-## 2. The plan
+   **uv**
 
-```
-pairbench plan --side new=venv:.venv-new --side old=venv:.venv-old --driver lines -- python bench.py
-```
+   ```
+   uv tool install pairbench
+   ```
 
-The plan prints the lineup, each side followed by its twin (`new~same`, `old~same`), the
-positive control (`old~twice`), the round count, the launches and the balance of every pair.
-It launches nothing.
+   **pipx**
 
-## 3. The run
+   ```
+   pipx install pairbench
+   ```
 
-```
-pairbench run --side new=venv:.venv-new --side old=venv:.venv-old --driver lines -- python bench.py
-```
+   <!-- /tabs -->
 
-Example output (made-up numbers):
+2. **Write a workload.** Any command can be a workload. A workload that times itself and
+   prints its timings lets pairbench leave the start of the process out; here the script
+   prints one line per case for the [`lines` driver](guides/lines.md):
 
-```
-new against old (baseline)
+   ```python
+   import json
+   import time
 
-case     new      old      change        noise  p         verdict
-squares  0.141 s  0.152 s  1.08x faster  ±1.5%  0.00052*  FASTER
+   start = time.perf_counter()
+   total = sum(i * i for i in range(2_000_000))
+   elapsed = time.perf_counter() - start
+   print("::pairbench::", json.dumps({"case": "squares", "value": elapsed, "unit": "s"}))
+   ```
 
-Exact two-sided sign test over 16 paired rounds.
-* one case tested.
-Rule: strict.
-Machine state: quiet.
-Baseline: old.
-Positive control old~twice: ok.
-```
+   Save it as `bench.py`.
 
-What each part says:
+3. **Print the plan.**
 
-- **change**: the median of the per-round ratios, written as "x faster" or "x slower".
-- **noise**: the bar the gap had to exceed, the sum of both sides' noise floors measured
-  from their twins.
-- **p**: the exact sign test's p-value, corrected for the number of cases tested.
-- **verdict**: FASTER, SLOWER, TIE, UNRESOLVED or NO VERDICT. See [verdicts](method/verdicts.md).
-- **footer**: the rounds, the rule, the machine state, the baseline and the positive control.
+   ```
+   pairbench plan --side new=venv:.venv-new --side old=venv:.venv-old --driver lines -- python bench.py
+   ```
 
-The run folder, `pairbench-runs/<time>-<id>/`, holds `capture.jsonl` (the raw record),
-`results.json` (the analysed document), `results.md`, `plan.tsv`, `report.html`, `artifacts/`
-(what each launch printed and the files its tool wrote), and, when the explain step ran,
-`diagnostics.json` and `profiles/`.
+   The plan prints the lineup, each side followed by its twin (`new~same`, `old~same`), the
+   positive control (`old~twice`), the round count, the launches and the balance of every pair.
+   It launches nothing.
 
-## 4. Numbers into a document
+4. **Run it.**
 
-Write a template with figure tokens:
+   ```
+   pairbench run --side new=venv:.venv-new --side old=venv:.venv-old --driver lines -- python bench.py
+   ```
 
-```
-On this machine, new ran {{fig:squares.new_vs_old.speedup}} the speed of old
-({{fig:squares.new_vs_old.verdict}}, noise {{fig:squares.new_vs_old.bar}}).
-```
+   Example output (made-up numbers):
 
-and fill it from the results:
+   ```
+   new against old (baseline)
 
-```
-pairbench fill notes.in.md --results pairbench-runs/RUN/results.json -o notes.md
-```
+   case     new      old      change        noise  p         verdict
+   squares  0.141 s  0.152 s  1.08x faster  ±1.5%  0.00052*  FASTER
 
-Every token is replaced by the text of its figure. A missing figure stops the command with
-exit code 7 and lists every missing key. In an automated pipeline,
-`pairbench fill ... --check` exits 1 when the document differs from what its results give.
+   Exact two-sided sign test over 16 paired rounds.
+   * one case tested.
+   Rule: strict.
+   Machine state: quiet.
+   Baseline: old.
+   Positive control old~twice: ok.
+   ```
+
+   What each part says:
+
+   - **change**: the median of the per-round ratios, written as "x faster" or "x slower".
+   - **noise**: the bar the gap had to exceed, the sum of both sides' noise floors measured
+     from their twins.
+   - **p**: the exact sign test's p-value, corrected for the number of cases tested.
+   - **verdict**: FASTER, SLOWER, TIE, UNRESOLVED or NO VERDICT. See [verdicts](method/verdicts.md).
+   - **footer**: the rounds, the rule, the machine state, the baseline and the positive control.
+
+   The run folder, `pairbench-runs/<time>-<id>/`, holds `capture.jsonl` (the raw record),
+   `results.json` (the analysed document), `results.md`, `plan.tsv`, `report.html`, `artifacts/`
+   (what each launch printed and the files its tool wrote), and, when the explain step ran,
+   `diagnostics.json` and `profiles/`.
+
+5. **Put a number into a document.** Write a template with figure tokens:
+
+   ```
+   On this machine, new ran {{fig:squares.new_vs_old.speedup}} the speed of old
+   ({{fig:squares.new_vs_old.verdict}}, noise {{fig:squares.new_vs_old.bar}}).
+   ```
+
+   and fill it from the results:
+
+   ```
+   pairbench fill notes.in.md --results pairbench-runs/RUN/results.json -o notes.md
+   ```
+
+   Every token is replaced by the text of its figure. A missing figure stops the command with
+   exit code 7 and lists every missing key. In an automated pipeline,
+   `pairbench fill ... --check` exits 1 when the document differs from what its results give.
+
+<!-- /steps -->
 
 ## Next
 

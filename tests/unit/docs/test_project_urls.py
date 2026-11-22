@@ -7,9 +7,14 @@ contributing, security and notices files, the documentation pages, the showcases
 and the agent skill may link to any other software. A link to the project
 itself, its repository, its documentation, its package, or any other repository
 or page of the same organisation, is one of three addresses: the repository on
-GitHub, the documentation site, or the package's page on the package index. No
-page links to a hosted pipeline run or shows a badge made from one, since the
-repository's pipeline need not run in public.
+GitHub, the documentation site, or the package's page on the package index. The
+README, and the template it is filled from, may also link the home page of the
+organisation that makes the tool, in the line that names the maker.
+
+No page links to a hosted pipeline run. The README, and its template, may show
+badges: images from the badge service img.shields.io, and the status badge of a
+GitHub Actions workflow of the repository, as an image only. Every other page,
+and the documentation site, shows no image from another host.
 
 The rule is written once for any project; the tests of its logic run it on a
 made-up project, and the test of the tree runs it on this one.
@@ -60,6 +65,17 @@ PACKAGE_INDEX_SUFFIX = "pypi.org"
 PAGES_SUFFIX = ".github.io"
 # What a hosted pipeline run or a badge made from one looks like.
 HOSTED_RUN = re.compile(r"github\.com/[^/]+/[^/]+/actions\b|badge\.svg|shields\.io", re.IGNORECASE)
+# The files that may show badges, and the badges they may show: an image of the badge service,
+# or the status badge of a workflow of the repository. A link to a run stays refused.
+BADGE_FILES = frozenset({"README.md", "docs/readme/README.in.md"})
+BADGE = re.compile(
+    r"https://img\.shields\.io/[^\s]+"
+    r"|" + re.escape(REPOSITORY) + r"/actions/workflows/[\w.-]+\.ya?ml/badge\.svg(?:\?[^\s]*)?"
+)
+# The home page of the organisation that makes the tool, and the files whose line naming the
+# maker links it.
+MAKER_PAGE = "https://eugo.io"
+MAKER_FILES = BADGE_FILES
 
 
 def _path(url: str) -> list[str]:
@@ -138,6 +154,16 @@ def credited_page(url: str, name: str) -> bool:
     return address == f"https://{CREDITED_PAGE}" and name in CREDITED_IN
 
 
+def maker_page(url: str, name: str) -> bool:
+    """Whether an address is the home page of the maker, in a file that names the maker."""
+    return url.split("#", 1)[0].rstrip("/") == MAKER_PAGE and name in MAKER_FILES
+
+
+def badge(url: str, name: str) -> bool:
+    """Whether an address is a badge image a file that shows badges may show."""
+    return name in BADGE_FILES and BADGE.fullmatch(url) is not None
+
+
 def _web(address: str) -> str:
     """An address found without a web scheme, written as the web address it names."""
     for start in GITHUB_CLONE:
@@ -165,7 +191,12 @@ def offenders(repo_root: Path, kit: Any) -> list[str]:
         name = path.relative_to(repo_root).as_posix()
         text = path.read_text(encoding="utf-8")
         for number, url in urls(text):
-            if RULE.is_project(url) and not RULE.allowed(url) and not credited_page(url, name):
+            if (
+                RULE.is_project(url)
+                and not RULE.allowed(url)
+                and not credited_page(url, name)
+                and not maker_page(url, name)
+            ):
                 found.append(f"{name}:{number}: {url}")
     return found
 
@@ -222,14 +253,25 @@ def test_every_documentation_address_of_the_metadata_is_a_page_of_the_site(
     assert [page for page in pages if page is not None and not page.is_file()] == []
 
 
+def hosted_runs(repo_root: Path, kit: Any) -> list[str]:
+    """Each address of a hosted pipeline run, or of a badge a file may not show."""
+    found = []
+    for path in scanned(repo_root, kit):
+        name = path.relative_to(repo_root).as_posix()
+        for number, url in urls(path.read_text(encoding="utf-8")):
+            if HOSTED_RUN.search(url) and not badge(url, name):
+                found.append(f"{name}:{number}: {url}")
+    return found
+
+
 def test_no_page_links_to_a_hosted_pipeline_run(repo_root: Path, kit: Any) -> None:
-    found = [
-        f"{path.relative_to(repo_root).as_posix()}:{number}: {url}"
-        for path in scanned(repo_root, kit)
-        for number, url in urls(path.read_text(encoding="utf-8"))
-        if HOSTED_RUN.search(url)
-    ]
-    assert found == []
+    assert hosted_runs(repo_root, kit) == []
+
+
+def test_the_readme_shows_badges_from_the_badge_service(repo_root: Path) -> None:
+    text = (repo_root / "README.md").read_text(encoding="utf-8")
+
+    assert [url for _, url in urls(text) if badge(url, "README.md")] != []
 
 
 def test_the_credited_page_passes_only_in_the_document_that_credits_it() -> None:
@@ -333,6 +375,56 @@ def test_a_hosted_run_and_a_badge_are_found() -> None:
     assert HOSTED_RUN.search(REPOSITORY + "/actions/workflows/ci.yml/badge.svg")
     assert HOSTED_RUN.search("https://img.shields.io/pypi/v/exampletool")
     assert not HOSTED_RUN.search("https://docs.github.com/en/actions/reference/variables-reference")
+
+
+@pytest.mark.parametrize("name", sorted(BADGE_FILES))
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://img.shields.io/pypi/v/pairbench?color=7c3aed",
+        "https://img.shields.io/badge/docs-site-048196",
+        REPOSITORY + "/actions/workflows/ci.yml/badge.svg",
+        REPOSITORY + "/actions/workflows/ci.yml/badge.svg?branch=main",
+    ],
+)
+def test_the_readme_may_show_a_badge(name: str, url: str) -> None:
+    assert badge(url, name)
+
+
+@pytest.mark.parametrize(
+    ("url", "name"),
+    [
+        ("https://img.shields.io/pypi/v/pairbench", "docs/index.md"),
+        ("https://img.shields.io/pypi/v/pairbench", "showcases/gpu-kernel/README.md"),
+        (REPOSITORY + "/actions/workflows/ci.yml/badge.svg", "docs/install.md"),
+        (REPOSITORY + "/actions/workflows/ci.yml", "README.md"),
+        (REPOSITORY + "/actions/runs/1", "README.md"),
+        ("https://github.com/made-up-owner/other/actions/workflows/ci.yml/badge.svg", "README.md"),
+        ("http://img.shields.io/pypi/v/pairbench", "README.md"),
+    ],
+)
+def test_a_badge_elsewhere_and_a_link_to_a_run_are_refused(url: str, name: str) -> None:
+    assert HOSTED_RUN.search(url)
+    assert not badge(url, name)
+
+
+@pytest.mark.parametrize("url", ["https://eugo.io", "https://eugo.io/", "https://eugo.io/#about"])
+@pytest.mark.parametrize("name", sorted(MAKER_FILES))
+def test_the_readme_may_link_the_home_page_of_the_maker(url: str, name: str) -> None:
+    assert RULE.is_project(url)
+    assert maker_page(url, name)
+
+
+@pytest.mark.parametrize(
+    ("url", "name"),
+    [
+        ("https://eugo.io", "docs/index.md"),
+        ("https://eugo.io/about", "README.md"),
+        ("https://eugo.io/docs/", "docs/readme/README.in.md"),
+    ],
+)
+def test_another_page_of_the_maker_or_another_file_is_refused(url: str, name: str) -> None:
+    assert not maker_page(url, name)
 
 
 @pytest.mark.parametrize(

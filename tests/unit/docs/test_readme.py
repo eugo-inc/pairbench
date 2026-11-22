@@ -64,6 +64,11 @@ WAITING = "waiting for a run"
 DOCS_SITE = "https://eugo.io/docs/pairbench/"
 DOCS_HOME = f"{DOCS_SITE}latest/"
 TOP_LINES = 10
+# The README opens with its title: a heading of the first level that holds the banner, a
+# picture whose image is named for the tool, since the banner carries the name.
+TITLE = re.compile(
+    r'\A<h1 align="center"><picture>.*<img alt="pairbench[:" ][^>]*></picture></h1>\n'
+)
 LINKS_AT_LEAST = 40
 FIGURE_TOKEN = re.compile(r"\{\{\s*fig:")
 TOKEN = re.compile(r"\{\{fig:[^}]*\}\}")
@@ -139,8 +144,21 @@ def test_the_readme_holds_no_unfilled_figure(repo_root: Path) -> None:
 def test_the_readme_follows_the_outline(repo_root: Path) -> None:
     text = readme(repo_root)
 
-    assert text.startswith("# pairbench\n")
+    assert TITLE.match(text)
     assert tuple(HEADING.findall(text)) == SECTIONS
+
+
+@pytest.mark.parametrize(
+    "start",
+    [
+        "# pairbench\n",
+        '<p align="center"><picture><img alt="pairbench" src="x"></picture></p>\n',
+        '<h1 align="center"><picture><img alt="another tool" src="x"></picture></h1>\n',
+        '<h1 align="center">pairbench</h1>\n',
+    ],
+)
+def test_another_opening_is_not_the_title(start: str) -> None:
+    assert not TITLE.match(start + "\n## The headline command\n")
 
 
 def test_the_section_on_native_code_makes_six_points_in_order(repo_root: Path) -> None:

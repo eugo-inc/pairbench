@@ -3,8 +3,9 @@
 """Draw the share image of the documentation site: ``site/public/share.png``.
 
 A page shared on a social site or in a chat shows this image beside its title. It holds
-the icon of the site (the two bars of ``site/public/favicon.svg``), the name pairbench and
-one line on what it does, drawn on the colour of the icon.
+a band of the site's accent gradient along its top, the mark of the site (the four tiles of
+``docs/readme/mark-dark.svg``, in the order of two alternating rounds), the name pairbench
+and one line on what it does, on the dark ground of the site.
 
 The drawing uses only the standard library and arithmetic that gives the same result on
 every machine: the letters are strokes of a small built-in font, made of straight pieces
@@ -38,19 +39,23 @@ HEIGHT = 630
 NAME = "pairbench"
 LINE = "Tells real benchmark differences from noise"
 ALT = (
-    f"The name {NAME} in white beside an icon of two bars, above the line "
-    f"“{LINE}”, on a dark blue background."
+    f"The name {NAME} in white beside its mark of four rounded tiles in violet and teal, above "
+    f"the line “{LINE}”, on a dark background under a violet-to-teal band."
 )
 
 Point = tuple[float, float]
 Stroke = list[Point]
 Colour = tuple[int, int, int]
 
-BACKGROUND: Colour = (0x2B, 0x4C, 0x7E)
-NAME_COLOUR: Colour = (0xFF, 0xFF, 0xFF)
-LINE_COLOUR: Colour = (0xD5, 0xDF, 0xEE)
-ICON_COLOUR: Colour = (0xFF, 0xFF, 0xFF)
-BAR_COLOUR: Colour = BACKGROUND
+# The dark palette of the site: its ground, its text, a softer text, its two accents, and the
+# two ends of its gradient.
+BACKGROUND: Colour = (0x08, 0x0D, 0x17)
+NAME_COLOUR: Colour = (0xF2, 0xF3, 0xF8)
+LINE_COLOUR: Colour = (0xA9, 0xB0, 0xC3)
+VIOLET: Colour = (0xA1, 0x42, 0xFF)
+TEAL: Colour = (0x22, 0xC7, 0xE0)
+GRADIENT: tuple[Colour, Colour] = ((0xA0, 0x3F, 0xFF), (0x00, 0x82, 0x94))
+BAND_HEIGHT = 10
 
 # --- directions without trigonometry -------------------------------------------------------
 
@@ -258,17 +263,31 @@ class Layer:
                     self._put(x, y, 1.0 if amount > 1.0 else amount)
 
 
-def compose(width: int, height: int, layers: Sequence[tuple[Layer, Colour]]) -> bytes:
-    """The rows of the image, each led by the byte of PNG's filter 0, layers drawn in order."""
+def gradient(x: int, width: int = WIDTH) -> Colour:
+    """The colour of the gradient at a column: each channel goes from the first end to the
+    second in a straight line, rounded to the nearest whole value, the same on every machine."""
+    (r0, g0, b0), (r1, g1, b1) = GRADIENT
+    last = width - 1
+    return (
+        (r0 * (last - x) + r1 * x + last // 2) // last,
+        (g0 * (last - x) + g1 * x + last // 2) // last,
+        (b0 * (last - x) + b1 * x + last // 2) // last,
+    )
+
+
+def compose(width: int, height: int, layers: Sequence[tuple[Layer, Colour | None]]) -> bytes:
+    """The rows of the image, each led by the byte of PNG's filter 0, layers drawn in order.
+    A layer whose colour is ``None`` is drawn in the colour of the gradient at each column."""
     rows = bytearray()
     for y in range(height):
         rows.append(0)
         for x in range(width):
             r, g, b = BACKGROUND
             index = y * width + x
-            for layer, (lr, lg, lb) in layers:
+            for layer, colour in layers:
                 amount = layer.cover[index]
                 if amount > 0.0:
+                    lr, lg, lb = gradient(x, width) if colour is None else colour
                     r = int(r + (lr - r) * amount + 0.5)
                     g = int(g + (lg - g) * amount + 0.5)
                     b = int(b + (lb - b) * amount + 0.5)
@@ -289,19 +308,30 @@ def render() -> bytes:
     line_width = text_width(LINE) * line_unit
     line_baseline = 470.0
 
-    box = Layer(WIDTH, HEIGHT)
-    box.rounded_box(left, icon_top, icon, icon, icon * 6 / 32)
-    bars = Layer(WIDTH, HEIGHT)
-    scale = icon / 32
-    bars.rounded_box(left + 7 * scale, icon_top + 9 * scale, 7 * scale, 14 * scale, 1.5 * scale)
-    bars.rounded_box(left + 18 * scale, icon_top + 13 * scale, 7 * scale, 10 * scale, 1.5 * scale)
+    band = Layer(WIDTH, HEIGHT)
+    band.rounded_box(0, 0, WIDTH, BAND_HEIGHT, 0)
+    # The mark on its 64-unit grid: four tiles of 26 units with a radius of 7, 4 units in from
+    # the edges and 4 apart; violet at the top left and the bottom right, teal at the others.
+    scale = icon / 64
+    violet = Layer(WIDTH, HEIGHT)
+    teal = Layer(WIDTH, HEIGHT)
+    for column, row in ((0, 0), (1, 0), (0, 1), (1, 1)):
+        tiles = violet if column == row else teal
+        x, y = left + (4 + 30 * column) * scale, icon_top + (4 + 30 * row) * scale
+        tiles.rounded_box(x, y, 26 * scale, 26 * scale, 7 * scale)
     name = Layer(WIDTH, HEIGHT)
     name.strokes(text_strokes(NAME, left + icon + gap, name_baseline, name_unit), 1.15 * name_unit)
     tagline = Layer(WIDTH, HEIGHT)
     tagline.strokes(
         text_strokes(LINE, (WIDTH - line_width) / 2, line_baseline, line_unit), 0.85 * line_unit
     )
-    layers = [(box, ICON_COLOUR), (bars, BAR_COLOUR), (name, NAME_COLOUR), (tagline, LINE_COLOUR)]
+    layers: list[tuple[Layer, Colour | None]] = [
+        (band, None),
+        (violet, VIOLET),
+        (teal, TEAL),
+        (name, NAME_COLOUR),
+        (tagline, LINE_COLOUR),
+    ]
     return compose(WIDTH, HEIGHT, layers)
 
 

@@ -69,7 +69,9 @@ Pagefind's own lockfiles for them install at the version the site locks
 <https://github.com/Pagefind/pagefind/blob/v1.6.0/pagefind_ui/component/package-lock.json>),
 and the source of each is its licence file at that version. `adequate-little-templates` has
 no tag for its version, so its source is its licence file at the commit its package was
-published from. The site map plug-in runs only while the site is built.
+published from. The site map plug-in runs only while the site is built. The typeface of the
+pages, Inter, is installed from its package and served from the site's own folder, so no page
+loads a font from another host.
 
 | Package and version | What the site uses it for | Licence | Source |
 |---|---|---|---|
@@ -86,6 +88,8 @@ published from. The site map plug-in runs only while the site is built.
 | `is-alphanumerical` 2.0.1 | a character test of `bcp-47`, inside the same scripts | MIT | <https://github.com/wooorm/is-alphanumerical/blob/2.0.1/license> |
 | `is-decimal` 2.0.1 | a character test of `bcp-47`, inside the same scripts | MIT | <https://github.com/wooorm/is-decimal/blob/2.0.1/license> |
 | `@astrojs/sitemap` 3.7.5 | writes the site map while the site is built; none of it is in the built pages | MIT | <https://github.com/withastro/astro/tree/main/packages/integrations/sitemap> |
+| `@fontsource-variable/inter` 5.3.0 | the Inter typeface of the pages, as variable font files and their styles, served by the site itself | OFL-1.1 | <https://github.com/fontsource/font-files/tree/main/fonts/variable/inter> |
+| Inter, in `@fontsource-variable/inter` 5.3.0 | the typeface of the pages, and the outlines of the letters of the README's banner | SIL Open Font License 1.1 | <https://github.com/rsms/inter> |
 | mark.js 8.11.1 | highlights the words a search found, inside Pagefind's highlighter | MIT | <https://github.com/julmot/mark.js> |
 | Night Owl, in Starlight 0.42.8 | the colours of the code blocks: Starlight makes its dark and light code themes from Night Owl's, and Expressive Code writes them into the styles of the built pages | MIT | <https://github.com/sdras/night-owl-vscode-theme>, <https://unpkg.com/@astrojs/starlight@0.42.8/dist/integrations/expressive-code/themes/night-owl-dark.js> |
 
@@ -141,6 +145,19 @@ file. The compiler's version is given without its build date.
 | `std`, the Rust standard library, and `rustc` 1.101.0-nightly (f9ceb4a4d) | the path of the library's source, `library/std/src/thread/local.rs`, and the compiler in the `producers` section | MIT OR Apache-2.0 | <https://github.com/rust-lang/rust/blob/f9ceb4a4d45a471eed7bd8c40dddb7c38e749e21/library/std/Cargo.toml> |
 | `wasm-bindgen` 0.2.129 (165586f85) | a tool in the `producers` section | MIT OR Apache-2.0 | <https://docs.rs/crate/wasm-bindgen/0.2.129/source/Cargo.toml.orig> |
 | `walrus` 0.27.2 | a tool in the `producers` section | MIT/Apache-2.0 | <https://docs.rs/crate/walrus/0.27.2/source/Cargo.toml.orig> |
+
+## Tools that draw the README's images, not bundled
+
+The README's recording and banner are drawn by scripts in `docs/readme/` with the tools below,
+each installed by whoever draws them. None of them is in the Python package or in the
+documentation site; the images they draw are committed.
+
+| Tool | What it draws | Licence | Source |
+|---|---|---|---|
+| asciinema | records the terminal session of `docs/readme/demo/tape.sh` | GPL-3.0-or-later | <https://github.com/asciinema/asciinema> |
+| agg | renders that recording as `docs/readme/demo.gif` | GPL-3.0-or-later | <https://github.com/asciinema/agg> |
+| uharfbuzz, the Python binding of HarfBuzz | shapes the letters of the banner in `docs/readme/make_banner.py` | Apache-2.0 (the binding), MIT (HarfBuzz) | <https://github.com/harfbuzz/uharfbuzz>, <https://github.com/harfbuzz/harfbuzz> |
+| fontTools | reads the compressed Inter font file for the banner | MIT | <https://github.com/fonttools/fonttools> |
 
 ## Test fixtures derived from an upstream sample
 

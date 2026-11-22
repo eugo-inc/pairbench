@@ -123,6 +123,45 @@ OPERATING_SYSTEMS = "Linux, macOS"
 # it at the root of the host.
 PUBLISHER = "Eugo, Inc."
 HOME_PAGE = "index.md"
+# The marks of the site, as the content files of the pages name them; the same files as
+# docs/readme/mark-light.svg and mark-dark.svg.
+MARKS = {"light": "site/src/assets/mark-light.svg", "dark": "site/src/assets/mark-dark.svg"}
+# The buttons of the home page's hero: their text, the page or address they lead to, their
+# kind and their icon. A page is named by its file under docs/.
+HERO_ACTIONS = (
+    ("Quick start", "quickstart.md", "primary", "right-arrow"),
+    ("Install", "install.md", "secondary", None),
+    ("Source", SOURCE, "minimal", "external"),
+)
+# The badges of the home page, drawn by the build from the package's own metadata into
+# BADGES under the base folder: each its file, its label and its colour. Nothing is fetched.
+BADGES = "badges"
+BADGE_COLOURS = {"version": "#7c3aed", "python": "#048196", "licence": "#4b5066"}
+BADGE_LABEL_COLOUR = "#1c2135"
+# The width of a badge's text, in pixels per character at its size: the text is drawn to
+# exactly that width, so the badge does not depend on the fonts of the reader's machine.
+BADGE_CHARACTER = 6.4
+BADGE_PAD = 7.0
+# Starlight's components a page may use, each written in the page as plain Markdown between
+# two comment lines that a reader of the file does not see:
+#
+#   <!-- steps --> ... <!-- /steps -->  an ordered list, shown as numbered steps;
+#   <!-- tabs --> ... <!-- /tabs -->    tabs, each opened by a line that holds only its label
+#                                       in bold, **label**;
+#   <!-- cards --> ... <!-- /cards -->  a grid of cards, each opened by a heading ### Title,
+#                                       optionally followed by a line <!-- icon: NAME -->.
+#
+# A page that holds one is written for Starlight as MDX, with the components imported.
+COMPONENT_IMPORT = (
+    "import { Card, CardGrid, Steps, TabItem, Tabs } from '@astrojs/starlight/components';"
+)
+MARKER = re.compile(r"^<!--\s*(/?)(steps|tabs|cards)\s*-->$")
+COMMENT_LINE = re.compile(r"^<!--.*-->$")
+ICON_LINE = re.compile(r"^<!--\s*icon:\s*([a-z0-9-]+)\s*-->$")
+OPENING = {"steps": "<Steps>", "tabs": "<Tabs>", "cards": "<CardGrid>"}
+CLOSING = {"steps": "</Steps>", "tabs": "</Tabs>", "cards": "</CardGrid>"}
+TAB_LABEL = re.compile(r"^\*\*([^*]+)\*\*$")
+CARD_TITLE = re.compile(r"^### (.+)$")
 SCRIPT_SAFE = str.maketrans({"<": "\\u003c", ">": "\\u003e", "&": "\\u0026"})
 
 # Crawlers of search engines are covered by the first group; these are named so
@@ -714,7 +753,21 @@ def site_anchors(page: Page) -> frozenset[str]:
     """The anchors of a page of the site: those of its body, with the anchors the
     reference pages get, and the top of the page."""
     body = ANCHORS[page.path](page.body) if page.path in ANCHORS else page.body
-    return page_anchors(body) | PAGE_IDS
+    return page_anchors(without_card_titles(body)) | PAGE_IDS
+
+
+def without_card_titles(body: str) -> str:
+    """A body without the headings that open a card: on the site each is a card's title,
+    which is no heading and has no anchor."""
+    lines: list[str] = []
+    cards = False
+    for line, fenced in _lines_outside_code(body):
+        marker = None if fenced else MARKER.match(line.strip())
+        if marker and marker.group(2) == "cards":
+            cards = not marker.group(1)
+        if not (cards and not fenced and CARD_TITLE.match(line.strip())):
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def line_count(data: bytes) -> int:
@@ -1161,8 +1214,232 @@ def structured_data_text(build: Build, page: Page) -> str:
     return text.translate(SCRIPT_SAFE)
 
 
+def uses_components(body: str) -> bool:
+    """Whether a page's body opens a region of one of Starlight's components."""
+    return any(
+        MARKER.match(line) and not MARKER.match(line).group(1)  # type: ignore[union-attr]
+        for line, fenced in _lines_outside_code(body)
+        if not fenced
+    )
+
+
+def _lines_outside_code(body: str) -> Iterator[tuple[str, bool]]:
+    """Each line of a body, with whether it is inside a fenced code block or its fence."""
+    fenced = False
+    for line in body.split("\n"):
+        if FENCE.match(line):
+            yield line, True
+            fenced = not fenced
+            continue
+        yield line, fenced
+
+
+def _mdx_prose(line: str) -> str:
+    """A line of prose made safe for MDX: braces outside code spans are escaped."""
+    spans = _code_spans(line)
+    out = []
+    for at, char in enumerate(line):
+        inside = any(start <= at < end for start, end in spans)
+        out.append("\\" + char if char in "{}" and not inside else char)
+    return "".join(out)
+
+
+def mdx_body(body: str) -> str:
+    """A body that marks Starlight's components, written as MDX: each marked region becomes
+    its component, every other comment line is left out, and braces in prose are escaped.
+    A region left open, or closed without being opened, is refused."""
+    out: list[str] = []
+    open_regions: list[str] = []
+    item_open = False
+
+    def close_item(margin: str) -> None:
+        nonlocal item_open
+        if item_open:
+            out.extend(
+                ["", margin + ("</TabItem>" if open_regions[-1] == "tabs" else "</Card>"), ""]
+            )
+            item_open = False
+
+    for line, fenced in _lines_outside_code(body):
+        if fenced:
+            out.append(line)
+            continue
+        bare = line.strip()
+        # A component inside a list item keeps the item's indentation.
+        margin = line[: len(line) - len(line.lstrip())]
+        marker = MARKER.match(bare)
+        if marker:
+            closing, name = marker.groups()
+            if closing:
+                if not open_regions or open_regions[-1] != name:
+                    raise SiteError(f"<!-- /{name} --> closes no open {name} region")
+                if name != "steps":
+                    close_item(margin)
+                open_regions.pop()
+                out.extend(["", margin + CLOSING[name], ""])
+            else:
+                open_regions.append(name)
+                out.extend(["", margin + OPENING[name], ""])
+            continue
+        region = open_regions[-1] if open_regions else None
+        icon = ICON_LINE.match(bare)
+        if region == "cards" and icon and item_open and out[-2].lstrip().startswith("<Card "):
+            out[-2] = out[-2][:-1] + f' icon="{icon.group(1)}">'
+            continue
+        if COMMENT_LINE.match(bare):
+            continue
+        label = TAB_LABEL.match(bare)
+        title = CARD_TITLE.match(bare)
+        if region == "tabs" and label:
+            close_item(margin)
+            out.extend(["", f"{margin}<TabItem label={json.dumps(label.group(1))}>", ""])
+            item_open = True
+            continue
+        if region == "cards" and title:
+            close_item(margin)
+            out.extend(["", f"{margin}<Card title={json.dumps(title.group(1))}>", ""])
+            item_open = True
+            continue
+        out.append(_mdx_prose(line))
+    if open_regions:
+        raise SiteError(f"<!-- {open_regions[-1]} --> is never closed")
+    text = "\n".join(out)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip("\n")
+    return f"{COMPONENT_IMPORT}\n\n{text}\n"
+
+
+def without_markers(body: str) -> str:
+    """A body with the comment lines that mark Starlight's components left out, for the
+    Markdown copy of a page."""
+    lines = [
+        line
+        for line, fenced in _lines_outside_code(body)
+        if fenced or not (MARKER.match(line.strip()) or ICON_LINE.match(line.strip()))
+    ]
+    return "\n".join(lines)
+
+
+def content_name(build: Build, page: Page) -> str:
+    """The name of a page's copy under the content folder: ``.mdx`` when it uses Starlight's
+    components, its own name otherwise."""
+    if uses_components(page.body):
+        return page.path[: -len(".md")] + ".mdx"
+    return page.path
+
+
+@dataclass(frozen=True)
+class Badge:
+    """A badge of the home page: its file under the badges folder, its label and its value."""
+
+    name: str
+    label: str
+    value: str
+
+    @property
+    def alt(self) -> str:
+        return f"{self.label} {self.value}"
+
+
+def read_badges(repo: Path = REPO) -> list[Badge]:
+    """The version, the Python versions and the licence, read from ``pyproject.toml``: the
+    version, the minor versions its classifiers name, and its licence expression."""
+    with (repo / "pyproject.toml").open("rb") as file:
+        project = tomllib.load(file)["project"]
+    prefix = "Programming Language :: Python :: "
+    pythons = [
+        c.removeprefix(prefix)
+        for c in project.get("classifiers", [])
+        if c.startswith(prefix) and re.fullmatch(r"\d+\.\d+", c.removeprefix(prefix))
+    ]
+    if not pythons:
+        raise SiteError("pyproject.toml names no Python minor version in its classifiers")
+    return [
+        Badge("version", "version", str(project["version"])),
+        Badge("python", "python", " | ".join(pythons)),
+        Badge("licence", "licence", str(project["license"])),
+    ]
+
+
+def _badge_text(x: float, width: float, text: str) -> str:
+    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        f'<text x="{x:.1f}" y="14" textLength="{width:.1f}" lengthAdjust="spacingAndGlyphs">'
+        f"{escaped}</text>"
+    )
+
+
+def badge_svg(badge: Badge) -> str:
+    """A badge as SVG: its label on the dark part, its value on its colour, the text in white
+    in a font every system has, drawn to a width that depends on the text alone."""
+    label_text = len(badge.label) * BADGE_CHARACTER
+    value_text = len(badge.value) * BADGE_CHARACTER
+    label = label_text + 2 * BADGE_PAD
+    value = value_text + 2 * BADGE_PAD
+    width = label + value
+    colour = BADGE_COLOURS[badge.name]
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.1f}" height="20" '
+        f'viewBox="0 0 {width:.1f} 20" role="img" aria-label="{badge.alt}">'
+        f"<title>{badge.alt}</title>"
+        f'<clipPath id="r"><rect width="{width:.1f}" height="20" rx="4"/></clipPath>'
+        f'<g clip-path="url(#r)">'
+        f'<rect width="{label:.1f}" height="20" fill="{BADGE_LABEL_COLOUR}"/>'
+        f'<rect x="{label:.1f}" width="{value:.1f}" height="20" fill="{colour}"/></g>'
+        '<g fill="#ffffff" font-family="Verdana,\'DejaVu Sans\',sans-serif" font-size="11">'
+        f"{_badge_text(BADGE_PAD, label_text, badge.label)}"
+        f"{_badge_text(label + BADGE_PAD, value_text, badge.value)}</g></svg>\n"
+    )
+
+
+def badges_html(build: Build) -> str:
+    """The badges as the hero shows them under its tagline: images of the site's own files.
+    A repository without ``pyproject.toml`` has no package to describe, and no badges."""
+    if not (build.repo / "pyproject.toml").is_file():
+        return ""
+    images = "".join(
+        f'<img src="{build.address.base}{BADGES}/{badge.name}.svg" alt="{badge.alt}" height="20">'
+        for badge in read_badges(build.repo)
+    )
+    return f'<span class="pb-badges">{images}</span>'
+
+
+def write_badges(build: Build) -> None:
+    """Write the badges into the badges folder of the built site, when there is a package."""
+    if not (build.repo / "pyproject.toml").is_file():
+        return
+    folder = build.dist / BADGES
+    folder.mkdir(parents=True, exist_ok=True)
+    for badge in read_badges(build.repo):
+        (folder / f"{badge.name}.svg").write_text(badge_svg(badge), encoding="utf-8")
+
+
+def hero(build: Build, page: Page) -> dict[str, object]:
+    """The hero of the home page: its title, its description as the tagline, the mark in the
+    light and the dark theme, and its buttons."""
+    depth = len(Path(LATEST, page.path).parent.parts) + 2
+    up = "../" * depth
+    actions = []
+    for text, target, variant, icon in HERO_ACTIONS:
+        link = target if "://" in target else page_path(build.address, target)
+        action: dict[str, object] = {"text": text, "link": link, "variant": variant}
+        if icon:
+            action["icon"] = icon
+        actions.append(action)
+    return {
+        "title": page.title,
+        "tagline": f"{page.description}{badges_html(build)}",
+        "image": {
+            "alt": "",
+            "light": up + MARKS["light"].removeprefix("site/src/"),
+            "dark": up + MARKS["dark"].removeprefix("site/src/"),
+        },
+        "actions": actions,
+    }
+
+
 def site_page_text(build: Build, page: Page) -> str:
-    """The copy of a page Starlight reads: JSON front matter, then the body."""
+    """The copy of a page Starlight reads: JSON front matter, then the body; the body as MDX
+    when the page uses Starlight's components, and the home page with its hero."""
     body = build.linker().rewrite(page.path, page.body)
     if page.path in ANCHORS:
         body = ANCHORS[page.path](body)
@@ -1182,7 +1459,12 @@ def site_page_text(build: Build, page: Page) -> str:
             "content": structured_data_text(build, page),
         },
     ]
-    meta = {"title": page.title, "description": page.description, "head": head}
+    meta: dict[str, object] = {"title": page.title, "description": page.description, "head": head}
+    if page.path == HOME_PAGE:
+        meta["template"] = "splash"
+        meta["hero"] = hero(build, page)
+    if uses_components(page.body):
+        body = mdx_body(body)
     return f"---\n{json.dumps(meta, ensure_ascii=False)}\n---\n\n{body}"
 
 
@@ -1215,7 +1497,7 @@ def prepare(repo: Path = REPO) -> Build:
         if folder.exists():
             shutil.rmtree(folder)
     for path, text in texts.items():
-        target = content / LATEST / path
+        target = content / LATEST / content_name(build, build.pages[path])
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
     generated.mkdir(parents=True)
@@ -1241,6 +1523,7 @@ def markdown_copy(build: Build, page: Page, folder: str = LATEST) -> str:
     """A page as Markdown: a line pointing to the llms files, the title, the description,
     the version and the page's address, then the body with every link made absolute."""
     body = build.linker(folder=folder, markdown=True).rewrite(page.path, page.body)
+    body = without_markers(body)
     web = build.address.site + page_path(build.address, page.path, folder)
     return (
         f"> Every page is listed in {llms_address(build, LLMS, folder)}; all of them are in "
@@ -1478,6 +1761,7 @@ def finish(repo: Path = REPO) -> Build:
     write_llms(build)
     (build.dist / "robots.txt").write_text(robots(build), encoding="utf-8")
     write_base(build)
+    write_badges(build)
     copy_release(build)
     missing = build.dist / "404.html"
     if missing.is_file():
@@ -1658,6 +1942,10 @@ def _check_ref(
     if f"{parts.scheme}://{parts.netloc}" != address.site:
         if fetched or tag not in ("a", "md"):
             return f"fetches from another host: {ref}"
+        return None
+    if not fetched and tag in ("a", "md") and parts.path == "/" and not parts.query:
+        # The home page of the organisation that makes the tool, at the root of the host:
+        # the line under every page names it, and it is not part of the site.
         return None
     if not parts.path.startswith(address.base):
         return f"an address outside {address.base}: {ref}"

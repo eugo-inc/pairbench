@@ -36,6 +36,36 @@ Positive control old~twice: ok.
 It does not replace benchmark tools. It launches them, one launch per side per round, and
 reads what they produce.
 
+## What it does
+
+<!-- cards -->
+
+### Paired, alternating rounds
+<!-- icon: random -->
+
+Every side runs once per round, in an order that rotates and reverses, so no side keeps
+running before another. See [paired rounds](method/paired-rounds.md).
+
+### A measured noise floor
+<!-- icon: analytics -->
+
+Every side has a twin, an identical copy in the same rounds; the gap between them is the noise
+a verdict has to beat. See [noise floor](method/noise-floor.md).
+
+### An exact test, corrected
+<!-- icon: approve-check -->
+
+An exact sign test per case, corrected for testing several cases at once. See
+[sign test](method/sign-test.md).
+
+### Built for agents
+<!-- icon: rocket -->
+
+A skill, a tool server, JSON Schemas and exit codes that say what happened. See
+[for AI agents](agents.md).
+
+<!-- /cards -->
+
 ## Where to go next
 
 - [Install](install.md) and the [quick start](quickstart.md) for a first run.

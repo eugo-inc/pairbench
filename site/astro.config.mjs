@@ -33,6 +33,17 @@ export default defineConfig({
       // The tags every page names the share image with: public/share.png, drawn by
       // tools/share_image.py, with its size and its alt text.
       head: generated.head,
+      // The mark beside the name in the header, in the light and the dark theme: the same files as
+      // docs/readme/mark-light.svg and mark-dark.svg (a test keeps them equal).
+      logo: {
+        light: './src/assets/mark-light.svg',
+        dark: './src/assets/mark-dark.svg',
+        alt: '',
+      },
+      // Inter, installed from the package and served by the site itself, and the palette.
+      customCss: ['@fontsource-variable/inter', './src/styles/brand.css'],
+      // The footer of every page, with the line that names the maker.
+      components: { Footer: './src/components/Footer.astro' },
       social: [
         { icon: 'github', label: 'Source', href: 'https://github.com/eugo-inc/pairbench' },
       ],

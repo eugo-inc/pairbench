@@ -29,6 +29,8 @@ DOCUMENT_FILES = (
     "site/astro.config.mjs",
     "site/package.json",
     "site/src/pages/404.astro",
+    "site/src/components/Footer.astro",
+    "site/src/styles/brand.css",
     "site/src/content/i18n/en.json",
     "tools/docs_site.py",
     "tools/api_reference.py",

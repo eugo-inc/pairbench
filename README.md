@@ -1,18 +1,21 @@
-# pairbench
-
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/banner-dark.svg"><img alt="pairbench: tells real benchmark differences from noise, with the verdicts FASTER, SLOWER, TIE, UNRESOLVED and NO VERDICT" src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/banner-light.svg" width="100%"></picture></p>
+<h1 align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/banner-dark.svg"><img alt="pairbench: tells real benchmark differences from noise, with the verdicts FASTER, SLOWER, TIE, UNRESOLVED and NO VERDICT" src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/banner-light.svg" width="100%"></picture></h1>
 
 <div align="center">
 
-<a href="https://pypi.org/project/pairbench/"><img alt="pypi: pairbench" src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/pill-pypi.svg"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/pyproject.toml"><img alt="python: 3.11 to 3.14" src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/pill-python.svg"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/LICENSE"><img alt="licence: Apache-2.0" src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/pill-licence.svg"></a> <a href="https://eugo.io/docs/pairbench/latest/agents/"><img alt="agents: skill and MCP server" src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/pill-agents.svg"></a>
+<a href="https://pypi.org/project/pairbench/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/pairbench?label=pypi&color=7c3aed&labelColor=0b1020"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/pyproject.toml"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/pairbench?label=python&color=048196&labelColor=0b1020"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/LICENSE"><img alt="Licence: Apache-2.0" src="https://img.shields.io/badge/licence-Apache--2.0-4b5066?labelColor=0b1020"></a> <a href="https://eugo.io/docs/pairbench/latest/"><img alt="Documentation" src="https://img.shields.io/badge/docs-latest-7c3aed?labelColor=0b1020"></a>
+
+**Is one side really faster than another on this workload, on this machine, or is the difference noise?**
 
 **[Documentation](https://eugo.io/docs/pairbench/latest/)** · [Quick start](https://eugo.io/docs/pairbench/latest/quickstart/) · [How it decides](#how-it-decides) · [For AI agents](#for-ai-agents) · [Showcases](#showcases)
 
 </div>
 
-**Is one side really faster than another on this workload, on this machine, or is the
-difference noise?** pairbench runs both in paired, alternating rounds, measures the noise in
-the same rounds, and gives a verdict per case with its noise bar and an exact p-value.
+<p align="center"><img alt="A terminal recording with made-up values. pairbench plan prints the first lines of a plan for two command sides, new and old: the lineup with their twins, the positive control, sixteen rounds and the balance of the order. pairbench run then compares the two sides, reading the values a made-up benchmark prints through the lines driver, and ends on its verdict table: parse FASTER, encode TIE and resize SLOWER. The demo switches off the machine checks, so the footer under the table reads Machine state: unknown. The recording colours the verdict words; pairbench prints no colour." src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/demo.gif" width="100%"></p>
+
+<p align="center"><i>Made-up values from <a href="https://github.com/eugo-inc/pairbench/blob/main/docs/readme/demo/made_up_bench.py">a seeded generator</a>; the session is <a href="https://github.com/eugo-inc/pairbench/blob/main/docs/readme/demo/tape.sh">docs/readme/demo/tape.sh</a>.</i></p>
+
+pairbench runs both sides in paired, alternating rounds, measures the noise in the same
+rounds, and gives a verdict per case with its noise bar and an exact p-value.
 
 ```
 pip install pairbench
@@ -230,6 +233,15 @@ The rule `strict`, for a case where lower is better:
 A case that cannot be graded, for example because the positive control failed or a side has
 no twin, reads `NO VERDICT` with its reason.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/chart-dark.svg">
+    <img alt="The verdict chart of a run with made-up values, as pairbench run draws it with the plot extra: for each case, the median ratio of new to old as a dot on a log scale centred at 1, with the noise band around 1. parse lies left of the band and reads FASTER, encode sits inside it and reads TIE, resize lies right of it and reads SLOWER." src="https://github.com/eugo-inc/pairbench/raw/main/docs/readme/chart-light.svg" width="100%">
+  </picture>
+</p>
+
+<p align="center"><i>The verdict chart of the run in the recording, made-up values, as the <code>plot</code> extra draws it: a verdict needs the dot outside the band and a significant direction.</i></p>
+
 ## What a run tells you besides the verdict
 
 - **The positive control.** One more entry in every round runs the baseline's workload twice
@@ -389,3 +401,7 @@ alpha of 5 percent.
   the repository may hold and how to add a driver or a showcase.
 - [SECURITY.md](https://github.com/eugo-inc/pairbench/blob/main/SECURITY.md) says how to report
   a vulnerability privately.
+
+<br>
+
+<p align="center"><sub>pairbench is made by <a href="https://eugo.io">Eugo</a></sub></p>

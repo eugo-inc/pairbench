@@ -34,7 +34,8 @@ SKILL_LINK_TARGET = "../../skills/pairbench"
 # The package index shows the README as the package's page: its type, its first line and
 # the link to the documentation it carries.
 README_TYPE = "Description-Content-Type: text/markdown"
-README_START = "# pairbench\n"
+# The README opens with a heading of the first level that holds the banner.
+README_START = '<h1 align="center"><picture>'
 DOCS_HOME = "https://eugo.io/docs/pairbench/latest/"
 BUILD = (
     "import sys\n"

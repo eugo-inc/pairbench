@@ -43,8 +43,9 @@ CHECK_RULE = (
 NAME = "pairbench"
 LINE = "Tells real benchmark differences from noise"
 ALT = (
-    "The name pairbench in white beside an icon of two bars, above the line "
-    "“Tells real benchmark differences from noise”, on a dark blue background."
+    "The name pairbench in white beside its mark of four rounded tiles in violet and teal, above "
+    "the line “Tells real benchmark differences from noise”, on a dark background under a "
+    "violet-to-teal band."
 )
 # A PNG file that holds its header, its pixels and its end, and no text, date or colour
 # profile beside them.
