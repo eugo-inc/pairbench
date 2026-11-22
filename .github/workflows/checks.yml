@@ -1,0 +1,163 @@
+name: checks
+
+# Runs on pull requests and when started by hand. It needs no secret and only
+# reads the repository.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  # pip reads dependency groups (--group) from version 25.1 on.
+  PIP_VERSION: "26.3"
+
+jobs:
+  lint:
+    name: lint, types and the README figures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install "pip==${PIP_VERSION}"
+          python -m pip install -e . --group dev
+      - name: ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: mypy
+        run: mypy
+      - name: README figures are current
+        run: |
+          if [ -f docs/figures/launch-cost/results.json ]; then
+            pairbench fill docs/readme/README.in.md \
+              --results docs/figures/launch-cost/results.json -o README.md --check
+          else
+            pairbench fill docs/readme/README.in.md -o README.md --check
+          fi
+
+  unit:
+    name: lint, types and unit tests, Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, python: "3.11" }
+          - { os: ubuntu-24.04, python: "3.12" }
+          - { os: ubuntu-24.04, python: "3.13" }
+          - { os: ubuntu-24.04, python: "3.14" }
+          - { os: macos-15, python: "3.12" }
+    env:
+      # The plot extra is installed, so a chart test that skips is a failure.
+      PAIRBENCH_REQUIRE_PLOT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: |
+          python -m pip install "pip==${PIP_VERSION}"
+          python -m pip install -e ".[plot]" --group dev
+      - name: ruff
+        run: ruff check .
+      - name: mypy
+        run: mypy
+      - name: Unit tests
+        run: python -m pytest tests/unit tests/mutants
+
+  delivery:
+    name: delivery path (wheel, fresh environment, installed command)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PAIRBENCH_REQUIRE_DELIVERY: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install the tools that build and test the wheel
+        run: |
+          python -m pip install "pip==${PIP_VERSION}"
+          python -m pip install --group dev
+      - name: Delivery tests
+        run: python -m pytest tests/e2e --ignore=tests/e2e/test_containers.py
+
+  containers:
+    name: real containers (docker required)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PAIRBENCH_REQUIRE_ENGINE: docker
+      PAIRBENCH_REQUIRE_DELIVERY: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install the tools that build and test the wheel
+        run: |
+          python -m pip install "pip==${PIP_VERSION}"
+          python -m pip install --group dev
+      - name: Container tests
+        run: python -m pytest tests/e2e/test_containers.py -k docker
+
+  mutants:
+    name: mutation job
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install "pip==${PIP_VERSION}"
+          python -m pip install -e ".[plot]" --group dev
+      - name: Each listed change must make its test fail
+        run: python tests/mutants/run_mutants.py
+
+  docs:
+    name: documentation site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.23.4"
+      - name: Build and check the site
+        run: python3 tools/docs_site.py build
+      - name: llms.txt is current
+        run: python3 tools/docs_site.py llms --check
