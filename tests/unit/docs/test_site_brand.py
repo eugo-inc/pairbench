@@ -3,10 +3,14 @@
 """The look of the documentation site: its mark, its badges, its components and its footer.
 
 The mark of the site is the mark of the README: the site's copies are the same files. The
-badges of the home page are drawn by the build from ``pyproject.toml`` and fetch nothing. A
-page marks Starlight's components with comment lines and stays plain Markdown in ``docs/``;
-the build writes it as MDX. The footer names the maker by the home page of the host, the one
-address of the host outside the site that the check lets a page link.
+mark, the favicon and the README's banners give the tiles a shadow from a filter whose region
+is the mark's own 64-unit square, so the shadow is never cut by the edge of a smaller region,
+and each file's ids are its own, so two of them on one page do not take each other's
+gradients. The badges of the home page are drawn by the build from ``pyproject.toml`` and
+fetch nothing. A page marks Starlight's components with comment lines and stays plain
+Markdown in ``docs/``; the build writes it as MDX. The footer names the maker by the home
+page of the host, the one address of the host outside the site that the check lets a page
+link.
 """
 
 from __future__ import annotations
@@ -19,6 +23,25 @@ from types import ModuleType
 import pytest
 
 MARKS = ("mark-light.svg", "mark-dark.svg")
+# The files that draw the mark in the mark's 64-unit space: the two marks and the favicon.
+MARK_DRAWINGS = (
+    "docs/readme/mark-light.svg",
+    "docs/readme/mark-dark.svg",
+    "site/public/favicon.svg",
+)
+BANNERS = ("docs/readme/banner-light.svg", "docs/readme/banner-dark.svg")
+# The shadow's filter: its region is the whole 64 by 64 drawing in the drawing's own units, and
+# it works on the colours as they are written, in sRGB.
+SHADOW_FILTER = (
+    'filterUnits="userSpaceOnUse" x="0" y="0" width="64" height="64" '
+    'color-interpolation-filters="sRGB"'
+)
+FILTER = re.compile(r'<filter id="([^"]+)" ([^>]*)>')
+ID = re.compile(r'\bid="([^"]+)"')
+REFERENCE = re.compile(r"url\(([^)]*)\)")
+# The one id of a banner that is not the mark's or its own drawing's: its title.
+BANNER_PREFIX = "banner-"
+BANNER_TITLE_ID = "title"
 FOOTER = "site/src/components/Footer.astro"
 MAKER_LINE = 'pairbench is made by <a href="https://eugo.io/">Eugo</a>'
 SITE = "https://made-up.example"
@@ -32,6 +55,55 @@ def test_the_site_shows_the_mark_of_the_readme(repo_root: Path, name: str) -> No
     readme = (repo_root / "docs" / "readme" / name).read_bytes()
 
     assert (repo_root / "site" / "src" / "assets" / name).read_bytes() == readme
+
+
+@pytest.mark.parametrize("name", MARK_DRAWINGS)
+def test_the_shadow_of_the_mark_has_the_whole_drawing_as_its_region(
+    repo_root: Path, name: str
+) -> None:
+    text = (repo_root / name).read_text(encoding="utf-8")
+
+    filters = FILTER.findall(text)
+
+    assert [rest for _, rest in filters] == [SHADOW_FILTER]
+    assert f'filter="url(#{filters[0][0]})"' in text
+
+
+def test_the_light_and_the_dark_mark_share_no_id(repo_root: Path) -> None:
+    light, dark = (
+        set(ID.findall((repo_root / "docs" / "readme" / name).read_text(encoding="utf-8")))
+        for name in MARKS
+    )
+
+    assert light
+    assert dark
+    assert light & dark == set()
+
+
+@pytest.mark.parametrize("name", BANNERS)
+def test_a_banner_nests_the_mark_with_its_shadow_under_ids_of_its_own(
+    repo_root: Path, name: str
+) -> None:
+    text = (repo_root / name).read_text(encoding="utf-8")
+    ids = ID.findall(text)
+
+    assert len(ids) == len(set(ids))
+    assert [i for i in ids if not i.startswith(BANNER_PREFIX)] == [BANNER_TITLE_ID]
+    assert [rest for _, rest in FILTER.findall(text)] == [SHADOW_FILTER]
+    assert {ref.removeprefix("#") for ref in REFERENCE.findall(text)} <= set(ids)
+
+
+@pytest.mark.parametrize("name", BANNERS)
+def test_a_banner_draws_its_letters_as_outlines_and_loads_nothing(
+    repo_root: Path, name: str
+) -> None:
+    text = (repo_root / name).read_text(encoding="utf-8")
+
+    assert "<text" not in text
+    assert "href" not in text
+    assert "@import" not in text
+    assert re.findall(r"https?://[^\"' ]+", text) == [SVG_NAMESPACE]
+    assert [ref for ref in REFERENCE.findall(text) if not ref.startswith("#")] == []
 
 
 def test_the_footer_names_the_maker(repo_root: Path) -> None:

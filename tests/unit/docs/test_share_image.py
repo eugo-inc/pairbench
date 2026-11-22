@@ -51,6 +51,25 @@ ALT = (
 # profile beside them.
 CHUNKS = [b"IHDR", b"IDAT", b"IEND"]
 RGB_8_BIT = (8, 2)
+# Pixels of the mark, by column and row, and their colours. The top-left tile is violet,
+# shaded from #b061ff at its top to #9c38ff at its bottom; the one below it is teal. Near its
+# top edge the white highlight shows, at 22 percent; under its bottom edge, in the gap
+# between the rows of tiles, its shadow darkens the ground (#080d17); far below the mark the
+# ground is untouched.
+MARK_PIXELS = {
+    "the highlight at the top of the violet tile": ((197, 161), (193, 131, 255)),
+    "the violet tile near its top": ((197, 170), (173, 91, 255)),
+    "the violet tile near its bottom": ((197, 225), (157, 58, 255)),
+    "the shadow just under the violet tile": ((197, 230), (5, 8, 15)),
+    "the shadow further down": ((197, 234), (7, 11, 20)),
+    "the teal tile below it": ((197, 240), (103, 217, 234)),
+    "the ground far below the mark": ((197, 330), (8, 13, 23)),
+}
+# The mark's shadow has a standard deviation of 1.2 of its 64 units; the card draws the mark
+# 168 pixels wide, so 3.15 pixels. Three box passes of these widths have a variance of
+# (24 + 48 + 48) / 12 = 10 square pixels, the nearest odd widths come to 3.15 squared.
+SHADOW_DEVIATION_PIXELS = 1.2 * 168 / 64
+BOX_WIDTHS = [5, 7, 7]
 # What a figure is written with: none of it can be drawn.
 FIGURE_SIGNS = "0123456789%.,"
 # What the check prints after the file's name and its cause: how to write the file it wants.
@@ -348,6 +367,19 @@ def test_the_image_shows_the_name_and_one_plain_line(share: ModuleType) -> None:
 
 def test_the_alt_text_says_what_the_image_shows(share: ModuleType) -> None:
     assert share.ALT == ALT
+
+
+@pytest.mark.parametrize("where", sorted(MARK_PIXELS))
+def test_the_mark_is_shaded_with_a_highlight_and_a_shadow(rows: bytes, where: str) -> None:
+    (x, y), colour = MARK_PIXELS[where]
+    at = y * (ROW_BYTES + 1) + 1 + 3 * x
+
+    assert tuple(rows[at : at + 3]) == colour
+
+
+def test_the_shadow_is_blurred_by_box_passes_of_a_gaussian_s_variance(share: ModuleType) -> None:
+    assert share.box_widths(SHADOW_DEVIATION_PIXELS) == BOX_WIDTHS
+    assert "exp(" not in inspect.getsource(share)
 
 
 def test_the_drawing_uses_square_roots_and_no_trigonometry(share: ModuleType) -> None:

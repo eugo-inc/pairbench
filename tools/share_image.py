@@ -5,12 +5,17 @@
 A page shared on a social site or in a chat shows this image beside its title. It holds
 a band of the site's accent gradient along its top, the mark of the site (the four tiles of
 ``docs/readme/mark-dark.svg``, in the order of two alternating rounds), the name pairbench
-and one line on what it does, on the dark ground of the site.
+and one line on what it does, on the dark ground of the site. The mark is drawn as its file
+draws it: a soft shadow straight down under all four tiles, each tile shaded from top to
+bottom in its own colour, and a faint white line just inside each tile's edge that fades out
+before the middle of the tile.
 
 The drawing uses only the standard library and arithmetic that gives the same result on
 every machine: the letters are strokes of a small built-in font, made of straight pieces
 and of arcs whose points come from square roots, never from the system's fonts or its
-trigonometry. The build copies the committed file as it is, once ``is_current`` finds it
+trigonometry. The shadow is blurred by three passes of a box filter, whose widths come
+from a square root and whose sums are whole numbers, never by the exponential of a Gaussian.
+The build copies the committed file as it is, once ``is_current`` finds it
 is the file this script writes, up to how its rows are compressed; ``is_current`` says
 exactly what it accepts and what it refuses, and ``refusal`` names why a file is refused.
 
@@ -29,7 +34,7 @@ import struct
 import sys
 import zlib
 from array import array
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -46,16 +51,39 @@ ALT = (
 Point = tuple[float, float]
 Stroke = list[Point]
 Colour = tuple[int, int, int]
+# The colour of a layer at a pixel, given its column and its row.
+Paint = Callable[[int, int], Colour]
 
-# The dark palette of the site: its ground, its text, a softer text, its two accents, and the
-# two ends of its gradient.
+# The dark palette of the site: its ground, its text, a softer text, and the two ends of its
+# gradient.
 BACKGROUND: Colour = (0x08, 0x0D, 0x17)
 NAME_COLOUR: Colour = (0xF2, 0xF3, 0xF8)
 LINE_COLOUR: Colour = (0xA9, 0xB0, 0xC3)
-VIOLET: Colour = (0xA1, 0x42, 0xFF)
-TEAL: Colour = (0x22, 0xC7, 0xE0)
 GRADIENT: tuple[Colour, Colour] = ((0xA0, 0x3F, 0xFF), (0x00, 0x82, 0x94))
 BAND_HEIGHT = 10
+
+# The mark of ``docs/readme/mark-dark.svg``, in its 64-unit space. Each tile is shaded from
+# its top colour to its bottom one.
+VIOLET: tuple[Colour, Colour] = ((0xB0, 0x61, 0xFF), (0x9C, 0x38, 0xFF))
+TEAL: tuple[Colour, Colour] = ((0x3D, 0xCE, 0xE4), (0x1E, 0xC1, 0xD9))
+MARK_UNITS = 64.0
+TILE = 26.0
+TILE_RADIUS = 7.0
+# The shadow: black, straight down by its offset, blurred with its standard deviation, and
+# cut to the mark's 64 units, the region of the file's filter.
+SHADOW: Colour = (0x00, 0x00, 0x00)
+SHADOW_OPACITY = 0.55
+SHADOW_OFFSET = 1.2
+SHADOW_DEVIATION = 1.2
+# The highlight: a white line one unit wide, half a unit inside each tile's edge, at its
+# opacity at the top, fading to nothing over its share of the line's height.
+HIGHLIGHT: Colour = (0xFF, 0xFF, 0xFF)
+HIGHLIGHT_OPACITY = 0.22
+HIGHLIGHT_WIDTH = 1.0
+HIGHLIGHT_REACH = 0.45
+# The box passes that blur the shadow, and the whole steps of coverage the blur sums.
+BLUR_PASSES = 3
+COVER_STEPS = 1024
 
 # --- directions without trigonometry -------------------------------------------------------
 
@@ -262,6 +290,120 @@ class Layer:
                 if amount > 0.0:
                     self._put(x, y, 1.0 if amount > 1.0 else amount)
 
+    def rounded_ring(
+        self, left: float, top: float, width: float, height: float, radius: float, thickness: float
+    ) -> None:
+        """Draw the outline of a box with rounded corners, a line ``thickness`` pixels wide
+        centred on the box's edge, smoothed at its sides."""
+        half = thickness / 2
+        cx, cy = left + width / 2, top + height / 2
+        hx, hy = width / 2 - radius, height / 2 - radius
+        reach = int(half) + 2
+        for y in range(max(0, int(top) - reach), min(self.height, int(top + height) + reach + 1)):
+            for x in range(
+                max(0, int(left) - reach), min(self.width, int(left + width) + reach + 1)
+            ):
+                qx = abs(x + 0.5 - cx) - hx
+                qy = abs(y + 0.5 - cy) - hy
+                ox, oy = max(qx, 0.0), max(qy, 0.0)
+                inside = min(max(qx, qy), 0.0)
+                distance = math.sqrt(ox * ox + oy * oy) + inside - radius
+                amount = half + 0.5 - abs(distance)
+                if amount > 0.0:
+                    self._put(x, y, 1.0 if amount > 1.0 else amount)
+
+    def fade(self, top: float, height: float, opacity: float, reach: float) -> None:
+        """Scale the cover of every row for a line ``height`` pixels high from ``top``: by
+        ``opacity`` down to the top, then in a straight line to nothing at ``reach`` of the
+        height, and nothing below."""
+        end = reach * height
+        for y in range(self.height):
+            down = y + 0.5 - top
+            scale = opacity if down <= 0.0 else opacity * (1.0 - down / end) if down < end else 0.0
+            start = y * self.width
+            for index in range(start, start + self.width):
+                if self.cover[index] > 0.0:
+                    self.cover[index] *= scale
+
+
+def box_widths(deviation: float, passes: int = BLUR_PASSES) -> list[int]:
+    """The odd widths, in pixels, of the box passes whose blur together has the variance of a
+    Gaussian of the given standard deviation, as near as odd widths come: some passes of one
+    width and the rest two wider. Only a square root and plain arithmetic are used."""
+    variance = 12.0 * deviation * deviation
+    lower = int(math.sqrt(variance / passes + 1.0))
+    if lower % 2 == 0:
+        lower -= 1
+    narrow = round(
+        (variance - passes * lower * lower - 4 * passes * lower - 3 * passes) / (-4 * lower - 4)
+    )
+    narrow = max(0, min(passes, narrow))
+    return [lower] * narrow + [lower + 2] * (passes - narrow)
+
+
+def _box_pass(values: list[int], width: int) -> list[int]:
+    """The sums of a box ``width`` values wide centred on each value, with nothing beyond
+    the ends: whole numbers, so the same on every machine."""
+    half = width // 2
+    count = len(values)
+    out = [0] * count
+    total = sum(values[: min(half, count)])
+    for index in range(count):
+        if index + half < count:
+            total += values[index + half]
+        if index - half - 1 >= 0:
+            total -= values[index - half - 1]
+        out[index] = total
+    return out
+
+
+def blurred_shadow(source: Layer, box: tuple[int, int, int, int], deviation: float) -> Layer:
+    """A layer of a shadow: the cover of ``source`` blurred by box passes along the rows and
+    then the columns, at ``SHADOW_OPACITY``, inside a box of pixels (its first column, first
+    row, and the column and row after its last) and nothing outside it.
+
+    The cover is counted in ``COVER_STEPS`` whole steps and the passes add whole numbers; the
+    sums are divided once, at the end."""
+    x0, y0, x1, y1 = box
+    widths = box_widths(deviation)
+    grid = [
+        [int(source.cover[y * source.width + x] * COVER_STEPS + 0.5) for x in range(x0, x1)]
+        for y in range(y0, y1)
+    ]
+    for width in widths:
+        grid = [_box_pass(row, width) for row in grid]
+    columns = [list(column) for column in zip(*grid, strict=True)]
+    for width in widths:
+        columns = [_box_pass(column, width) for column in columns]
+    divisor = COVER_STEPS * math.prod(widths) ** 2
+    shadow = Layer(source.width, source.height)
+    for column, values in enumerate(columns):
+        for row, value in enumerate(values):
+            if value:
+                index = (y0 + row) * source.width + x0 + column
+                shadow.cover[index] = SHADOW_OPACITY * value / divisor
+    return shadow
+
+
+def shade(ends: tuple[Colour, Colour], tops: Sequence[float], height: float) -> Paint:
+    """The paint of tiles shaded from top to bottom: at a row, the tile whose top is the last
+    one at or above the row's middle, its colour mixed from its two ends in a straight line
+    from its top to its bottom, rounded to the nearest whole value."""
+    (r0, g0, b0), (r1, g1, b1) = ends
+
+    def paint(x: int, y: int) -> Colour:
+        middle = y + 0.5
+        top = max([tops[0], *(edge for edge in tops if edge <= middle)])
+        t = (middle - top) / height
+        t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
+        return (
+            int(r0 + (r1 - r0) * t + 0.5),
+            int(g0 + (g1 - g0) * t + 0.5),
+            int(b0 + (b1 - b0) * t + 0.5),
+        )
+
+    return paint
+
 
 def gradient(x: int, width: int = WIDTH) -> Colour:
     """The colour of the gradient at a column: each channel goes from the first end to the
@@ -275,9 +417,12 @@ def gradient(x: int, width: int = WIDTH) -> Colour:
     )
 
 
-def compose(width: int, height: int, layers: Sequence[tuple[Layer, Colour | None]]) -> bytes:
+def compose(
+    width: int, height: int, layers: Sequence[tuple[Layer, Colour | Paint | None]]
+) -> bytes:
     """The rows of the image, each led by the byte of PNG's filter 0, layers drawn in order.
-    A layer whose colour is ``None`` is drawn in the colour of the gradient at each column."""
+    A layer whose colour is ``None`` is drawn in the colour of the gradient at each column,
+    and a layer whose colour is a paint in the colour the paint gives at each pixel."""
     rows = bytearray()
     for y in range(height):
         rows.append(0)
@@ -287,7 +432,12 @@ def compose(width: int, height: int, layers: Sequence[tuple[Layer, Colour | None
             for layer, colour in layers:
                 amount = layer.cover[index]
                 if amount > 0.0:
-                    lr, lg, lb = gradient(x, width) if colour is None else colour
+                    if colour is None:
+                        lr, lg, lb = gradient(x, width)
+                    elif callable(colour):
+                        lr, lg, lb = colour(x, y)
+                    else:
+                        lr, lg, lb = colour
                     r = int(r + (lr - r) * amount + 0.5)
                     g = int(g + (lg - g) * amount + 0.5)
                     b = int(b + (lb - b) * amount + 0.5)
@@ -312,23 +462,50 @@ def render() -> bytes:
     band.rounded_box(0, 0, WIDTH, BAND_HEIGHT, 0)
     # The mark on its 64-unit grid: four tiles of 26 units with a radius of 7, 4 units in from
     # the edges and 4 apart; violet at the top left and the bottom right, teal at the others.
-    scale = icon / 64
+    scale = icon / MARK_UNITS
+    tile, radius = TILE * scale, TILE_RADIUS * scale
     violet = Layer(WIDTH, HEIGHT)
     teal = Layer(WIDTH, HEIGHT)
+    lowered = Layer(WIDTH, HEIGHT)
+    tops = [icon_top + (4 + 30 * row) * scale for row in (0, 1)]
+    # The highlights of each row of tiles, faded down from the top of their own line.
+    highlights = [Layer(WIDTH, HEIGHT) for _ in tops]
+    inset = HIGHLIGHT_WIDTH / 2 * scale
     for column, row in ((0, 0), (1, 0), (0, 1), (1, 1)):
         tiles = violet if column == row else teal
-        x, y = left + (4 + 30 * column) * scale, icon_top + (4 + 30 * row) * scale
-        tiles.rounded_box(x, y, 26 * scale, 26 * scale, 7 * scale)
+        x, y = left + (4 + 30 * column) * scale, tops[row]
+        tiles.rounded_box(x, y, tile, tile, radius)
+        lowered.rounded_box(x, y + SHADOW_OFFSET * scale, tile, tile, radius)
+        highlights[row].rounded_ring(
+            x + inset,
+            y + inset,
+            tile - 2 * inset,
+            tile - 2 * inset,
+            radius - inset,
+            HIGHLIGHT_WIDTH * scale,
+        )
+    for top, highlight in zip(tops, highlights, strict=True):
+        highlight.fade(top + inset, tile - 2 * inset, HIGHLIGHT_OPACITY, HIGHLIGHT_REACH)
+    # The shadow's region is the mark's square: the pixels whose middles lie inside it.
+    region = (
+        math.ceil(left - 0.5),
+        math.ceil(icon_top - 0.5),
+        math.ceil(left + icon - 0.5),
+        math.ceil(icon_top + icon - 0.5),
+    )
+    shadow = blurred_shadow(lowered, region, SHADOW_DEVIATION * scale)
     name = Layer(WIDTH, HEIGHT)
     name.strokes(text_strokes(NAME, left + icon + gap, name_baseline, name_unit), 1.15 * name_unit)
     tagline = Layer(WIDTH, HEIGHT)
     tagline.strokes(
         text_strokes(LINE, (WIDTH - line_width) / 2, line_baseline, line_unit), 0.85 * line_unit
     )
-    layers: list[tuple[Layer, Colour | None]] = [
+    layers: list[tuple[Layer, Colour | Paint | None]] = [
         (band, None),
-        (violet, VIOLET),
-        (teal, TEAL),
+        (shadow, SHADOW),
+        (violet, shade(VIOLET, tops, tile)),
+        (teal, shade(TEAL, tops, tile)),
+        *((highlight, HIGHLIGHT) for highlight in highlights),
         (name, NAME_COLOUR),
         (tagline, LINE_COLOUR),
     ]
