@@ -1,0 +1,42 @@
+name: publish
+
+# Uploads a release's wheel and sdist to PyPI through trusted publishing, so
+# no token is stored. It uploads the files attached to the GitHub release, as
+# they were built and checked, and builds nothing itself. The release must
+# list their sha256 sums in SHA256SUMS.txt.
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  pypi:
+    name: upload to PyPI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/pairbench/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download the release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist \
+            --pattern '*.whl' --pattern '*.tar.gz' --pattern 'SHA256SUMS.txt'
+          cd dist
+          test "$(ls *.whl | wc -l)" = 1
+          test "$(ls *.tar.gz | wc -l)" = 1
+          sha256sum --check --strict SHA256SUMS.txt
+          rm SHA256SUMS.txt
+          ls -l
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
