@@ -436,3 +436,16 @@ def test_plug_in_names_never_reach_the_counts() -> None:
         "loaded",
         "failed",
     ]
+
+
+def test_a_load_failure_line_escapes_its_name_and_reason() -> None:
+    failure = registry.LoadFailure(
+        group="pairbench.drivers",
+        name="made\x1b[2Jup",
+        origin="entry_point",
+        reason="ValueError: a\\b\u202ec",
+    )
+    assert failure.line == (
+        "pairbench: plug-in failed to load: pairbench.drivers made\\x1b[2Jup: "
+        "ValueError: a\\\\b\\u202ec"
+    )

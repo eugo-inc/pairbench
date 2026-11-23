@@ -53,7 +53,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from pairbench.errors import EXIT_INTERRUPTED, Refusal, docs_address
+from pairbench.errors import EXIT_INTERRUPTED, Refusal, docs_address, unprintable
 from pairbench.mcp import library
 
 if TYPE_CHECKING:
@@ -369,6 +369,16 @@ class RunHandle:
         if code == EXIT_INTERRUPTED:
             return "interrupted"
         return "finished" if code in (0, 1) else "refused"
+
+
+def _message_of_line(shown: str) -> str:
+    """A refusal's message as the refusal holds it, read back from its line on standard error,
+    which escapes it as ``errors.printable`` writes it; the line as printed when it holds no
+    such escapes."""
+    try:
+        return unprintable(shown)
+    except ValueError:
+        return shown
 
 
 def _pump(run: RunHandle) -> None:
@@ -814,7 +824,7 @@ class ToolServer:
                 code_text = found.group(1)
                 answer["refusal"] = {
                     "code": code_text,
-                    "message": found.group(2),
+                    "message": _message_of_line(found.group(2)),
                     **_docs(code_text),
                 }
         results = run.folder / "results.json"

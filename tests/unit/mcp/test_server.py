@@ -601,6 +601,23 @@ def test_plan_answers_the_text_of_the_plan_command_and_its_numbers() -> None:
     assert "new~same" in got["text"]
 
 
+def test_plan_escapes_names_in_its_text_and_keeps_them_in_its_numbers() -> None:
+    odd = "a\x1b[31mb"
+    got = answer(
+        ToolServer(allow_run=False),
+        "plan",
+        sides=[f"{odd}=cmd:true", "c\u202ed=cmd:false"],
+        sets=["run.rounds=8", "explain.mode=off", "controls.positive=off"],
+    )
+
+    assert got["lineup"] == [odd, f"{odd}~same", "c\u202ed", "c\u202ed~same"]
+    assert got["text"].startswith(
+        "# lineup: a\\x1b[31mb, a\\x1b[31mb~same, c\\u202ed, c\\u202ed~same\n"
+    )
+    assert "\x1b" not in got["text"]
+    assert "\u202e" not in got["text"]
+
+
 def test_plan_refuses_sides_that_are_result_files() -> None:
     refused = answer(
         ToolServer(allow_run=False),

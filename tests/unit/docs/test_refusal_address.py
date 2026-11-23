@@ -46,7 +46,7 @@ def entries(text: str) -> dict[str, str]:
 
 
 def test_the_address_of_a_text_code_names_its_entry_in_the_release_folder() -> None:
-    assert docs_address("E_USAGE", "0.2.0") == USAGE_ADDRESS
+    assert docs_address("E_USAGE", "0.2.1") == USAGE_ADDRESS
     assert docs_address("E_POOL_SAME", "12.3.4rc1") == POOL_ADDRESS
     assert docs_line("E_USAGE", "0.2.7") == f"pairbench: see {USAGE_ADDRESS}"
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 import sys
 from fractions import Fraction
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from pairbench import registry, runner
+from pairbench import config, registry, runner
 from pairbench.api import API_VERSION, GROUP_RULES, SideLookup
 from pairbench.errors import EXIT_ANALYSIS, EXIT_OK, EXIT_USAGE, Refusal
 from pairbench.model import (
@@ -678,6 +679,65 @@ def test_the_plan_text_shows_only_the_last_part_of_a_looked_up_path() -> None:
     assert "# side new: identified (executable=prog, version=0.0.0)\n" in text
     assert "# side old: identified (version=0.0.0); read from old.json\n" in text
     assert "zqmkcx" not in text and "zqmkcy" not in text and "/made/up" not in text
+
+
+# Side names from a config file that hold an escape character and a right-to-left override.
+ODD_CONFIG = r"""
+[workload]
+argv = ["true"]
+driver = "wall"
+
+[sides."a\u001b[31mb"]
+image = "img:1"
+
+[sides."c\u202ed"]
+image = "img:2"
+baseline = true
+"""
+ODD_NAMES = ("a\x1b[31mb", "c\u202ed")
+ESCAPED_CLASS = re.compile(
+    "[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]"
+)
+
+
+def test_the_plan_text_escapes_every_name_from_the_input(tmp_path: Path) -> None:
+    path = tmp_path / "pairbench.toml"
+    path.write_text(ODD_CONFIG, encoding="utf-8")
+    experiment = config.load_experiment(path, environ={})
+    lookups = {
+        ODD_NAMES[0]: SideLookup(status="unchecked", message="engine e\u202ef is away"),
+        ODD_NAMES[1]: SideLookup(status="absent", message="tag a\\b\x1b"),
+    }
+    plan = build_plan(experiment)
+    text = format_plan(plan, experiment, lookups=lookups)
+
+    assert ESCAPED_CLASS.search(text) is None
+    assert text.startswith("# lineup: a\\x1b[31mb, a\\x1b[31mb~same, c\\u202ed, c\\u202ed~same\n")
+    assert (
+        "# pairbench: note: identity_not_checked: side a\\x1b[31mb: identity was not checked; "
+        "engine e\\u202ef is away\n"
+    ) in text
+    assert "# side c\\u202ed: absent from this machine; tag a\\\\b\\x1b\n" in text
+    assert (
+        "round\tpos\tname\tside\ttwin_of\n"
+        "1\t1\ta\\x1b[31mb\ta\\x1b[31mb\t\n"
+        "1\t2\ta\\x1b[31mb~same\ta\\x1b[31mb\ta\\x1b[31mb\n"
+    ) in text
+    assert plan.lineup == (
+        ODD_NAMES[0],
+        f"{ODD_NAMES[0]}~same",
+        ODD_NAMES[1],
+        f"{ODD_NAMES[1]}~same",
+    )
+    assert ESCAPED_CLASS.search(plan.to_tsv()) is not None
+
+
+def test_the_plan_text_of_plain_names_is_the_plan_table() -> None:
+    experiment = _experiment()
+    plan = build_plan(experiment)
+    text = format_plan(plan, experiment)
+    assert text.endswith(plan.to_tsv())
+    assert "\n" + plan.to_tsv() in text
 
 
 # ---------------------------------------------------------------------------

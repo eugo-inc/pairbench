@@ -6,6 +6,36 @@ description: "What each release of pairbench added and changed, newest first."
 
 This page lists what each release of pairbench added and changed, newest first.
 
+## 0.2.1
+
+A fix to what the terminal shows of a text read from an input.
+
+- **Lines on standard error**: a refusal, a note, a machine check that did not pass and a line
+  of the command's own write a line or paragraph separator (U+2028, U+2029), a character that
+  changes the order the text around it shows in (U+061C, U+200E, U+200F, U+202A to U+202E,
+  U+2066 to U+2069) and a lone surrogate as an escape such as `\uNNNN`, as they write a
+  control character, so a name read from an input stays on its line, shows in its own order
+  and always prints. A backslash is written as `\\`, so each printed line stands for one text
+  only: the typed text `\x1b` prints as `\\x1b`, and an escape character as `\x1b`. A name
+  that a message quotes keeps the escapes of its quoting, and their backslashes then show
+  doubled: a side named `a\b` is quoted as `'a\\b'` and shows as `'a\\\\b'`, and an escape
+  character in a quoted name shows as `\\x1b`. `results.json` keeps every message as it is,
+  and the tool server gives the refusal of a run it started as the refusal holds it. The
+  [exit-codes page](reference/exit-codes.md#text-codes) says how a message is escaped.
+- **Plan text**: `pairbench plan`, and the text the tool server's plan tool answers, escape
+  every line in the same way, the header and the table alike. The numbers of
+  the plan and `plan.tsv` keep each name as it is.
+- **Terminal report**: a line or paragraph separator, a character that changes the order of
+  the text and a lone surrogate show as `?`, as a control character does.
+- **Plug-ins and the self-test**: the line of a plug-in that failed to load and the detail of
+  a failed self-test control are escaped as the lines on standard error are. The text of
+  `pairbench doctor` prints the failed plug-in line escaped, and its `--json` output keeps the
+  text as it is.
+- **Changelog check**: the test that every change to the text codes is named in the changelog
+  refuses a newest entry that holds directive syntax, a line that starts with two colons or a
+  colon before a letter on a line with a code span, which the documentation site would drop
+  with what it holds. The set of text codes is that of 0.2.0.
+
 ## 0.2.0
 
 A lenient mode of the text reader, the pool checks on their own, and text codes that stay

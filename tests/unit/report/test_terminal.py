@@ -495,3 +495,19 @@ def test_the_reporter_is_registered_under_its_name() -> None:
     assert isinstance(reporter, TerminalReporter)
     assert reporter.name == "terminal"
     assert reporter.api_version == 1
+
+
+def test_the_report_shows_every_character_printable_escapes_as_a_mark() -> None:
+    from pairbench.errors import ESCAPED_CHARACTERS
+    from pairbench.report.terminal import plain
+
+    controls = {*range(0x20), 0x7F, *range(0x80, 0xA0)}
+    others = {0x2028, 0x2029, 0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F)}
+    others |= {*range(0x2066, 0x206A), *range(0xD800, 0xE000)}
+    assert controls | others == ESCAPED_CHARACTERS
+    wrong = [
+        f"U+{code:04X}"
+        for code in range(0x110000)
+        if plain(chr(code)) != ("?" if code in ESCAPED_CHARACTERS else chr(code))
+    ]
+    assert wrong == []

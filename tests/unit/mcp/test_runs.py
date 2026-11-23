@@ -391,3 +391,29 @@ def test_what_a_run_prints_reaches_standard_error_not_standard_output(
 
     assert "E_LAUNCH_FAILED" not in printed.out
     assert "E_LAUNCH_FAILED: side new exited with code 1" in printed.err
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("a\\b", id="backslash"),
+        pytest.param("a\x1bb", id="escape-character"),
+        pytest.param("a\\x1bb", id="typed-escape"),
+    ],
+)
+def test_the_refusal_of_a_started_run_is_the_message_the_refusal_holds(
+    tmp_path: Path, name: str
+) -> None:
+    tools = ToolServer(allow_run=True)
+    sides = [f"{name}=venv:/no/where", "b=venv:/no/there"]
+
+    planned = answer(tools, "plan", sides=sides, workload=["true"])["refusal"]
+    started = answer(tools, "run_start", sides=sides, workload=["true"], out=str(tmp_path / "o"))
+    ended = wait_until(tools, started["handle"], "refused")
+
+    assert planned["message"] == f"side {name!r}: the virtual environment 'where' was not found"
+    assert ended["refusal"] == {
+        "code": "E_SIDE_UNRESOLVED",
+        "message": planned["message"],
+        "docs": planned["docs"],
+    }

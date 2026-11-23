@@ -204,8 +204,8 @@ def no_notes(code: str, message: str) -> None:
 
 
 def note_line(code: str, message: str) -> str:
-    """Return the line printed on standard error for a loud note, with each control
-    character of the message escaped."""
+    """Return the line printed on standard error for a loud note, with the message escaped
+    as ``errors.printable`` writes it."""
     return f"pairbench: note: {code}: {printable(message)}"
 
 
@@ -213,7 +213,7 @@ def gate_line(record: GateRecord) -> str:
     """Return the line printed on standard error for a machine check that did not pass.
 
     It carries the check's name, its status and, when the check gave one, its
-    one-line reason.
+    one-line reason, escaped as ``errors.printable`` writes it.
     """
     message = record.detail.get("message")
     reason = f": {printable(message)}" if isinstance(message, str) and message else ""

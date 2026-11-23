@@ -107,7 +107,7 @@ def test_a_side_name_holding_bytes_that_are_not_utf8_is_refused(
     for refused in (planned, run):
         assert refused.code == EXIT_USAGE
         assert refused.err == refusal_text(
-            "E_USAGE: side name '\\udcff' is refused: it is not UTF-8 text"
+            "E_USAGE: side name '\\\\udcff' is refused: it is not UTF-8 text"
         )
         assert refused.out == ""
     assert list(tmp_path.iterdir()) == []
@@ -1217,6 +1217,37 @@ def test_doctor_exits_0_when_nothing_can_be_asked(
     assert json.loads(result.out) == {"error": "the machine could not be described (OSError)"}
 
 
+# The reason a plug-in failed to load, with a newline and backslashes, as an import gives it.
+BROKEN_REASON = (
+    "ImportError: Unable to import required dependencies:\nnumpy: cannot load C:\\lib\\x1b.dll"
+)
+BROKEN_PREFIX = "pairbench: plug-in failed to load: pairbench.drivers broken: "
+
+
+@pytest.mark.parametrize("flags", [("--json",), ()])
+def test_doctor_keeps_a_failed_plug_in_as_it_is_in_json_and_escapes_its_line(
+    flags: tuple[str, ...], cli: Cli, quiet_doctor: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = registry.LoadFailure(
+        group="pairbench.drivers", name="broken", origin="entry_point", reason=BROKEN_REASON
+    )
+    monkeypatch.setattr(registry, "failures", lambda: (failure,))
+
+    result = cli("doctor", *flags)
+
+    assert result.code == EXIT_OK
+    if flags:
+        assert json.loads(result.out)["plugins"]["failed"] == [BROKEN_PREFIX + BROKEN_REASON]
+    else:
+        assert (
+            "  "
+            + BROKEN_PREFIX
+            + "ImportError: Unable to import required dependencies:\\n"
+            + "numpy: cannot load C:\\\\lib\\\\x1b.dll"
+            + "\n"
+        ) in result.out
+
+
 ODD_DETAIL: dict[Any, Any] = {
     "where": Path("x"),
     "set": {9, 1},
@@ -1722,3 +1753,10 @@ def test_profile_keeps_the_files_listed_before_and_lists_each_once(
     assert second.out == "profiles/b.out\nprofiles/a.out\n"
     written = json.loads(results_file.read_text(encoding="utf-8"))
     assert written["artifacts"]["profiles"] == ["profiles/a.out", "profiles/b.out"]
+
+
+def test_a_selftest_line_escapes_the_detail_of_a_failed_control() -> None:
+    from pairbench.cli import selftest
+
+    failed = selftest.Outcome("C9", "made-up control", False, "raised X: a\x1bb\\c\u2028d")
+    assert selftest._line(failed) == "FAIL  C9   made-up control: raised X: a\\x1bb\\\\c\\u2028d"

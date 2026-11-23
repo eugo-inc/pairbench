@@ -98,7 +98,7 @@ def in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_the_note_names_the_section_that_lists_the_forms() -> None:
     assert NOTE_COMMAND_SHOWN == "command_shown"
-    assert section_address(CONFIG_PAGE, SHARED_COMMAND_ANCHOR, "0.2.0") == ADDRESS
+    assert section_address(CONFIG_PAGE, SHARED_COMMAND_ANCHOR, "0.2.1") == ADDRESS
     assert f"pairbench: note: {NOTE_COMMAND_SHOWN}: {command_shown_message()}" == NOTE
 
 

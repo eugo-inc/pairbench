@@ -126,8 +126,8 @@ def emit(text: str, stream: TextIO | None = None) -> None:
 
 
 def say(message: str) -> None:
-    """Print one line of the command's own on standard error, with each control character of
-    the message escaped, as a refusal's line has it."""
+    """Print one line of the command's own on standard error, with the message escaped as
+    ``errors.printable`` writes it, as a refusal's line has it."""
     print(f"pairbench: {printable(message)}", file=sys.stderr)
 
 

@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from pairbench.cli.common import emit
-from pairbench.errors import EXIT_OK
+from pairbench.errors import EXIT_OK, printable
 
 # The plug-in groups asked for a report, and the word each is shown under.
 GROUPS: Final[tuple[tuple[str, str], ...]] = (
@@ -137,7 +137,7 @@ def collect(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     document["plugins"] = {
         "enabled": registry.plugins_enabled(),
         "loaded": registry.counts().loaded,
-        "failed": [failure.line for failure in registry.failures()],
+        "failed": [failure.text for failure in registry.failures()],
     }
     document["degraded"] = [
         f"{word} {name}: {report['summary']}"
@@ -179,7 +179,7 @@ def _lines(document: Mapping[str, Any]) -> list[str]:
         f"plug-ins: {'on' if plugins['enabled'] else 'off'}, {plugins['loaded']} loaded, "
         f"{len(plugins['failed'])} failed to load"
     )
-    lines += [f"  {line}" for line in plugins["failed"]]
+    lines += [f"  {printable(text)}" for text in plugins["failed"]]
     if document["leftover_containers"]:
         lines.append("containers left behind by runs:")
         lines += [f"  {name}" for name in document["leftover_containers"]]

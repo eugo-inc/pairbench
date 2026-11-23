@@ -77,6 +77,19 @@ and the folders pairbench makes in it: under a umask of `022` every user can rea
 the names in those folders, but cannot open a file in them that is owner-only. If you find a
 results document that leaks something it should not, report it as above.
 
+## What the terminal shows
+
+A line pairbench prints on standard error (a refusal, a note, a machine check that did not
+pass) and the text of `pairbench plan` escape what they show of an input, such as a side, case
+or file name: a control character is written as `\n` or `\x1b`, a line or paragraph separator,
+a Bidi_Control character or a lone surrogate as `\uNNNN`, and a backslash as `\\`. Such a name
+then cannot move the cursor, change the colours, start a line that looks like one of the tool's
+own or change the order a line shows in, and each printed line stands for one text only. A name
+that a message quotes keeps the escapes of its quoting, so their backslashes show doubled. The
+terminal report shows a control character, a separator, a Bidi_Control character or a lone
+surrogate as `?` and prints a backslash as it is. The results document, `plan.tsv` and
+`pairbench doctor --json` keep each name as it is.
+
 ## Known limits of the shown command
 
 The recorded command is cleaned by the shape of what it holds, so these forms of address and

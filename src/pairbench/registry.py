@@ -43,7 +43,7 @@ from pairbench.api import (
     RuleProvider,
     SideKind,
 )
-from pairbench.errors import Refusal
+from pairbench.errors import Refusal, printable
 from pairbench.model import STRICT, TOOL_NAME, PluginCounts, Rule
 
 # Every built-in plug-in: group, name, and where its object lives. The entry
@@ -128,7 +128,14 @@ class LoadFailure:
 
     @property
     def line(self) -> str:
-        """The line printed on standard error."""
+        """The line printed on standard error: ``text`` escaped as ``errors.printable``
+        writes it."""
+        return printable(self.text)
+
+    @property
+    def text(self) -> str:
+        """The failure as it is, with the name and the reason as given, for a document such as
+        ``pairbench doctor --json``."""
         return f"pairbench: plug-in failed to load: {self.group} {self.name}: {self.reason}"
 
 

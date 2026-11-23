@@ -20,7 +20,10 @@ shows alike, so the check needs no renderer:
 3. The newest entry runs from that heading to the next line that starts with ``## ``. It
    holds no ``<``, no ``&``, no control character but tab and newline, no footnote ``[^``, no
    table row, no link reference definition ``]:``, no heading of level 1 or 2 and no line of
-   ``-`` or ``=`` only, which could make one.
+   ``-`` or ``=`` only, which could make one. It holds no directive either, which a renderer
+   with directives on drops when it does not know its name, with all it holds: no line that
+   starts with ``::`` after spaces and list or quote markers (a leaf or container directive),
+   and no ``:`` before a letter on a line that holds a backtick (a text directive).
 4. A code is named only as the whole content of a code span, `` `E_X` ``, on a plain line of
    that entry: at most three spaces in, after an optional list marker, the line holds outside
    its code spans only ASCII letters, digits, spaces and ``,.;:/-``, holds no address, no
@@ -101,6 +104,8 @@ _PREAMBLE_LINES = re.compile(
 )
 _FORBIDDEN = re.compile(r"[<&\x00-\x08\x0b-\x1f\x7f-\x9f]|\[\^|\]:")
 _TABLE_ROW = re.compile(r"^[ \t]*\|", re.MULTILINE)
+_DIRECTIVE_LINE = re.compile(r"^[ \t>]*(?:(?:[-*+]|[0-9]{1,9}[.)])[ \t>]+)*::", re.MULTILINE)
+_TEXT_DIRECTIVE = re.compile(r"^(?=[^\n]*`)[^\n]*?:[A-Za-z]", re.MULTILINE)
 _HEADING_LINE = re.compile(
     r"^[ \t>]*(?:(?:[-*+]|[0-9]{1,9}[.)])[ \t>]+)*(?:#{1,2}(?:[ \t]|$)|-+[ \t]*$|=+[ \t]*$)",
     re.MULTILINE,
@@ -113,8 +118,8 @@ _SPAN = re.compile(r"`([^`]+)`")
 
 _ENTRY_RULE = (
     "the newest entry holds no `<`, no `&`, no control character but tab and newline, no "
-    "footnote, no table, no link reference definition and no heading of level 1 or 2, so that "
-    "every renderer shows it alike; take it out"
+    "footnote, no table, no link reference definition, no heading of level 1 or 2 and no "
+    "directive, so that every renderer shows it alike; take it out"
 )
 
 
@@ -181,7 +186,12 @@ def _check_entry(changelog: str, start: int, end: int) -> None:
             "]:": "a link reference definition `]:`",
         }.get(mark, f"the control character U+{ord(mark[0]):04X}")
         found.append((forbidden.start(), what))
-    for pattern, what in ((_TABLE_ROW, "a table row"), (_HEADING_LINE, "a heading line")):
+    for pattern, what in (
+        (_TABLE_ROW, "a table row"),
+        (_HEADING_LINE, "a heading line"),
+        (_DIRECTIVE_LINE, "a directive line `::`"),
+        (_TEXT_DIRECTIVE, "a text directive `:` and a letter on a line with a code span"),
+    ):
         line = pattern.search(entry)
         if line is not None:
             found.append((line.start(), what))
@@ -341,12 +351,12 @@ def test_the_changelog_is_read_by_the_rule_and_its_newest_entry_is_this_release(
     entry = newest_entry(_real_changelog())
     assert entry is not None
     assert entry[0] == _version(pairbench.__version__)
-    assert "pairbench compare --lenient" in entry[1]
+    assert "A backslash is written as" in entry[1]
     assert "## " not in entry[1]
 
 
 # The real changelog with one more line in its newest entry, after the line that ends it.
-REAL_LAST_LINE = "  is that of 0.1.1.\n"
+REAL_LAST_LINE = "  with what it holds. The set of text codes is that of 0.2.0.\n"
 
 
 def _real_with(line: str) -> str:
@@ -379,7 +389,10 @@ def test_every_change_against_the_real_changelog_is_caught() -> None:
 
 def test_a_code_named_as_the_message_says_in_the_real_changelog_is_named() -> None:
     log = _real_with("- Adds `E_MADE_UP`.")
-    assert code_problems(set(PINNED_CODES) | {"E_MADE_UP"}, PINNED_CODES, PINNED_RELEASE, log) == []
+    assert code_problems(set(PINNED_CODES) | {"E_MADE_UP"}, PINNED_CODES, PINNED_RELEASE, log) == [
+        f"the text code E_MADE_UP was added in {pairbench.__version__}, a patch release: a text "
+        "code is added only in a minor or a major release"
+    ]
     log = _real_with("- Removes `E_LOCK`.")
     assert code_problems(set(PINNED_CODES) - {"E_LOCK"}, PINNED_CODES, PINNED_RELEASE, log) == [
         f"the text code E_LOCK of {PINNED_RELEASE} was removed or renamed in "
@@ -415,8 +428,8 @@ def _entry_refused(what: str, line: int) -> list[str]:
     return [
         f"docs/changelog.md holds {what} on line {line}, in the newest release entry: the "
         "newest entry holds no `<`, no `&`, no control character but tab and newline, no "
-        "footnote, no table, no link reference definition and no heading of level 1 or 2, so "
-        "that every renderer shows it alike; take it out"
+        "footnote, no table, no link reference definition, no heading of level 1 or 2 and no "
+        "directive, so that every renderer shows it alike; take it out"
     ]
 
 
@@ -517,6 +530,9 @@ def test_the_newest_entry_ends_at_the_next_heading() -> None:
         pytest.param("- adds `E_THREE`.\n\n  [codes](u) and **E_TWO**", id="links-elsewhere"),
         pytest.param("-     `E_THREE`", id="indented-code-in-an-item"),
         pytest.param('- adds `E_THREE`, read as `pairbench (x)="y"`.', id="other-spans"),
+        pytest.param("- adds `E_THREE`: x, 1:2, `file:`.", id="colons-before-no-letter"),
+        pytest.param("- adds `E_THREE` :: 1.", id="two-colons-inside-a-line"),
+        pytest.param("- see :x.\n\n- adds `E_THREE`.", id="text-directive-on-a-line-with-no-span"),
     ],
 )
 def test_a_code_in_a_code_span_on_a_plain_line_is_named(entry: str) -> None:
@@ -595,6 +611,20 @@ def test_a_code_anywhere_else_is_not_named(entry: str) -> None:
         pytest.param("- adds `E_THREE`.\r\n", "U+000D", 9, id="carriage-return"),
         pytest.param("- adds `E_THREE`.\x7f", "U+007F", 9, id="delete"),
         pytest.param("- adds `E_THREE`.\x85", "U+0085", 9, id="c1"),
+        pytest.param(":::x\n\n`E_THREE`", "directive", 9, id="container-directive"),
+        pytest.param(":::note\n- adds `E_THREE`.\n:::", "directive", 9, id="container-closed"),
+        pytest.param("::::x\n`E_THREE`\n::::", "directive", 9, id="container-four-colons"),
+        pytest.param("- nothing.\n\n::x\n\n- adds `E_THREE`.", "directive", 11, id="leaf"),
+        pytest.param("::x[`E_THREE`]", "directive", 9, id="leaf-label"),
+        pytest.param("   :::x\n\n`E_THREE`", "directive", 9, id="container-three-spaces"),
+        pytest.param("- :::x\n\n  `E_THREE`", "directive", 9, id="container-in-an-item"),
+        pytest.param("1. ::x\n2. adds `E_THREE`.", "directive", 9, id="leaf-in-an-item"),
+        pytest.param("> :::x\n\n`E_THREE`", "directive", 9, id="container-in-a-quote"),
+        pytest.param("- a\n\n    :::x\n\n- adds `E_THREE`.", "directive", 11, id="nested"),
+        pytest.param("- adds :x `E_THREE`.", "text", 9, id="text-directive-before"),
+        pytest.param("- adds `E_THREE`, a:b.", "text", 9, id="text-directive-after"),
+        pytest.param("- adds `E_THREE`, `a:b`.", "text", 9, id="text-directive-in-a-span"),
+        pytest.param(":x[`E_THREE`]", "text", 9, id="text-directive-label"),
     ],
 )  # fmt: skip
 def test_an_entry_a_renderer_could_show_otherwise_is_refused(
@@ -607,6 +637,8 @@ def test_an_entry_a_renderer_could_show_otherwise_is_refused(
         "]:": "a link reference definition `]:`",
         "table": "a table row",
         "heading": "a heading line",
+        "directive": "a directive line `::`",
+        "text": "a text directive `:` and a letter on a line with a code span",
     }.get(what, f"the control character {what}")
     assert _check(entry) == _entry_refused(what, line)
 
@@ -791,6 +823,13 @@ LISTS = "".join("  " * depth + "- a\n" for depth in range(31))
         pytest.param(HEAD + "<1" * (MEGABYTE // 2), id="less-thans"),
         pytest.param(HEAD + "[" * (MEGABYTE // 2) + "]" * (MEGABYTE // 2), id="brackets"),
         pytest.param(HEAD + "![" * (MEGABYTE // 4) + "](" * (MEGABYTE // 4), id="images"),
+        pytest.param(HEAD + "::" * (MEGABYTE // 2), id="colons"),
+        pytest.param(HEAD + ": " * (MEGABYTE // 2) + "`a`", id="colons-then-a-span"),
+        pytest.param(HEAD + "`" + ":" * MEGABYTE, id="span-then-colons"),
+        pytest.param(HEAD + ":1\n" * (MEGABYTE // 3) + "`", id="colon-lines"),
+        pytest.param(HEAD + "`a`:1\n" * (MEGABYTE // 6), id="colon-lines-with-spans"),
+        pytest.param(HEAD + "- " * (MEGABYTE // 2) + ":x", id="markers-then-a-colon"),
+        pytest.param(HEAD + "> 1. " * (MEGABYTE // 5) + ":x", id="quote-and-items-then-a-colon"),
     ],
 )  # fmt: skip
 def test_a_page_of_a_megabyte_is_read_in_time(page: str) -> None:

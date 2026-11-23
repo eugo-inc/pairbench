@@ -238,3 +238,44 @@ def test_the_agent_pages_say_a_refusal_is_a_refused_run(repo_root: Path, name: s
     text = " ".join(page(repo_root, name).split())
     assert "beside the comparisons" not in text
     assert "can stand beside" not in text
+
+
+# How a line on standard error escapes a message, as each page that describes it says.
+ESCAPING_PAGES = (EXIT_CODES_PAGE, SKILL_EXIT_CODES, "SECURITY.md", "docs/changelog.md")
+
+
+@pytest.mark.parametrize("name", ESCAPING_PAGES)
+def test_each_page_that_describes_stderr_says_how_it_escapes_a_message(
+    repo_root: Path, name: str
+) -> None:
+    text = " ".join(page(repo_root, name).split())
+    assert "backslash" in text
+    assert "`\\\\`" in text
+    assert "`\\uNNNN`" in text
+    assert "keeps the escapes of its quoting" in text
+    assert "show doubled" in text
+
+
+def test_the_refusal_line_says_how_it_escapes_a_message() -> None:
+    doc = " ".join((errors.Refusal.line.__doc__ or "").split())
+    assert "a backslash as ``\\\\``" in doc
+    assert "keeps the escapes of its quoting, so their backslashes show doubled here" in doc
+
+
+@pytest.mark.parametrize("name", [EXIT_CODES_PAGE, "SECURITY.md"])
+def test_the_terminal_report_marks_the_class_and_prints_a_backslash(
+    repo_root: Path, name: str
+) -> None:
+    text = " ".join(page(repo_root, name).split())
+    assert "a lone surrogate as `?` and prints a backslash as it is" in text
+
+
+def test_the_skill_names_both_separators(repo_root: Path) -> None:
+    text = " ".join(page(repo_root, SKILL_EXIT_CODES).split())
+    assert "a line or paragraph separator, a Bidi_Control character" in text
+
+
+def test_the_changelog_says_doctor_json_keeps_a_failed_plug_in_as_it_is(repo_root: Path) -> None:
+    text = " ".join(page(repo_root, "docs/changelog.md").split())
+    assert "its `--json` output keeps the text as it is" in text
+    assert "escape every line in the same way" in text

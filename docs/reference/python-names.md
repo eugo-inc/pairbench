@@ -1867,8 +1867,14 @@ such things belong in `detail`.
 def line(self) -> str
 ```
 
-The one line printed on standard error: `CODE: message`, with each control
-character of the message escaped.
+The one line printed on standard error: `CODE: message`.
+
+Each character of the message that could break the line, reorder it or fail to print
+is written as an escape: a control character as `\t`, `\n`, `\r` or `\xNN`,
+a line or paragraph separator, a Bidi_Control character or a lone surrogate as
+`\uNNNN`, and a backslash as `\\`. A name that the message quotes keeps the
+escapes of its quoting, so their backslashes show doubled here. `message` and
+`to_json` keep the message as it is.
 
 #### <span id="pairbench.errors.Refusal.to_json"></span>`Refusal.to_json`
 

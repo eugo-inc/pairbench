@@ -35,6 +35,17 @@ results with its scope, `experiment` or `case`. Programs read the text code; the
 people. The scope column of the table below lists the scopes pairbench raises each code with; it
 documents the code, and a plug-in that raises a code with another scope is not stopped for it.
 
+On standard error the message is escaped, so that it stays on its line and shows in its own
+order: a control character is written as `\t`, `\n`, `\r` or `\xNN`, a line or paragraph
+separator, a Bidi_Control character or a lone surrogate as `\uNNNN`, and a backslash as `\\`,
+so each printed message stands for one text only. A name that a message quotes keeps the
+escapes of its quoting, and their backslashes then show doubled: a side named `a\b` is quoted
+as `'a\\b'` and shows as `'a\\\\b'`, and an escape character in a quoted name shows as
+`\\x1b`. Notes, the lines of machine checks and the text of `pairbench plan` are escaped the
+same way. The terminal report shows a control character, a separator, a Bidi_Control
+character or a lone surrogate as `?` and prints a backslash as it is. `refusals[]` in the
+results keeps the message as it is.
+
 <!-- example -->
 ```console
 $ pairbench compare

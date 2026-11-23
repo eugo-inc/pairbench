@@ -601,14 +601,16 @@ def test_side_named_twice_is_a_usage_error() -> None:
 def test_a_side_name_that_is_not_utf8_text_is_a_usage_error(source: dict[str, Any]) -> None:
     refused = _refused("E_USAGE", 2, **source)
 
-    assert refused.line == "E_USAGE: side name '\\udcff' is refused: it is not UTF-8 text"
+    assert refused.message == "side name '\\udcff' is refused: it is not UTF-8 text"
+    assert refused.line == "E_USAGE: side name '\\\\udcff' is refused: it is not UTF-8 text"
 
 
 def test_a_flag_side_name_that_is_not_utf8_text_is_a_usage_error() -> None:
     with pytest.raises(Refusal) as caught:
         config.flag_config({}, sides=["\udcff=cmd:x", "b=cmd:y"])
     assert (caught.value.code, caught.value.exit_code) == ("E_USAGE", 2)
-    assert caught.value.line == "E_USAGE: side name '\\udcff' is refused: it is not UTF-8 text"
+    assert caught.value.message == "side name '\\udcff' is refused: it is not UTF-8 text"
+    assert caught.value.line == "E_USAGE: side name '\\\\udcff' is refused: it is not UTF-8 text"
 
 
 def test_command_line_sides_keep_their_order() -> None:

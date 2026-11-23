@@ -741,3 +741,42 @@ def test_result_files_name_benchmarks_shown_alike_with_the_compares_marks(
         first: (1.0, 1.0),
         second: (2.0, 2.0),
     }
+
+
+# Benchmark names that hold a line separator and a right-to-left override.
+ODD_BENCHMARKS = ("BM_a\u2028b", "BM_r\u202eabc")
+
+
+def test_the_terminal_report_shows_a_breaking_or_reordering_character_as_a_mark(
+    cli: Cli, tmp_path: Path
+) -> None:
+    for side, value in (("new", 1.0), ("old", 2.0)):
+        for launch in (1, 2):
+            values = dict.fromkeys(ODD_BENCHMARKS, value)
+            path = tmp_path / f"{side}{launch}.json"
+            path.write_text(json.dumps(_gbench_doc(values)), encoding="utf-8")
+    out = tmp_path / "out"
+
+    result = cli(
+        "compare",
+        "--side",
+        f"new=file:{tmp_path}/new*.json",
+        "--side",
+        f"old=file:{tmp_path}/old*.json",
+        "--driver",
+        "gbench",
+        "--out",
+        out,
+    )
+
+    assert result.code == EXIT_OK, result.err
+    assert "\u2028" not in result.out + result.err
+    assert "\u202e" not in result.out + result.err
+    assert "BM_a?b " in result.out
+    assert "BM_r?abc " in result.out
+    results = json.loads((out / "results.json").read_text(encoding="utf-8"))
+    assert {c["case"] for c in results["comparisons"] if c["primary"]} == set(ODD_BENCHMARKS)
+    markdown = (out / "results.md").read_text(encoding="utf-8")
+    # The markdown report folds white space, the line separator included, and escapes `_`.
+    assert "| BM\\_a b |" in markdown
+    assert "| BM\\_r\u202eabc |" in markdown

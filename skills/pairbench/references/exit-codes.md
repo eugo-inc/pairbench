@@ -18,6 +18,11 @@ Every refusal prints its line on standard error, `E_CODE: message`, then a line
 is listed in `refusals[]` of the results when results were written. `pairbench doctor` always
 exits 0.
 
+On standard error a message is escaped: a control character as `\n` or `\x1b`, a line or
+paragraph separator, a Bidi_Control character or a lone surrogate as `\uNNNN`, and a
+backslash as `\\`. A name the message quotes keeps the escapes of its quoting, so their
+backslashes show doubled there. Read the message from `refusals[]` of the results, which keeps it as it is.
+
 ## Text codes
 
 | Text code | Exit | Meaning |

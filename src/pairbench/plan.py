@@ -26,8 +26,8 @@ from fractions import Fraction
 from math import comb
 
 from pairbench import registry
-from pairbench.api import SideLookup, note_line
-from pairbench.errors import Refusal
+from pairbench.api import SideLookup
+from pairbench.errors import Refusal, printable
 from pairbench.model import (
     ENERGY_SCOPE,
     KIND_FILE,
@@ -496,7 +496,9 @@ def _lookup_lines(lookups: Mapping[str, SideLookup]) -> list[str]:
         elif found.status == "absent":
             text = f"side {name}: absent from this machine"
         else:
-            text = note_line(NOTE_IDENTITY_UNCHECKED, f"side {name}: identity was not checked")
+            text = (
+                f"pairbench: note: {NOTE_IDENTITY_UNCHECKED}: side {name}: identity was not checked"
+            )
         if found.message:
             text += f"; {public_text(found.message)}"
         lines.append(text)
@@ -627,6 +629,10 @@ def format_plan(
 ) -> str:
     """Return the text the plan command prints: a header of ``#`` lines, then the plan table.
 
+    Each line of the header and each cell of the table is escaped as ``errors.printable``
+    writes it, so a name read from the config or the command line stays on its line, shows
+    in its own order and cannot drive a terminal. The plan itself keeps every name as it is.
+
     ``primary_cases`` is the number of primary cases once a warm-up has found
     them; the line on how often a serving experiment's round count catches a
     real difference is then worded for that number (``serving_odds_line``).
@@ -707,7 +713,14 @@ def format_plan(
         header.append(f"for {more} rounds, run again with --rounds {more}")
     if lookups:
         header += _lookup_lines(lookups)
-    return "".join(f"# {line}\n" for line in header) + plan.to_tsv()
+    table = ["round\tpos\tname\tside\ttwin_of"]
+    table += [
+        "\t".join(
+            printable(str(cell)) for cell in (r.round, r.pos, r.name, r.side, r.twin_of or "")
+        )
+        for r in plan.rows
+    ]
+    return "".join(f"# {printable(line)}\n" for line in header) + "\n".join(table) + "\n"
 
 
 def known_primary_cases(experiment: Experiment, primary_cases: int | None = None) -> int | None:

@@ -14,10 +14,10 @@ no function name and no shared-object name.
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Sequence
 
 from pairbench.api import API_VERSION, ReportOptions
+from pairbench.errors import ESCAPED_CHARACTERS
 from pairbench.model import Diagnostics, Results
 from pairbench.report import (
     Row,
@@ -33,12 +33,14 @@ GUTTER = "  "
 
 
 def plain(text: str) -> str:
-    """Return a text from a run with every control character shown as ``?``.
+    """Return a text from a run with every character that ``errors.printable`` escapes shown
+    as ``?``: a control character, a line or paragraph separator, a Bidi_Control character
+    and a surrogate that stands alone.
 
-    A case name or a message cannot then move the cursor or change the
-    colours of a terminal.
+    A case name or a message cannot then move the cursor, change the colours of a terminal,
+    break its line or change the order the line shows in, and the report always prints.
     """
-    return "".join("?" if unicodedata.category(ch) == "Cc" else ch for ch in text)
+    return "".join("?" if ord(ch) in ESCAPED_CHARACTERS else ch for ch in text)
 
 
 def grid(header: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:

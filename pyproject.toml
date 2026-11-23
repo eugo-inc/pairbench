@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pairbench"
-version = "0.2.0"
+version = "0.2.1"
 description = "Benchmark performance optimizations with statistics you can trust: paired, alternating runs with a measured noise floor and exact p-values. Compare container images, Python versions or inference servers on your own machine."
 readme = "README.md"
 requires-python = ">=3.11"

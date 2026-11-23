@@ -228,19 +228,96 @@ def docs_address(code: str, version: str) -> str:
     return section_address(CODES_PAGE, code.lower(), version)
 
 
+# The control characters: C0, DEL and C1.
+_CONTROLS: Final = (*range(0x20), 0x7F, *range(0x80, 0xA0))
+# The characters besides the control characters that end a line, as str.splitlines reads it.
+_LINE_SEPARATORS: Final = (0x2028, 0x2029)
+# The Bidi_Control characters, which change the order a terminal shows the text around them in.
+_BIDI_CONTROLS: Final = (0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A))
+# The surrogates, which no output stream encodes when they stand alone in a text.
+_SURROGATES: Final = range(0xD800, 0xE000)
+
+
+# The characters that printable writes as an escape, besides the backslash.
+ESCAPED_CHARACTERS: Final = frozenset(
+    (*_CONTROLS, *_LINE_SEPARATORS, *_BIDI_CONTROLS, *_SURROGATES)
+)
+
+
+def _escape(code: int) -> str:
+    if code < 0x100:
+        return f"\\x{code:02x}"
+    if code < 0x10000:
+        return f"\\u{code:04x}"
+    return f"\\U{code:08x}"
+
+
+_SHORT_ESCAPES: Final = {0x09: "\\t", 0x0A: "\\n", 0x0D: "\\r"}
+_CONTROL_ESCAPES: Final = {**{c: _escape(c) for c in _CONTROLS}, **_SHORT_ESCAPES}
 _ESCAPES: Final = {
-    **{c: f"\\x{c:02x}" for c in (*range(0x20), 0x7F, *range(0x80, 0xA0))},
-    0x09: "\\t",
-    0x0A: "\\n",
-    0x0D: "\\r",
+    **{c: _escape(c) for c in (*_CONTROLS, *_LINE_SEPARATORS, *_BIDI_CONTROLS, *_SURROGATES)},
+    **_SHORT_ESCAPES,
+    0x5C: "\\\\",
 }
 
 
 def printable(text: str) -> str:
-    """``text`` with each control character, C0, DEL and C1, written as an escape such as
-    ``\\n`` or ``\\x1b``, so that text read from an input file stays on its line and
-    cannot drive a terminal."""
+    """``text`` with each character that could break its line, reorder it or fail to print
+    written as an escape, so that text read from an input file stays on its line, shows in
+    its own order and cannot drive a terminal.
+
+    A control character, C0, DEL or C1, is written as ``\\t``, ``\\n``, ``\\r`` or
+    ``\\xNN``, such as ``\\x1b``. The line and paragraph separators U+2028 and U+2029, the
+    Bidi_Control characters U+061C, U+200E, U+200F, U+202A to U+202E and U+2066 to U+2069,
+    and a surrogate that stands alone are written as ``\\uNNNN``, such as ``\\u2028``. A
+    backslash is written as ``\\\\``, so each printed text stands for one text only: the
+    typed four characters ``\\x1b`` print as ``\\\\x1b``. Every other character is printed
+    as it is.
+    """
     return text.translate(_ESCAPES)
+
+
+_UNESCAPES: Final = {"t": "\t", "n": "\n", "r": "\r", "\\": "\\"}
+_ESCAPE_WIDTHS: Final = {"x": 2, "u": 4, "U": 8}
+_HEX_DIGITS: Final = frozenset("0123456789abcdef")
+
+
+def unprintable(shown: str) -> str:
+    """The text that ``printable`` wrote as ``shown``, such as a refusal's message read back
+    from its line on standard error.
+
+    Every text ``printable`` writes is read back to the text it came from. Other escapes of
+    the same forms are read too, such as ``\\x41`` for ``A``, which ``printable`` never
+    writes. Raises ``ValueError`` when a backslash opens no escape of these forms.
+    """
+    out: list[str] = []
+    at = 0
+    while True:
+        found = shown.find("\\", at)
+        if found < 0:
+            out.append(shown[at:])
+            return "".join(out)
+        out.append(shown[at:found])
+        kind = shown[found + 1 : found + 2]
+        if kind in _UNESCAPES:
+            out.append(_UNESCAPES[kind])
+            at = found + 2
+            continue
+        width = _ESCAPE_WIDTHS.get(kind, 0)
+        digits = shown[found + 2 : found + 2 + width]
+        if not width or len(digits) != width or not set(digits) <= _HEX_DIGITS:
+            raise ValueError(
+                f"no escape that printable writes at {found}: {shown[found : found + 10]!r}"
+            )
+        out.append(chr(int(digits, 16)))
+        at = found + 2 + width
+
+
+def control_escaped(text: str) -> str:
+    """``text`` with each control character, C0, DEL and C1, written as an escape such as
+    ``\\n`` or ``\\x1b``, and nothing else changed: the form of a refusal's message inside
+    a note that a results document keeps."""
+    return text.translate(_CONTROL_ESCAPES)
 
 
 def docs_line(code: str, version: str) -> str:
@@ -292,8 +369,15 @@ class Refusal(Exception):
 
     @property
     def line(self) -> str:
-        """The one line printed on standard error: ``CODE: message``, with each control
-        character of the message escaped."""
+        """The one line printed on standard error: ``CODE: message``.
+
+        Each character of the message that could break the line, reorder it or fail to print
+        is written as an escape: a control character as ``\\t``, ``\\n``, ``\\r`` or ``\\xNN``,
+        a line or paragraph separator, a Bidi_Control character or a lone surrogate as
+        ``\\uNNNN``, and a backslash as ``\\\\``. A name that the message quotes keeps the
+        escapes of its quoting, so their backslashes show doubled here. ``message`` and
+        ``to_json`` keep the message as it is.
+        """
         return f"{self.code}: {printable(self.message)}"
 
     def to_json(self) -> dict[str, str]:

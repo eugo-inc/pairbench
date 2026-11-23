@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from pairbench.cli.common import emit, say
-from pairbench.errors import EXIT_CHECK_FAILED, EXIT_OK, Refusal
+from pairbench.errors import EXIT_CHECK_FAILED, EXIT_OK, Refusal, printable
 
 if TYPE_CHECKING:
     from pairbench.model import Experiment
@@ -55,7 +55,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _line(outcome: Outcome) -> str:
     word = "pass" if outcome.passed else "FAIL"
-    tail = "" if outcome.passed or not outcome.detail else f": {outcome.detail}"
+    tail = "" if outcome.passed or not outcome.detail else f": {printable(outcome.detail)}"
     return f"{word}  {outcome.id:<4} {outcome.title}{tail}"
 
 
@@ -102,7 +102,8 @@ def live_check() -> Outcome:
             capture = pairbench.run(experiment, out=Path(scratch) / "run")
             results = pairbench.analyse(capture, rule=experiment.rule.name)
         except Refusal as refusal:
-            return Outcome(LIVE_ID, LIVE_TITLE, False, f"the run was refused: {refusal.line}")
+            refused = f"the run was refused: {refusal.code}: {refusal.message}"
+            return Outcome(LIVE_ID, LIVE_TITLE, False, refused)
     found = {(c.case, c.subject): c.ratio for c in results.comparisons if c.primary}
     wanted = {("live-a", "subject"): LIVE_FACTOR, ("live-b", "subject"): LIVE_FACTOR}
     if found != wanted:
