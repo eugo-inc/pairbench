@@ -65,7 +65,7 @@ from pairbench.errors import Refusal
 # ---------------------------------------------------------------------------
 
 TOOL_NAME: Final = "pairbench"
-TOOL_VERSION: Final = "0.1.1"
+TOOL_VERSION: Final = "0.2.0"
 
 SCHEMA_CAPTURE: Final = "pairbench/capture/v1"
 SCHEMA_RESULTS: Final = "pairbench/results/v1"
@@ -847,6 +847,8 @@ NOTE_IDENTITY_UNCHECKED: Final = "identity_not_checked"
 NOTE_GPU_BUSY_BEFORE_START: Final = "gpu_busy_before_start"
 NOTE_TORN_ROUND: Final = "torn_round_left_out"
 NOTE_MALFORMED_ROWS: Final = "malformed_rows"
+NOTE_VALUE_NOT_FINITE: Final = "value_not_finite"
+NOTE_ORDER_CONTRADICTED: Final = "order_contradicted"
 # Pooled captures that read one case from ids differing only in folders, or only in a secret.
 NOTE_POOL_FOLDERS_MERGED: Final = "pool_folders_merged"
 NOTE_POOL_SECRETS_MERGED: Final = "pool_secrets_merged"
@@ -14249,7 +14251,9 @@ class ReaderInfo(_Model):
     the names its data rows hold, each in order of first appearance.
     ``malformed_rows`` counts the rows skipped as malformed, ``comments`` the
     comment lines, and ``one_sided_keys`` the keys of round and case that hold
-    a value for one side only.
+    a value for one side only. ``missing_cells`` lists, as ``(round label,
+    side, case)`` in file order, each cell a lenient read found no finite
+    value in; the capture holds no observation of it.
     """
 
     reader: str
@@ -14260,6 +14264,7 @@ class ReaderInfo(_Model):
     malformed_rows: int = 0
     comments: int = 0
     one_sided_keys: int = 0
+    missing_cells: tuple[tuple[int, str, str], ...] = ()
 
     def get(self, key: str) -> str | None:
         """Return the value of the last metadata line with this key, or ``None``."""

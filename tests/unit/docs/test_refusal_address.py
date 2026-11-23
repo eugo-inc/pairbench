@@ -25,7 +25,7 @@ from pairbench.model import TOOL_VERSION
 from pairbench.report import odds
 
 PAGE = "docs/reference/exit-codes.md"
-USAGE_ADDRESS = "https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage"
+USAGE_ADDRESS = "https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage"
 POOL_ADDRESS = "https://eugo.io/docs/pairbench/12.3/reference/exit-codes/#e_pool_same"
 COMPARE_STDERR = (
     "E_USAGE: compare needs capture files or --side NAME=file:GLOB\n"
@@ -46,9 +46,9 @@ def entries(text: str) -> dict[str, str]:
 
 
 def test_the_address_of_a_text_code_names_its_entry_in_the_release_folder() -> None:
-    assert docs_address("E_USAGE", "0.1.0") == USAGE_ADDRESS
+    assert docs_address("E_USAGE", "0.2.0") == USAGE_ADDRESS
     assert docs_address("E_POOL_SAME", "12.3.4rc1") == POOL_ADDRESS
-    assert docs_line("E_USAGE", "0.1.7") == f"pairbench: see {USAGE_ADDRESS}"
+    assert docs_line("E_USAGE", "0.2.7") == f"pairbench: see {USAGE_ADDRESS}"
 
 
 def test_a_code_outside_the_table_has_no_address() -> None:

@@ -251,8 +251,8 @@ def fake_compare(
 ) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
 
-    def load_capture(path: Any, *, reader: Any = None) -> list[Any]:
-        calls.append({"load": str(path), "reader": reader})
+    def load_capture(path: Any, *, reader: Any = None, strict: bool = True) -> list[Any]:
+        calls.append({"load": str(path), "reader": reader, "strict": strict})
         return [object()]
 
     def analyse(captures: Any, **kwargs: Any) -> Results:
@@ -275,6 +275,10 @@ def fake_compare(
         (
             ("--side", "x=file:y", "--reader", "text"),
             "E_USAGE: --reader reads capture files; result files take --driver",
+        ),
+        (
+            ("--side", "x=file:y", "--lenient"),
+            "E_USAGE: --lenient reads text capture files; result files take --driver",
         ),
         (
             ("a.jsonl", "--driver", "gbench"),
@@ -311,8 +315,8 @@ def test_compare_pools_every_capture_with_the_strict_rule_by_default(
     result = cli("compare", "a.jsonl", "b.jsonl", "--allow-mixed-machines")
 
     assert result.code == EXIT_OK
-    assert fake_compare[0] == {"load": "a.jsonl", "reader": None}
-    assert fake_compare[1] == {"load": "b.jsonl", "reader": None}
+    assert fake_compare[0] == {"load": "a.jsonl", "reader": None, "strict": True}
+    assert fake_compare[1] == {"load": "b.jsonl", "reader": None, "strict": True}
     analysed = fake_compare[2]
     assert analysed["analyse"] == 2
     assert analysed["rule"] == "strict"
@@ -320,6 +324,13 @@ def test_compare_pools_every_capture_with_the_strict_rule_by_default(
     assert analysed["allow_incomplete"] is False
     assert "matmul" in result.out
     assert result.err == ""
+
+
+def test_compare_reads_leniently_with_lenient(cli: Cli, fake_compare: list[dict[str, Any]]) -> None:
+    result = cli("compare", "a.txt", "--reader", "text", "--lenient")
+
+    assert result.code == EXIT_OK
+    assert fake_compare[0] == {"load": "a.txt", "reader": "text", "strict": False}
 
 
 def test_compare_hands_the_analysis_flags_through(
@@ -874,6 +885,19 @@ def test_fill_check_fails_on_a_missing_output(cli: Cli, results_file: Path, tmp_
 
     assert result.code == EXIT_CHECK_FAILED
     assert result.err == "pairbench: fill --check: doc.md does not exist\n"
+
+
+def test_fill_check_escapes_control_characters_of_the_output_name(
+    cli: Cli, results_file: Path, tmp_path: Path
+) -> None:
+    template = tmp_path / "doc.in.md"
+    template.write_bytes(CRLF_TEMPLATE)
+    out = tmp_path / "doc\x1b[8m\n.md"
+
+    result = cli("fill", str(template), "--results", str(results_file), "-o", str(out), "--check")
+
+    assert result.code == EXIT_CHECK_FAILED
+    assert result.err == "pairbench: fill --check: doc\\x1b[8m\\n.md does not exist\n"
 
 
 def test_fill_of_a_missing_figure_exits_7_and_writes_nothing(

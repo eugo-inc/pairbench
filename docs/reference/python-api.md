@@ -16,7 +16,10 @@ def analyse(captures: Capture | Sequence[Capture], *, rule: str | Rule = "strict
             baseline: str | None = None, floors: Floors | None = None,
             allow_incomplete: bool = False, allow_mixed_machines: bool = False,
             assume_interleaved: bool = False) -> Results
-def load_capture(path: Path | str, *, reader: str | None = None) -> list[Capture]
+def check_pool(captures: Sequence[Capture], *,
+               allow_mixed_machines: bool = False) -> list[Refusal]
+def load_capture(path: Path | str, *, reader: str | None = None,
+                 strict: bool = True) -> list[Capture]
 def load_results(path: Path | str) -> Results
 def load_diagnostics(path: Path | str) -> Diagnostics
 def render(results: Results, fmt: Literal["terminal", "markdown", "json", "html"], *,
@@ -30,8 +33,14 @@ def fill(template: str | Path, results: Results | Mapping[str, Results]) -> str
 - `run` runs an experiment and returns its capture.
 - `analyse` analyses one capture, or pools several of the same experiment. Refusals are
   raised as `pairbench.errors.Refusal`, which carries the text code and the exit code.
+- `check_pool` runs the checks that pooling the captures in one analysis makes, and returns
+  what they refuse instead of raising it. See [checking a pool](#checking-a-pool).
 - `load_capture` reads the captures in a file, one per run it holds, with the reader named or
-  the one that recognises the file.
+  the one that recognises the file. `strict=False` reads it with the
+  [lenient mode](text-format.md#lenient-reading) of the text reader: a value that is not a
+  finite number is a missing cell, which the capture notes as `value_not_finite`, one note per
+  cell, and which `analyse` leaves unpaired while it grades the rest. Another reader is refused
+  with `E_USAGE`.
 - `render` renders a results document. With `diagnostics`, the terminal and markdown reports
   add the findings and the page adds the diagnostics; with `folder`, the page embeds the
   chart and flame-graph files found there.
@@ -41,6 +50,52 @@ def fill(template: str | Path, results: Results | Mapping[str, Results]) -> str
   returns an empty list.
 - `fill` reads `template` as a file when it is a `Path` and as the template text when it is a
   `str`.
+
+## Checking a pool
+
+`check_pool(captures)` runs the pool checks of `analyse` on their own, with the same code, and
+returns a list of `pairbench.errors.Refusal`, each with its `code`, `exit_code`, `scope`,
+`message` and `detail`. It raises none of them and prints nothing. An empty list says the
+captures pool. The list holds every refusal found, in the order the analysis meets them. Its
+first entry is the refusal `analyse` raises for the same captures in the same order when each
+capture is complete or `allow_incomplete=True` is given; otherwise `analyse` refuses an
+incomplete capture with `E_CAPTURE_INCOMPLETE` once the first three checks below pass:
+
+| Text code | What the check found |
+|---|---|
+| `E_POOL_SAME` | the same capture id, file path or file bytes given twice |
+| `E_POOL_IDENTICAL_ROWS` | two captures with different ids and identical observation rows |
+| `E_POOL_TRUNCATED_COPY` | one capture's rows are a stretch of another's, its last row whole or cut short |
+| `E_USAGE` | names a run marked that cannot be read alike across the captures |
+| `E_POOL_MIXED_PURPOSE` | a capture of one side against its twins pooled with a comparison |
+| `E_POOL_SIDE_DRIFT` | other sides, or a side's fingerprint, setup, working folder or workload changed |
+| `E_POOL_CASES` | the case sets or units differ |
+| `E_POOL_MACHINE` | the CPU or GPU identity differs; not listed with `allow_mixed_machines=True` |
+
+Each pair of captures gives at most one of the first three. A capture whose sides differ from
+the first capture's gives one `E_POOL_SIDE_DRIFT` for its sides and none for their
+fingerprints, setups, working folders or workload, which cannot be matched; its cases and its
+machine are checked as those of every capture are, so it can also give `E_POOL_CASES` and
+`E_POOL_MACHINE`. Most checks compare each capture with the first one given, so the entries
+after the first, and the captures they name, can change with the order of the captures. One
+capture, or none, gives an empty list. `check_pool` does not check that each capture is complete
+or that its grid of rounds matches its lineup: `analyse` does that for every capture, pooled
+or not. The notes a pool adds to the results, such as `allow_mixed_machines` or
+`pool_folders_merged`, are added by `analyse`.
+
+<!-- example -->
+```python
+>>> import pairbench
+>>> one = pairbench.Capture.from_rows(
+...     [(1, "new", "matmul", 1.92), (1, "old", "matmul", 2.41)], sides=["new", "old"]
+... )
+>>> [(refusal.code, refusal.exit_code) for refusal in pairbench.check_pool([one, one])]
+[('E_POOL_SAME', 6)]
+>>> pairbench.check_pool([one])
+[]
+```
+
+The values above are made up.
 
 ## Sides
 

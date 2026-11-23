@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol, runtime_checkable
 
-from pairbench.errors import Refusal
+from pairbench.errors import Refusal, printable
 from pairbench.model import (
     CASE_RES_CORES,
     CASE_RES_CTX_INVOLUNTARY,
@@ -204,8 +204,9 @@ def no_notes(code: str, message: str) -> None:
 
 
 def note_line(code: str, message: str) -> str:
-    """Return the line printed on standard error for a loud note."""
-    return f"pairbench: note: {code}: {message}"
+    """Return the line printed on standard error for a loud note, with each control
+    character of the message escaped."""
+    return f"pairbench: note: {code}: {printable(message)}"
 
 
 def gate_line(record: GateRecord) -> str:
@@ -215,7 +216,7 @@ def gate_line(record: GateRecord) -> str:
     one-line reason.
     """
     message = record.detail.get("message")
-    reason = f": {message}" if isinstance(message, str) and message else ""
+    reason = f": {printable(message)}" if isinstance(message, str) and message else ""
     return f"pairbench: check {record.name}: {record.status}{reason}"
 
 
@@ -2401,6 +2402,17 @@ class AnalyseCaptures(Protocol):
     ) -> Results: ...
 
 
+class CheckPool(Protocol):
+    """``pairbench.stats.analyse:pool_refusals``. Returns every refusal the pool checks of
+    an analysis meet for the captures given, in the order the analysis meets them, and
+    raises none of them. The analysis runs the same checks and raises the first, unless it
+    refuses an incomplete capture with ``E_CAPTURE_INCOMPLETE`` before it."""
+
+    def __call__(
+        self, captures: Sequence[Capture], *, allow_mixed_machines: bool = False
+    ) -> list[Refusal]: ...
+
+
 class RefusedResults(Protocol):
     """``pairbench.stats.analyse:refused``. Builds the results document of a refused run
     or analysis: every part that describes the captures, no comparison, and the
@@ -2824,6 +2836,7 @@ DELEGATES: Final[Mapping[str, tuple[str, str, type]]] = {
     "run": ("pairbench.runner", "run_experiment", RunExperiment),
     "analyse": ("pairbench.stats.analyse", "analyse_captures", AnalyseCaptures),
     "refused": ("pairbench.stats.analyse", "refused", RefusedResults),
+    "check_pool": ("pairbench.stats.analyse", "pool_refusals", CheckPool),
     "figures": ("pairbench.results.figures", "with_figures", WithFigures),
     "load_results": ("pairbench.results.writer", "read_results", ReadResults),
     "fill": ("pairbench.report.fill", "fill_text", FillText),

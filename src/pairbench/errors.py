@@ -4,8 +4,13 @@
 
 A refusal stops the work with a non-zero exit code, a stable text code and a
 one-line reason. Every text code the tool can emit is listed once, in
-``CODES``. Raising a ``Refusal`` with a code that is not in the table is a
-programming error.
+``CODES``, with the scopes pairbench raises it with. Raising a ``Refusal``
+with a code that is not in the table is a programming error; the scopes of
+a row document the code and are not checked when a refusal is made.
+
+The text codes are stable. A release adds a code only in a minor
+or a major release and names it in its changelog entry; a code is renamed or
+removed only in a major release.
 """
 
 from __future__ import annotations
@@ -54,13 +59,17 @@ class Code:
 
     ``exit_code`` is the exit code a refusal with this code has unless the
     place that raises it says otherwise. ``also`` lists the other exit codes
-    the same text code may carry.
+    the same text code may carry. ``scopes`` lists the scopes pairbench
+    raises a refusal with this code with: ``experiment`` refuses the whole run
+    or analysis, ``case`` one case of it. It documents the code; a refusal
+    with another scope is not refused for it.
     """
 
     code: str
     exit_code: int
     meaning: str
     also: tuple[int, ...] = ()
+    scopes: tuple[Scope, ...] = ("experiment",)
 
     @property
     def exit_codes(self) -> tuple[int, ...]:
@@ -79,7 +88,12 @@ def _table(*rows: Code) -> dict[str, Code]:
 
 CODES: Final[Mapping[str, Code]] = _table(
     # usage and config
-    Code("E_USAGE", EXIT_USAGE, "the command line or a library call was given something invalid"),
+    Code(
+        "E_USAGE",
+        EXIT_USAGE,
+        "the command line or a library call was given something invalid",
+        scopes=("experiment", "case"),
+    ),
     Code("E_CONFIG", EXIT_USAGE, "the config holds an unknown key or an invalid value"),
     # sides, in preflight
     Code(
@@ -214,6 +228,21 @@ def docs_address(code: str, version: str) -> str:
     return section_address(CODES_PAGE, code.lower(), version)
 
 
+_ESCAPES: Final = {
+    **{c: f"\\x{c:02x}" for c in (*range(0x20), 0x7F, *range(0x80, 0xA0))},
+    0x09: "\\t",
+    0x0A: "\\n",
+    0x0D: "\\r",
+}
+
+
+def printable(text: str) -> str:
+    """``text`` with each control character, C0, DEL and C1, written as an escape such as
+    ``\\n`` or ``\\x1b``, so that text read from an input file stays on its line and
+    cannot drive a terminal."""
+    return text.translate(_ESCAPES)
+
+
 def docs_line(code: str, version: str) -> str:
     """The line printed on standard error after a refusal's line: where its entry is."""
     return f"pairbench: see {docs_address(code, version)}"
@@ -263,8 +292,9 @@ class Refusal(Exception):
 
     @property
     def line(self) -> str:
-        """The one line printed on standard error: ``CODE: message``."""
-        return f"{self.code}: {self.message}"
+        """The one line printed on standard error: ``CODE: message``, with each control
+        character of the message escaped."""
+        return f"{self.code}: {printable(self.message)}"
 
     def to_json(self) -> dict[str, str]:
         """The entry written to ``refusals`` in a results document."""

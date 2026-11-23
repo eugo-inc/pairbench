@@ -19,13 +19,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
-from pairbench.api import API_VERSION
+from pairbench.api import API_VERSION, note_line
 from pairbench.errors import Refusal
-from pairbench.model import Capture, End, Source
+from pairbench.model import NOTE_VALUE_NOT_FINITE, Capture, End, Source
 
 # A first line too long to read whole from the head of a file still starts this way.
 _HEADER_START: Final = re.compile(rb'\s*\{\s*"t"\s*:\s*"header"')
@@ -100,7 +101,11 @@ class JsonlReader:
         return isinstance(value, dict) and value.get("t") == "header"
 
     def read(self, path: Path) -> list[Capture]:
-        """Read the capture of a file; its source holds the path, the file's hash and ``torn``."""
+        """Read the capture of a file; its source holds the path, the file's hash and ``torn``.
+
+        Each ``value_not_finite`` note the capture holds, one per missing cell of a text file
+        read leniently, is printed on standard error, as it was when the text was read.
+        """
         data = read_bytes(path)
         records, torn = parse_records(data, path.name)
         source = Source(
@@ -108,4 +113,8 @@ class JsonlReader:
             sha256=hashlib.sha256(data).hexdigest(),
             torn=torn,
         )
-        return [Capture.from_records(records, source=source)]
+        capture = Capture.from_records(records, source=source)
+        for note in capture.notes:
+            if note.code == NOTE_VALUE_NOT_FINITE:
+                print(note_line(note.code, note.message), file=sys.stderr)
+        return [capture]

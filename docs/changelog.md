@@ -6,6 +6,30 @@ description: "What each release of pairbench added and changed, newest first."
 
 This page lists what each release of pairbench added and changed, newest first.
 
+## 0.2.0
+
+A lenient mode of the text reader, the pool checks on their own, and text codes that stay
+stable.
+
+- **Lenient text reader**: `pairbench compare --lenient`, and
+  `pairbench.load_capture(path, reader="text", strict=False)` and `load_captures` from Python,
+  read a value that is not a finite number as a missing cell instead of a malformed row. The
+  new note `value_not_finite`, one per missing cell, names the side, the round and the case;
+  the capture's records and the results carry it, the analysis goes on and the round counts
+  in `n_unpaired`. A round that gives a side two positions is read with its order not
+  recorded, with the new note `order_contradicted`, so the cases that use it get
+  `NO VERDICT (order_not_recorded)`. The strict mode stays the default and reads as in 0.1.1.
+  See
+  [lenient reading](reference/text-format.md#lenient-reading).
+- **Pool checks on their own**: `pairbench.check_pool(captures)` runs the checks that pooling
+  captures in one analysis makes, with the same code as `analyse`, and returns every refusal
+  they find instead of raising the first. See
+  [checking a pool](reference/python-api.md#checking-a-pool).
+- **Stable text codes**: the
+  [exit-codes page](reference/exit-codes.md#stability-of-the-text-codes) gives the scope of
+  every text code and says when a code may be added, renamed or removed. The set of text codes
+  is that of 0.1.1.
+
 ## 0.1.1
 
 A fix to what a results file shows of a command.

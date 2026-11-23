@@ -70,7 +70,7 @@ Every answer is JSON text. A refusal is an answer, not a protocol error:
 ```json
 {"refusal": {"code": "E_SIDE_UNRESOLVED", "exit_code": 3, "scope": "experiment",
              "message": "image myorg/app:2.0 was not found",
-             "docs": "https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_side_unresolved"}}
+             "docs": "https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_side_unresolved"}}
 ```
 
 The agent reads `code`, the same stable text code the command line prints, and decides what

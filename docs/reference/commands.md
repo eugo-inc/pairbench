@@ -174,6 +174,7 @@ Analyses one capture, pools several, or compares result files of another tool.
 | `--driver NAME` | the driver that reads the files |
 | `--levels LIST` | the load level result files of a serving load tool were made at; such a driver reads each file as one level |
 | `--reader NAME` | the reader of the capture files, for the [text input format](text-format.md) or a plug-in |
+| `--lenient` | read text capture files in the [lenient mode](text-format.md#lenient-reading) of the text reader: a value that is not a finite number is a missing cell, with one `value_not_finite` note per cell, and a round that gives a side two positions has its order read as not recorded; another reader is refused with `E_USAGE` |
 | `--no-plugins` | load no plug-in outside the package |
 
 With `file` sides, compare reads the files into a run folder, as `run` does: `capture.jsonl`,

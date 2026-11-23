@@ -34,7 +34,7 @@ from pairbench.errors import (
 )
 from pairbench.mcp.server import ToolServer
 
-ADDRESS = "https://eugo.io/docs/pairbench/0.1/reference/config/#what-the-shared-files-hide"
+ADDRESS = "https://eugo.io/docs/pairbench/0.2/reference/config/#what-the-shared-files-hide"
 NOTE = (
     "pairbench: note: command_shown: results.json, results.md and report.html show the "
     "command with each --side spec, each --set value and the secret forms pairbench "
@@ -52,7 +52,7 @@ WAIT_S = 60.0
 LAUNCH_FAILED = "E_LAUNCH_FAILED: the warm-up launch of 'new' exited with 1"
 INTERRUPTED = "E_INTERRUPTED: interrupted after the results were written"
 INCOMPLETE = "E_CAPTURE_INCOMPLETE: the capture "
-SEE = "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#"
+SEE = "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#"
 QUICK = (
     "--gates",
     "off",
@@ -98,7 +98,7 @@ def in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_the_note_names_the_section_that_lists_the_forms() -> None:
     assert NOTE_COMMAND_SHOWN == "command_shown"
-    assert section_address(CONFIG_PAGE, SHARED_COMMAND_ANCHOR, "0.1.0") == ADDRESS
+    assert section_address(CONFIG_PAGE, SHARED_COMMAND_ANCHOR, "0.2.0") == ADDRESS
     assert f"pairbench: note: {NOTE_COMMAND_SHOWN}: {command_shown_message()}" == NOTE
 
 

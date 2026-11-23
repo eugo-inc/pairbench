@@ -26,6 +26,21 @@ A file holds one or more runs. Each line is one of:
   A round is any integer, 0 and below included: round numbers are labels
   that pair the rows of a round.
 
+The reader is strict by default. Its lenient mode, ``read(path,
+strict=False)``, reads two things the strict mode does not:
+
+* a value that parses as a number that is not finite (``nan``, ``inf`` or
+  ``-inf`` in any case, or a number too large to hold, as ``1e999``) is a
+  missing cell, not a malformed row. Its side still ran in its round; the
+  cell has no observation. The capture holds one loud note
+  ``value_not_finite`` per missing cell, which names the side, the round by
+  its label, the case and the capture, and the capture's number of the round
+  when it is not the label, and which the capture's records and the results
+  carry; its source lists the same cells as data;
+* a round whose recorded order contradicts itself, a side given two
+  positions in it, has an unknown order: no side of it keeps a position, as
+  for rows that no ``pass_order`` line precedes. The strict mode refuses it.
+
 Each run becomes one ``Capture`` whose sides are of kind ``rows``, with a
 lineup record and an end record that says ``complete``. A capture numbers
 its rounds 1, 2, 3 and on in the order of the run's round numbers
@@ -38,11 +53,14 @@ observation and changes neither the case id nor the floor group.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import hashlib
 import math
+import re
 import sys
-from collections.abc import Mapping, Sequence
+import warnings
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -51,6 +69,8 @@ from pairbench.capture.reader import read_bytes
 from pairbench.errors import Refusal
 from pairbench.model import (
     NOTE_MALFORMED_ROWS,
+    NOTE_ORDER_CONTRADICTED,
+    NOTE_VALUE_NOT_FINITE,
     Better,
     Capture,
     Case,
@@ -81,6 +101,7 @@ class _Run:
     order: tuple[str, ...] | None = None
     rows: list[tuple[str, str, int, str, float]] = field(default_factory=list)
     positions: dict[tuple[int, str], int] = field(default_factory=dict)
+    contradicted: set[int] = field(default_factory=set)
     malformed: int = 0
     comments: int = 0
 
@@ -93,10 +114,11 @@ def is_banner(line: str) -> bool:
     return line == BANNER or line.startswith(BANNER + " ")
 
 
-def _row(fields: Sequence[str]) -> tuple[str, str, int, str, float] | None:
+def _row(fields: Sequence[str], *, strict: bool = True) -> tuple[str, str, int, str, float] | None:
     """Read the five fields of a data row, or return ``None`` for a malformed row.
 
-    A round is any integer and a value a finite number.
+    A round is any integer and a value a finite number; without ``strict``,
+    any number, its value then kept as it parsed.
     """
     suite, side, round_text, case, value_text = fields
     try:
@@ -104,12 +126,12 @@ def _row(fields: Sequence[str]) -> tuple[str, str, int, str, float] | None:
         value = float(value_text)
     except ValueError:
         return None
-    if not math.isfinite(value):
+    if strict and not math.isfinite(value):
         return None
     return suite, side, round_, case, value
 
 
-def _split(text: str, name: str) -> list[_Run]:
+def _split(text: str, name: str, *, strict: bool = True) -> list[_Run]:
     runs: list[_Run] = []
     current = _Run()
     seen_banner = False
@@ -140,7 +162,7 @@ def _split(text: str, name: str) -> list[_Run]:
                 current.order = tuple(value.split())
             continue
         fields = line.split("\t")
-        row = _row(fields) if len(fields) == 5 else None
+        row = _row(fields, strict=strict) if len(fields) == 5 else None
         if row is None:
             current.malformed += 1
             continue
@@ -154,7 +176,9 @@ def _split(text: str, name: str) -> list[_Run]:
         if current.order is not None and side in current.order:
             pos = current.order.index(side) + 1
             known = current.positions.setdefault((round_, side), pos)
-            if known != pos:
+            if known != pos and not strict:
+                current.contradicted.add(round_)
+            elif known != pos:
                 raise Refusal(
                     "E_USAGE",
                     f"line {number} of {name}: side {side!r} ran at two positions in round "
@@ -224,15 +248,26 @@ def _capture(run: _Run, index: int, path: Path, file_sha256: str) -> Capture:
     positions = {
         (numbers[round_], side): pos
         for (round_, side), pos in run.positions.items()
-        if round_ in numbers
+        if round_ in numbers and round_ not in run.contradicted
     }
+    missing = [
+        (round_, side, case)
+        for _, side, round_, case, value in run.rows
+        if not math.isfinite(value)
+    ]
+    absent = {(numbers[round_], side, case) for round_, side, case in missing}
     case_ids = tuple(dict.fromkeys(case for _, _, _, case, _ in run.rows))
     cases = [
         Case(id=case, metric=METRIC, unit=unit, better=better, kind=kind_of_unit(unit))
         for case in case_ids
     ]
+    # A missing cell stands in the rows with a value of 1 so that its side keeps its
+    # launch in the round; its observation is taken out below.
     capture = Capture.from_rows(
-        [(numbers[round_], side, case, value) for _, side, round_, case, value in run.rows],
+        [
+            (numbers[round_], side, case, value if math.isfinite(value) else 1.0)
+            for _, side, round_, case, value in run.rows
+        ],
         sides=sides,
         twins=twins or None,
         positions=positions or None,
@@ -254,6 +289,20 @@ def _capture(run: _Run, index: int, path: Path, file_sha256: str) -> Capture:
         )
         notes.append(Note(code=NOTE_MALFORMED_ROWS, message=message))
         print(note_line(NOTE_MALFORMED_ROWS, message), file=sys.stderr)
+    for label, side, case in missing:
+        note = missing_cell_note(capture_id, label, side, case, numbers[label])
+        notes.append(note)
+        print(note_line(note.code, note.message), file=sys.stderr)
+    if run.contradicted:
+        shown = ", ".join(str(label) for label in sorted(run.contradicted))
+        many = len(run.contradicted) != 1
+        message = (
+            f"round{'s' if many else ''} {shown} of run {index} of {name} "
+            f"{'give' if many else 'gives'} a side two positions; "
+            f"{'their order was' if many else 'its order was'} read as not recorded"
+        )
+        notes.append(Note(code=NOTE_ORDER_CONTRADICTED, message=message))
+        print(note_line(NOTE_ORDER_CONTRADICTED, message), file=sys.stderr)
     info = ReaderInfo(
         reader=TextReader.name,
         run_index=index,
@@ -263,6 +312,7 @@ def _capture(run: _Run, index: int, path: Path, file_sha256: str) -> Capture:
         malformed_rows=run.malformed,
         comments=run.comments,
         one_sided_keys=one_sided,
+        missing_cells=tuple(missing),
     )
     return dataclasses.replace(
         capture,
@@ -271,6 +321,7 @@ def _capture(run: _Run, index: int, path: Path, file_sha256: str) -> Capture:
         observations=tuple(
             dataclasses.replace(o, suite=cells[(o.round, o.name, o.case)])
             for o in capture.observations
+            if (o.round, o.name, o.case) not in absent
         ),
         notes=(*capture.notes, *notes),
         source=Source(
@@ -280,6 +331,81 @@ def _capture(run: _Run, index: int, path: Path, file_sha256: str) -> Capture:
             round_labels=_labels(numbers),
         ),
     )
+
+
+_CELL_NOTE_END = " is not a finite number; the cell is read as missing"
+# A round is read with at most as many digits as ``int`` reads by default, and a case only
+# as a quoted literal, which is how a note writes a name.
+_CELL_NOTE_ROUND = re.compile(
+    r"(-?[0-9]{1,4300})(?: \(the capture's round ([0-9]{1,4300})\))? on the case "
+    r"((['\"]).*\4)",
+    re.DOTALL,
+)
+
+
+def missing_cell_note(
+    capture_id: str, label: int, side: str, case: str, number: int | None = None
+) -> Note:
+    """The loud note of one missing cell: the side, the round by its label, the case and
+    the capture. ``number`` is the capture's number of the round; the note gives it when it
+    is not the label, so that the cell can be read back from the note alone."""
+    numbered = f" (the capture's round {number})" if number not in (None, label) else ""
+    return Note(
+        code=NOTE_VALUE_NOT_FINITE,
+        message=(
+            f"the value of {side} in round {label}{numbered} on the case {case!r} of the "
+            f"capture {capture_id}{_CELL_NOTE_END}"
+        ),
+    )
+
+
+def read_missing_cell_note(
+    note: Note, capture_id: str, sides: Collection[str]
+) -> tuple[int, int, str, str] | None:
+    """The round label, the capture's number of the round, the side and the case of a
+    missing cell that ``note`` gives for the capture ``capture_id`` with the sides
+    ``sides``, or ``None`` when it is no such note or can be read more than one way.
+
+    A note that does not read cleanly gives ``None``; reading it raises nothing and warns
+    nothing."""
+    head, tail = "the value of ", f" of the capture {capture_id}{_CELL_NOTE_END}"
+    message = note.message
+    if note.code != NOTE_VALUE_NOT_FINITE or not message.startswith(head):
+        return None
+    if not message.endswith(tail) or len(message) < len(head) + len(tail):
+        return None
+    middle = message[len(head) : len(message) - len(tail)]
+    found: set[tuple[int, int, str, str]] = set()
+    for side in sides:
+        cell = _read_cell(middle, capture_id, side, message)
+        if cell is not None:
+            found.add(cell)
+    return found.pop() if len(found) == 1 else None
+
+
+def _read_cell(
+    middle: str, capture_id: str, side: str, message: str
+) -> tuple[int, int, str, str] | None:
+    """The cell of ``side`` that the middle of a note gives, or ``None``."""
+    start = f"{side} in round "
+    if not middle.startswith(start):
+        return None
+    parts = _CELL_NOTE_ROUND.fullmatch(middle, len(start))
+    if parts is None:
+        return None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            case = ast.literal_eval(parts.group(3))
+        if not isinstance(case, str):
+            return None
+        label = int(parts.group(1))
+        number = int(parts.group(2)) if parts.group(2) is not None else label
+        if missing_cell_note(capture_id, label, side, case, number).message != message:
+            return None
+    except Exception:
+        return None
+    return label, number, side, case
 
 
 def _labels(numbers: Mapping[int, int]) -> tuple[int, ...]:
@@ -308,15 +434,15 @@ class TextReader:
                 return True
         return False
 
-    def read(self, path: Path) -> list[Capture]:
-        """Read every run of a file, each as one capture."""
+    def read(self, path: Path, *, strict: bool = True) -> list[Capture]:
+        """Read every run of a file, each as one capture; leniently without ``strict``."""
         data = read_bytes(path)
         try:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise Refusal("E_USAGE", f"{path.name} is not UTF-8 text: {exc}") from exc
         file_sha256 = hashlib.sha256(data).hexdigest()
-        runs = _split(text, path.name)
+        runs = _split(text, path.name, strict=strict)
         if not runs:
             raise Refusal("E_USAGE", f"{path.name} holds no run")
         return [_capture(run, index, path, file_sha256) for index, run in enumerate(runs)]
@@ -332,7 +458,10 @@ def project(capture: Capture, a: str, b: str) -> Capture:
     and ``a`` is the baseline when ``b`` is a twin of ``a``. Naming the same
     side twice, a name that is no entry of the capture, the positive
     control, and a twin whose side is not the other one are refused with
-    ``E_USAGE``.
+    ``E_USAGE``. The view keeps the ``value_not_finite`` notes of its two
+    sides in the rounds it keeps, by its own capture id and round numbers;
+    each cell is read from its note, so a capture read back from its records
+    gives the same notes.
     """
     if a == b:
         raise Refusal("E_USAGE", f"a two-sided view names the side {a!r} twice")
@@ -399,6 +528,28 @@ def project(capture: Capture, a: str, b: str) -> Capture:
     # holds no labels of its own because its rounds were labelled 1, 2, 3.
     source = capture.source if capture.source is not None else Source()
     labels = _labels({source.round_label(r): renumber[r] for r in kept})
+    # The view notes the missing cells of its two sides in the rounds it keeps, by its own
+    # capture id and round numbers, where the capture notes every one of its cells. Each
+    # cell is read from its note, so a capture read back from its records, which keep the
+    # notes and not the reader's list of cells, gives the same notes.
+    notes: list[Note] = []
+    for note in capture.notes:
+        cell = read_missing_cell_note(note, capture.capture_id, [s.name for s in capture.sides])
+        if cell is None:
+            notes.append(note)
+        elif cell[2] in names and cell[1] in renumber:
+            label, number, side, case = cell
+            notes.append(missing_cell_note(capture_id, label, side, case, renumber[number]))
+    if source.reader is not None and source.reader.missing_cells:
+        kept_labels = {source.round_label(r) for r in kept}
+        cells = tuple(
+            cell
+            for cell in source.reader.missing_cells
+            if cell[1] in names and cell[0] in kept_labels
+        )
+        source = dataclasses.replace(
+            source, reader=dataclasses.replace(source.reader, missing_cells=cells)
+        )
     return dataclasses.replace(
         capture,
         capture_id=capture_id,
@@ -415,6 +566,7 @@ def project(capture: Capture, a: str, b: str) -> Capture:
         launches=launches,
         observations=observations,
         end=end,
+        notes=tuple(notes),
         source=(
             dataclasses.replace(source, round_labels=labels)
             if capture.source is not None or labels

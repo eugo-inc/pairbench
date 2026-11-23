@@ -184,7 +184,7 @@ def test_a_refused_run_reports_its_text_code_and_exit_code(tmp_path: Path) -> No
     assert ended["refusal"] == {
         "code": "E_LAUNCH_FAILED",
         "message": "side new exited with code 1",
-        "docs": "https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_launch_failed",
+        "docs": "https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_launch_failed",
     }
 
 

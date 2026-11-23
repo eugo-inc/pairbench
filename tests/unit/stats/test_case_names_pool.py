@@ -349,3 +349,24 @@ def test_marked_names_one_name_without_their_marks_each_on_other_sides_get_a_not
             "them, and the sides are not compared on it",
         )
     ]
+
+
+def test_check_pool_lists_names_whose_marks_clash_as_the_analysis_refuses_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pairbench
+
+    def clash(key: bytes, tell: str) -> str:
+        return CLASH
+
+    monkeypatch.setattr(api, "case_suffix", clash)
+    monkeypatch.setattr(analyse, "case_suffix", clash)
+    a = _capture("synthetic-a", 1, KEY, (FAST,))
+    b = _capture("synthetic-b", 2, OTHER_KEY, (SLOW,))
+    raised = _refused(lambda: _pool(a, b))
+    (found,) = pairbench.check_pool([a, b])
+    assert (found.code, found.exit_code, found.message) == (
+        raised.code,
+        raised.exit_code,
+        raised.message,
+    )

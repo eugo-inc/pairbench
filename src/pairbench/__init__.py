@@ -120,6 +120,7 @@ __all__ = [
     "Side",
     "__version__",
     "analyse",
+    "check_pool",
     "draw",
     "explain",
     "fill",
@@ -253,19 +254,62 @@ def analyse(
     return finished
 
 
-def load_capture(path: Path | str, *, reader: str | None = None) -> list[Capture]:
+def check_pool(captures: Sequence[Capture], *, allow_mixed_machines: bool = False) -> list[Refusal]:
+    """Run the checks that pooling ``captures`` in one analysis makes, and return what they refuse.
+
+    The checks and their refusals are those of ``analyse``, which runs the
+    same code: the same capture, file or bytes given twice
+    (``E_POOL_SAME``), identical rows (``E_POOL_IDENTICAL_ROWS``), a truncated
+    copy (``E_POOL_TRUNCATED_COPY``), a capture of one side against its twins
+    pooled with a comparison (``E_POOL_MIXED_PURPOSE``), a side, workload,
+    setup or working folder that changed (``E_POOL_SIDE_DRIFT``), other cases
+    or units (``E_POOL_CASES``), another machine (``E_POOL_MACHINE``, not
+    listed with ``allow_mixed_machines``) and names a run marked that cannot
+    be read alike (``E_USAGE``). Each is a ``Refusal`` with its text code,
+    exit code, scope, message and detail, returned, not raised, in the order
+    the analysis meets them. The first is the one ``analyse`` raises for the
+    captures in the same order when each is complete or incomplete captures
+    are allowed; ``analyse`` refuses an incomplete capture with
+    ``E_CAPTURE_INCOMPLETE`` once the first three checks pass. An empty list
+    says the captures pool. Nothing is printed. Completeness and the grid of
+    each capture are checked by ``analyse`` alone.
+    """
+    from pairbench.api import CheckPool, delegate
+    from pairbench.errors import Refusal
+    from pairbench.model import Capture
+
+    if isinstance(captures, Capture):
+        raise Refusal("E_USAGE", "check_pool takes a list of captures")
+    pool_refusals: CheckPool = delegate("check_pool")
+    return pool_refusals(tuple(captures), allow_mixed_machines=allow_mixed_machines)
+
+
+def load_capture(
+    path: Path | str, *, reader: str | None = None, strict: bool = True
+) -> list[Capture]:
     """Read the captures in a file: one per run it holds.
 
     ``reader`` names a capture reader. Without it the readers are asked in
     turn, built-ins first, whether the file is theirs; a file no reader
     claims is refused.
+
+    ``strict=False`` reads the file with the lenient mode of the text
+    reader: a value that is no finite number is a missing cell, which the
+    capture notes as ``value_not_finite``, one note per cell, and which
+    ``analyse`` leaves unpaired while it grades the rest; ``refusals`` stays
+    empty. A round whose order contradicts itself is read with its order not
+    recorded. A reader that has no lenient mode is refused with ``E_USAGE``.
     """
     from pairbench import registry
     from pairbench.api import GROUP_CAPTURE_READERS
     from pairbench.errors import Refusal
 
     file = Path(path)
+    if not isinstance(strict, bool):
+        raise Refusal("E_USAGE", "strict is true or false")
     if reader is not None:
+        if not strict:
+            return _read_leniently(registry.capture_reader(reader), reader, file)
         return registry.capture_reader(reader).read(file)
     try:
         with file.open("rb") as handle:
@@ -275,8 +319,24 @@ def load_capture(path: Path | str, *, reader: str | None = None) -> list[Capture
     for name in registry.names(GROUP_CAPTURE_READERS):
         candidate = registry.capture_reader(name)
         if candidate.sniff(file, head):
+            if not strict:
+                return _read_leniently(candidate, name, file)
             return candidate.read(file)
     raise Refusal("E_USAGE", f"no capture reader recognises {file.name}; name one with a reader")
+
+
+def _read_leniently(chosen: Any, name: str, file: Path) -> list[Capture]:
+    """Read a file with the lenient mode of the text reader, or refuse another reader."""
+    from pairbench.capture.text import TextReader
+    from pairbench.errors import Refusal
+
+    if not isinstance(chosen, TextReader):
+        raise Refusal(
+            "E_USAGE",
+            f"the capture reader {name} has no lenient mode; only the text reader reads "
+            f"{file.name} leniently",
+        )
+    return chosen.read(file, strict=False)
 
 
 def load_results(path: Path | str) -> Results:

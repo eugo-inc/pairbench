@@ -31,6 +31,8 @@ REASON_ROW = re.compile(r"^\| `([a-z_]+)` \| ", re.MULTILINE)
 
 FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*)")
 CODE_ROW = re.compile(r"^\| `(E_[A-Z_]+)` \| ([0-9 or]+) \|", re.MULTILINE)
+# A row of the page's table of text codes: the code, its exit codes and its scopes.
+CODE_SCOPE_ROW = re.compile(r"^\| `(E_[A-Z_]+)` \| [0-9 or]+ \| ([a-z or]+) \|", re.MULTILINE)
 EXIT_ROW = re.compile(r"^\| (\d+) \| ", re.MULTILINE)
 # A row of the skill's table of text codes: the code, its exit codes and its meaning.
 SKILL_CODE_MEANING = re.compile(r"^\| `(E_[A-Z_]+)` \| [0-9 or]+ \| (.*?) \|$", re.MULTILINE)
@@ -103,6 +105,14 @@ def test_every_text_code_is_documented_with_its_exit_code(repo_root: Path) -> No
     for code, entry in errors.CODES.items():
         documented = {int(number) for number in re.findall(r"\d+", rows[code])}
         assert documented == {entry.exit_code, *entry.also}, code
+
+
+def test_every_text_code_is_documented_with_its_scopes(repo_root: Path) -> None:
+    rows = dict(CODE_SCOPE_ROW.findall(page(repo_root, EXIT_CODES_PAGE)))
+
+    assert {code: tuple(rows.get(code, "").split(" or ")) for code in errors.CODES} == {
+        code: entry.scopes for code, entry in errors.CODES.items()
+    }
 
 
 def test_every_exit_code_is_documented(repo_root: Path) -> None:
@@ -205,3 +215,26 @@ def test_every_config_key_a_flag_sets_is_a_config_key(repo_root: Path) -> None:
 
     assert named
     assert sorted(named - set(CONFIG_KEYS) - {"sides.NAME"}) == []
+
+
+AGENT_PAGES = (
+    "docs/agents.md",
+    "docs/reference/results-schema.md",
+    SKILL_EXIT_CODES,
+    SKILL_RESULTS,
+    "skills/pairbench/SKILL.md",
+)
+NAMED_CODE = re.compile(r"(?<![A-Z0-9_])E_[A-Z][A-Z0-9_]*(?![A-Z0-9_])")
+
+
+@pytest.mark.parametrize("name", AGENT_PAGES)
+def test_the_agent_pages_name_only_text_codes_the_tool_has(repo_root: Path, name: str) -> None:
+    named = set(NAMED_CODE.findall(page(repo_root, name))) - {"E_CODE"}
+    assert sorted(named - set(errors.CODES)) == []
+
+
+@pytest.mark.parametrize("name", AGENT_PAGES)
+def test_the_agent_pages_say_a_refusal_is_a_refused_run(repo_root: Path, name: str) -> None:
+    text = " ".join(page(repo_root, name).split())
+    assert "beside the comparisons" not in text
+    assert "can stand beside" not in text

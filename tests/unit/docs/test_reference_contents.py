@@ -599,3 +599,72 @@ def test_the_api_page_names_the_reasons_its_two_round_example_gives() -> None:
     assert f"`NO VERDICT ({comparison.reason})`" in section
     for reason in comparison.reasons:
         assert re.search(rf"`[^`]*\b{reason}\b[^`]*`", section), reason
+
+
+def _pool_paragraph(section: str, opening: str) -> str:
+    start = section.index(opening)
+    end = section.find("\n\n", start)
+    return " ".join(section[start : end if end != -1 else len(section)].split())
+
+
+def test_the_api_page_names_every_code_check_pool_gives_a_capture_with_other_sides() -> None:
+    import dataclasses
+
+    import pairbench
+    from pairbench.model import CpuRecord
+    from pairbench.stats.selftest import MATMUL, synthetic_capture
+
+    def value(entry: str, case: str, round_: int, u: float) -> float:
+        return (2.0 if entry.startswith("new") else 1.0) * (1 + round_ / 64) * (1 + u / 1000)
+
+    first = synthetic_capture(value, capture_id="synthetic-a", seed=1)
+    other = synthetic_capture(
+        value,
+        capture_id="synthetic-b",
+        seed=2,
+        subjects=("new", "other"),
+        cases=(dataclasses.replace(MATMUL, unit="ms"),),
+    )
+    assert first.machine is not None
+    other = dataclasses.replace(
+        other, machine=dataclasses.replace(first.machine, cpu=CpuRecord(model="cpu-model-b"))
+    )
+    codes = [refusal.code for refusal in pairbench.check_pool([first, other])]
+    assert codes == ["E_POOL_SIDE_DRIFT", "E_POOL_CASES", "E_POOL_MACHINE"]
+
+    section = _section(_read("docs/reference/python-api.md"), "## Checking a pool")
+    paragraph = _pool_paragraph(section, "Each pair of captures gives at most one")
+    assert "not checked further" not in paragraph
+    for code in codes:
+        assert f"`{code}`" in paragraph, code
+
+
+def test_the_api_page_says_when_the_first_entry_of_check_pool_is_what_analyse_raises() -> None:
+    section = _section(_read("docs/reference/python-api.md"), "## Checking a pool")
+    opening = " ".join(section[: section.index("| Text code |")].split())
+    assert "so its first entry is the refusal" not in opening
+    assert "when each capture is complete or `allow_incomplete=True` is given" in opening
+    assert "`E_CAPTURE_INCOMPLETE`" in opening
+
+
+def test_every_docstring_of_check_pool_says_analyse_can_refuse_an_incomplete_capture_first() -> (
+    None
+):
+    import pairbench
+    from pairbench.api import CheckPool
+    from pairbench.stats.analyse import pool_refusals
+
+    for documented in (pairbench.check_pool, pool_refusals, CheckPool):
+        assert "E_CAPTURE_INCOMPLETE" in (documented.__doc__ or ""), documented
+
+
+def test_the_load_capture_docstring_says_a_missing_cell_is_a_note_not_a_refusal() -> None:
+    import pairbench
+
+    doc = " ".join((pairbench.load_capture.__doc__ or "").split())
+    assert "refusal of scope" not in doc
+    assert "the capture notes as ``value_not_finite``, one note per cell" in doc
+    assert "``refusals`` stays empty" in doc
+    page = " ".join(_read("docs/reference/python-names.md").split())
+    assert "refusal of scope `case`" not in page
+    assert "the capture notes as `value_not_finite`, one note per cell" in page

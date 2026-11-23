@@ -59,7 +59,12 @@ SIGNATURES: dict[str, str] = {
         "allow_incomplete: bool = False, allow_mixed_machines: bool = False, "
         "assume_interleaved: bool = False) -> Results"
     ),
-    "load_capture": "(path: Path | str, *, reader: str | None = None) -> list[Capture]",
+    "check_pool": (
+        "(captures: Sequence[Capture], *, allow_mixed_machines: bool = False) -> list[Refusal]"
+    ),
+    "load_capture": (
+        "(path: Path | str, *, reader: str | None = None, strict: bool = True) -> list[Capture]"
+    ),
     "load_results": "(path: Path | str) -> Results",
     "render": (
         "(results: Results, fmt: Literal[terminal, markdown, json, html], *, "
@@ -144,6 +149,7 @@ def test_the_names_the_package_exports() -> None:
         "Side",
         "__version__",
         "analyse",
+        "check_pool",
         "draw",
         "explain",
         "fill",
@@ -160,8 +166,8 @@ def test_the_names_the_package_exports() -> None:
 
 def test_the_version_is_the_static_version_of_the_package() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project["version"] == "0.1.1"
-    assert pairbench.__version__ == "0.1.1"
+    assert project["version"] == "0.2.0"
+    assert pairbench.__version__ == "0.2.0"
     assert "dynamic" not in project
 
 
@@ -174,6 +180,7 @@ DELEGATES: dict[str, tuple[str, str]] = {
     "run": ("pairbench.runner", "run_experiment"),
     "analyse": ("pairbench.stats.analyse", "analyse_captures"),
     "refused": ("pairbench.stats.analyse", "refused"),
+    "check_pool": ("pairbench.stats.analyse", "pool_refusals"),
     "figures": ("pairbench.results.figures", "with_figures"),
     "load_results": ("pairbench.results.writer", "read_results"),
     "fill": ("pairbench.report.fill", "fill_text"),

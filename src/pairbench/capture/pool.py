@@ -20,13 +20,19 @@ from pairbench.model import Capture
 Shared = Literal["capture id", "file path", "file hash"]
 
 
-def load_captures(paths: Sequence[Path | str], *, reader: str | None = None) -> list[Capture]:
-    """Read the captures of every file, in the order given, each file's runs in file order."""
+def load_captures(
+    paths: Sequence[Path | str], *, reader: str | None = None, strict: bool = True
+) -> list[Capture]:
+    """Read the captures of every file, in the order given, each file's runs in file order.
+
+    ``strict=False`` reads each file with the lenient mode of the text reader,
+    as ``pairbench.load_capture`` does.
+    """
     from pairbench import load_capture
 
     out: list[Capture] = []
     for path in paths:
-        out += load_capture(path, reader=reader)
+        out += load_capture(path, reader=reader, strict=strict)
     return out
 
 

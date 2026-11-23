@@ -22,7 +22,7 @@ import pytest
 WAIT_S = 60.0
 EXIT_OK = 0
 EXIT_USAGE = 2
-DOCS_LINE = "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage\n"
+DOCS_LINE = "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage\n"
 REINSTALL = "reinstall it with pip install 'pairbench[mcp]'"
 
 PACKAGE = {"mcp/__init__.py": "", "mcp/server/__init__.py": ""}

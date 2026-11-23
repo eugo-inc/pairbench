@@ -32,52 +32,68 @@ Every refusal also has a stable text code. It is printed on standard error as
 `E_CODE: message`, followed by a line `pairbench: see ADDRESS` that names the code's entry
 below in the documentation of the installed version, and recorded in `refusals[]` of the
 results with its scope, `experiment` or `case`. Programs read the text code; the message is for
-people.
+people. The scope column of the table below lists the scopes pairbench raises each code with; it
+documents the code, and a plug-in that raises a code with another scope is not stopped for it.
 
 <!-- example -->
 ```console
 $ pairbench compare
 E_USAGE: compare needs capture files or --side NAME=file:GLOB
-pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage
+pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage
 ```
 
-| Text code | Exit | When |
-|---|---|---|
-| `E_USAGE` | 2 | the command line or a library call was given something invalid, or two flags conflict |
-| `E_CONFIG` | 2 | the config holds an unknown key or an invalid value |
-| `E_SAME_SIDE` | 3 | two different sides have the same fingerprint, run in the same working folder and differ at most in a credential's value (allow with `--allow-identical`) |
-| `E_SIDE_UNIDENTIFIED` | 3 | a side could not be identified, or its `identify` command gave no output or failed |
-| `E_SIDE_UNRESOLVED` | 3 | an image, executable, interpreter or working folder was not found |
-| `E_ENTRYPOINT_UNREADABLE` | 3 | an image side runs the shared workload and the entrypoint of its image could not be read |
-| `E_ENGINE_UNSUPPORTED` | 3 | the container engine or the kind of side cannot do what was asked |
-| `E_PROFILER_MISSING` | 3 | the named profiler is not installed |
-| `E_PLOT_EXTRA_MISSING` | 3 | `--plots on` was given and the `plot` extra is not installed |
-| `E_TWIN_DRIFT` | 3 or 6 | a twin's fingerprint differs from its side's: 3 when found as the run starts, 6 when found in the analysis |
-| `E_GATE_FAILED` | 4 | a machine check failed under `enforce` |
-| `E_GATE_UNAVAILABLE` | 4 | a machine check could not run under `enforce` |
-| `E_LOCK` | 4 | a lock could not be taken: timeout or error |
-| `E_PIN_UNSUPPORTED` | 4 | CPU pinning was asked for where it cannot be done |
-| `E_CPUS_MIXED_TYPES` | 4 | the pinned CPU set mixes core types (allow with `--allow-mixed-core-types`) |
-| `E_LAUNCH_FAILED` | 5 | a launch exited non-zero, timed out, or gave output the driver cannot read |
-| `E_SIDE_CHANGED` | 5 | a side's identity changed during the run; the capture is marked failed |
-| `E_GPU_NOT_RELEASED` | 5 | GPU memory did not return to its level in time after a server stopped |
-| `E_TOO_FEW_ROUNDS` | 6 | fewer rounds are planned than can give a verdict (allow with `--allow-underpowered`) |
-| `E_CASES_DIFFER` | 6 | the sides produce different sets of primary cases |
-| `E_BUDGET` | 6 | no balanced round count fits the time budget |
-| `E_CAPTURE_INCOMPLETE` | 6 | a capture has no end record (analyse the complete rounds with `--allow-incomplete`) |
-| `E_GRID` | 6 | the observed grid of rounds and lineup entries does not match the lineup; every missing, duplicated and unexpected cell is listed |
-| `E_TWIN_ORPHAN` | 6 | a twin's side is absent |
-| `E_ORDER_NOT_VARIED` | 6 | a compared pair ran in the same order every round |
-| `E_POOL_SAME` | 6 | the same capture id, file path or file hash was given twice |
-| `E_POOL_IDENTICAL_ROWS` | 6 | two captures with different ids hold identical observation rows |
-| `E_POOL_TRUNCATED_COPY` | 6 | one capture's rows are a contiguous stretch of another's, a torn last row included |
-| `E_POOL_SIDE_DRIFT` | 6 | a side's fingerprint, its recorded setup in more than a credential's value, its working folder, or the shared workload in more than a credential's value differs between captures |
-| `E_POOL_CASES` | 6 | the case sets or units differ between captures |
-| `E_POOL_MACHINE` | 6 | the CPU or GPU identity differs between captures (allow with `--allow-mixed-machines`) |
-| `E_POOL_MIXED_PURPOSE` | 6 | a capture of one side against its own twins is pooled with a comparison of sides |
-| `E_FIGURE_MISSING` | 7 | a document names a figure that is absent; every missing key is listed |
-| `E_INTERNAL` | 8 | internal error |
-| `E_INTERRUPTED` | 130 | the run was interrupted |
+| Text code | Exit | Scope | When |
+|---|---|---|---|
+| `E_USAGE` | 2 | experiment or case | the command line or a library call was given something invalid, or two flags conflict |
+| `E_CONFIG` | 2 | experiment | the config holds an unknown key or an invalid value |
+| `E_SAME_SIDE` | 3 | experiment | two different sides have the same fingerprint, run in the same working folder and differ at most in a credential's value (allow with `--allow-identical`) |
+| `E_SIDE_UNIDENTIFIED` | 3 | experiment | a side could not be identified, or its `identify` command gave no output or failed |
+| `E_SIDE_UNRESOLVED` | 3 | experiment | an image, executable, interpreter or working folder was not found |
+| `E_ENTRYPOINT_UNREADABLE` | 3 | experiment | an image side runs the shared workload and the entrypoint of its image could not be read |
+| `E_ENGINE_UNSUPPORTED` | 3 | experiment | the container engine or the kind of side cannot do what was asked |
+| `E_PROFILER_MISSING` | 3 | experiment | the named profiler is not installed |
+| `E_PLOT_EXTRA_MISSING` | 3 | experiment | `--plots on` was given and the `plot` extra is not installed |
+| `E_TWIN_DRIFT` | 3 or 6 | experiment | a twin's fingerprint differs from its side's: 3 when found as the run starts, 6 when found in the analysis |
+| `E_GATE_FAILED` | 4 | experiment | a machine check failed under `enforce` |
+| `E_GATE_UNAVAILABLE` | 4 | experiment | a machine check could not run under `enforce` |
+| `E_LOCK` | 4 | experiment | a lock could not be taken: timeout or error |
+| `E_PIN_UNSUPPORTED` | 4 | experiment | CPU pinning was asked for where it cannot be done |
+| `E_CPUS_MIXED_TYPES` | 4 | experiment | the pinned CPU set mixes core types (allow with `--allow-mixed-core-types`) |
+| `E_LAUNCH_FAILED` | 5 | experiment | a launch exited non-zero, timed out, or gave output the driver cannot read |
+| `E_SIDE_CHANGED` | 5 | experiment | a side's identity changed during the run; the capture is marked failed |
+| `E_GPU_NOT_RELEASED` | 5 | experiment | GPU memory did not return to its level in time after a server stopped |
+| `E_TOO_FEW_ROUNDS` | 6 | experiment | fewer rounds are planned than can give a verdict (allow with `--allow-underpowered`) |
+| `E_CASES_DIFFER` | 6 | experiment | the sides produce different sets of primary cases |
+| `E_BUDGET` | 6 | experiment | no balanced round count fits the time budget |
+| `E_CAPTURE_INCOMPLETE` | 6 | experiment | a capture has no end record (analyse the complete rounds with `--allow-incomplete`) |
+| `E_GRID` | 6 | experiment | the observed grid of rounds and lineup entries does not match the lineup; every missing, duplicated and unexpected cell is listed |
+| `E_TWIN_ORPHAN` | 6 | experiment | a twin's side is absent |
+| `E_ORDER_NOT_VARIED` | 6 | experiment | a compared pair ran in the same order every round |
+| `E_POOL_SAME` | 6 | experiment | the same capture id, file path or file hash was given twice |
+| `E_POOL_IDENTICAL_ROWS` | 6 | experiment | two captures with different ids hold identical observation rows |
+| `E_POOL_TRUNCATED_COPY` | 6 | experiment | one capture's rows are a contiguous stretch of another's, a torn last row included |
+| `E_POOL_SIDE_DRIFT` | 6 | experiment | a side's fingerprint, its recorded setup in more than a credential's value, its working folder, or the shared workload in more than a credential's value differs between captures |
+| `E_POOL_CASES` | 6 | experiment | the case sets or units differ between captures |
+| `E_POOL_MACHINE` | 6 | experiment | the CPU or GPU identity differs between captures (allow with `--allow-mixed-machines`) |
+| `E_POOL_MIXED_PURPOSE` | 6 | experiment | a capture of one side against its own twins is pooled with a comparison of sides |
+| `E_FIGURE_MISSING` | 7 | experiment | a document names a figure that is absent; every missing key is listed |
+| `E_INTERNAL` | 8 | experiment | internal error |
+| `E_INTERRUPTED` | 130 | experiment | the run was interrupted |
+
+## Stability of the text codes
+
+Programs that read the text codes can rely on them. The table above is the
+whole set, and the same set is `pairbench.errors.CODES`.
+
+- A release adds a text code only when it is a minor or a major release, never a patch
+  release, and the changelog entry of that release names the new code.
+- A text code is never renamed or removed, and keeps its meaning, until a new major release;
+  the changelog entry of that release names it.
+- An exit code a text code carries, and the scopes pairbench raises it with, change only in a
+  major release; a minor release may add a scope to a code and names it in its changelog entry.
+
+The [changelog](../changelog.md) names every code a release adds. The messages after the code
+are for people and can change in any release.
 
 ## What each exit code means
 
@@ -169,7 +185,7 @@ pairbench with `kill` sees 130, as after Ctrl-C.
 ## What each text code means
 
 Each entry's address is the one a refusal prints on its second line, for example
-`pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage`.
+`pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage`.
 
 ### E_USAGE
 

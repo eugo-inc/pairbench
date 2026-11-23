@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any, TypeVar, cast
@@ -213,47 +213,61 @@ def _is_copy(short: Sequence[_Row], long: Sequence[_Row]) -> bool:
     return _is_stretch(short, long) or _is_torn(short, long)
 
 
-def _check_identity(captures: Sequence[Capture]) -> None:
-    """Refuse the same capture given twice, identical rows and a truncated copy."""
+def _identity_refusals(captures: Sequence[Capture]) -> Iterator[Refusal]:
+    """Yield, for each pair of captures, the first of these that holds: the same capture
+    given twice, identical rows, or a truncated copy."""
     rows = [_rows(c) for c in captures]
     for i, a in enumerate(captures):
         for j in range(i + 1, len(captures)):
-            b = captures[j]
-            pair = f"{a.capture_id} and {b.capture_id}"
-            if a.capture_id == b.capture_id:
-                raise _refuse(
-                    "E_POOL_SAME",
-                    f"the capture {a.capture_id} is given twice",
-                    capture_id=a.capture_id,
-                )
-            first, second = a.source, b.source
-            if first is not None and second is not None:
-                if first.path is not None and first.path == second.path:
-                    raise _refuse(
-                        "E_POOL_SAME",
-                        f"the captures {pair} were read from the same file",
-                        captures=[a.capture_id, b.capture_id],
-                    )
-                if first.sha256 is not None and first.sha256 == second.sha256:
-                    raise _refuse(
-                        "E_POOL_SAME",
-                        f"the captures {pair} were read from files with the same bytes",
-                        captures=[a.capture_id, b.capture_id],
-                    )
-            same_length = len(rows[i]) == len(rows[j])
-            if same_length and _same_run(rows[i], rows[j], 0, len(rows[i])):
-                raise _refuse(
-                    "E_POOL_IDENTICAL_ROWS",
-                    f"the captures {pair} hold identical observation rows",
-                    captures=[a.capture_id, b.capture_id],
-                )
-            if _is_copy(rows[i], rows[j]) or _is_copy(rows[j], rows[i]):
-                raise _refuse(
-                    "E_POOL_TRUNCATED_COPY",
-                    f"the rows of one of the captures {pair} are a stretch of the other's, "
-                    "its last row whole or cut short",
-                    captures=[a.capture_id, b.capture_id],
-                )
+            found = _pair_identity(a, captures[j], rows[i], rows[j])
+            if found is not None:
+                yield found
+
+
+def _pair_identity(
+    a: Capture, b: Capture, one: Sequence[_Row], two: Sequence[_Row]
+) -> Refusal | None:
+    pair = f"{a.capture_id} and {b.capture_id}"
+    if a.capture_id == b.capture_id:
+        return _refuse(
+            "E_POOL_SAME",
+            f"the capture {a.capture_id} is given twice",
+            capture_id=a.capture_id,
+        )
+    first, second = a.source, b.source
+    if first is not None and second is not None:
+        if first.path is not None and first.path == second.path:
+            return _refuse(
+                "E_POOL_SAME",
+                f"the captures {pair} were read from the same file",
+                captures=[a.capture_id, b.capture_id],
+            )
+        if first.sha256 is not None and first.sha256 == second.sha256:
+            return _refuse(
+                "E_POOL_SAME",
+                f"the captures {pair} were read from files with the same bytes",
+                captures=[a.capture_id, b.capture_id],
+            )
+    if len(one) == len(two) and _same_run(one, two, 0, len(one)):
+        return _refuse(
+            "E_POOL_IDENTICAL_ROWS",
+            f"the captures {pair} hold identical observation rows",
+            captures=[a.capture_id, b.capture_id],
+        )
+    if _is_copy(one, two) or _is_copy(two, one):
+        return _refuse(
+            "E_POOL_TRUNCATED_COPY",
+            f"the rows of one of the captures {pair} are a stretch of the other's, "
+            "its last row whole or cut short",
+            captures=[a.capture_id, b.capture_id],
+        )
+    return None
+
+
+def _raise_first(refusals: Iterable[Refusal]) -> None:
+    """Raise the first refusal of ``refusals``; run them to their end when there is none."""
+    for refusal in refusals:
+        raise refusal
 
 
 def _purpose(capture: Capture) -> str:
@@ -301,8 +315,9 @@ def _hidden_drift(first: Capture, other: Capture) -> list[str]:
     return sorted(found)
 
 
-def _check_workload(first: Capture, other: Capture) -> None:
-    """Refuse two captures whose shared workloads differ, naming the first argument that does.
+def _workload_refusal(first: Capture, other: Capture) -> Refusal | None:
+    """The refusal of two captures whose shared workloads differ, naming the first argument
+    that does, or ``None``.
 
     The workloads are those each header's config records, compared as the
     published hashes read them after the sides each capture records
@@ -315,7 +330,7 @@ def _check_workload(first: Capture, other: Capture) -> None:
     """
     found = workload_difference(first.header.config, other.header.config, first.sides, other.sides)
     if found is None:
-        return
+        return None
     place, one, two = found
     where = f"at its argument {place}"
     if one == two:
@@ -323,7 +338,7 @@ def _check_workload(first: Capture, other: Capture) -> None:
     else:
         shown = ["no argument" if text is None else shlex.quote(text) for text in (one, two)]
         where += f": {shown[0]} against {shown[1]}"
-    raise _refuse(
+    return _refuse(
         "E_POOL_SIDE_DRIFT",
         f"the workload differs between the captures {first.capture_id} and "
         f"{other.capture_id} {where}",
@@ -332,8 +347,9 @@ def _check_workload(first: Capture, other: Capture) -> None:
     )
 
 
-def _check_working_folders(first: Capture, other: Capture) -> None:
-    """Refuse two captures whose sides ran in two working folders, or that cannot tell.
+def _working_folder_refusal(first: Capture, other: Capture) -> Refusal | None:
+    """The refusal of two captures whose sides ran in two working folders, or that cannot
+    tell, or ``None``.
 
     Each side's entry records a hash of the folder it ran in
     (``Side.workdir_sha256``); they are compared as a yes or no, and the
@@ -354,7 +370,7 @@ def _check_working_folders(first: Capture, other: Capture) -> None:
         (unknown if one is None or two is None else differ).append(side.name)
     pair = [first.capture_id, other.capture_id]
     if differ:
-        raise _refuse(
+        return _refuse(
             "E_POOL_SIDE_DRIFT",
             f"the working folder of {', '.join(sorted(differ))} differs between the captures "
             f"{first.capture_id} and {other.capture_id}",
@@ -368,7 +384,7 @@ def _check_working_folders(first: Capture, other: Capture) -> None:
             for side in capture.sides
             if side.name in unknown and side.workdir_sha256 is None
         )
-        raise _refuse(
+        return _refuse(
             "E_POOL_SIDE_DRIFT",
             f"the working folder of {', '.join(sorted(unknown))} could not be compared between "
             f"the captures {first.capture_id} and {other.capture_id}: {missing.capture_id} does "
@@ -376,14 +392,26 @@ def _check_working_folders(first: Capture, other: Capture) -> None:
             sides=sorted(unknown),
             captures=pair,
         )
+    return None
 
 
-def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: list[Note]) -> None:
-    """Refuse a pool whose captures do not belong to one experiment on one machine."""
+def _pool_refusals(
+    captures: Sequence[Capture], allow_mixed_machines: bool, notes: list[Note]
+) -> Iterator[Refusal]:
+    """Yield the refusals of a pool whose captures do not belong to one experiment on one
+    machine, in the order the analysis meets them.
+
+    The analysis raises the first; ``pool_refusals`` lists them all. A capture
+    whose sides differ from the first capture's gives one ``E_POOL_SIDE_DRIFT``
+    and none for its fingerprints, setups, working folders or workload, since
+    its sides cannot be matched; its cases and its machine are checked as
+    every capture's are. The note of mixed machines that were allowed is added
+    to ``notes`` once every check has run.
+    """
     first = captures[0]
     purposes = {_purpose(c) for c in captures}
     if len(purposes) > 1:
-        raise _refuse(
+        yield _refuse(
             "E_POOL_MIXED_PURPOSE",
             "a capture of one side against its own twins is pooled with a capture that "
             "compares different sides",
@@ -393,36 +421,43 @@ def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: 
     # one, and its side setups with those of every capture before it, so a capture that
     # records none, or only part of a setup, does not keep two others apart from each other.
     shared = next((c for c in captures if recorded_workload(c.header.config) is not None), first)
-    for place, other in enumerate(captures[1:], start=1):
+    matched: list[Capture] = [first]
+    for other in captures[1:]:
         theirs = {s.name: s for s in other.sides}
         if set(theirs) != set(sides) or any(
             _side_key(theirs[n]) != _side_key(sides[n]) for n in sides
         ):
-            raise _refuse(
+            yield _refuse(
                 "E_POOL_SIDE_DRIFT",
                 f"the captures {first.capture_id} and {other.capture_id} hold different sides",
                 captures=[first.capture_id, other.capture_id],
             )
-        _check_workload(shared, other)
+            continue
+        workload = _workload_refusal(shared, other)
+        if workload is not None:
+            yield workload
         drifted = sorted(n for n in sides if theirs[n].fingerprint != sides[n].fingerprint)
         if drifted:
-            raise _refuse(
+            yield _refuse(
                 "E_POOL_SIDE_DRIFT",
                 f"the fingerprint of {', '.join(drifted)} differs between the captures "
                 f"{first.capture_id} and {other.capture_id}",
                 sides=drifted,
             )
-        for earlier in captures[:place]:
+        for earlier in matched:
             hidden = _hidden_drift(earlier, other)
             if hidden:
-                raise _refuse(
+                yield _refuse(
                     "E_POOL_SIDE_DRIFT",
                     f"the setup of {', '.join(hidden)} differs between the captures "
                     f"{earlier.capture_id} and {other.capture_id} in a value the results hide",
                     sides=hidden,
                     captures=[earlier.capture_id, other.capture_id],
                 )
-        _check_working_folders(first, other)
+        folders = _working_folder_refusal(first, other)
+        if folders is not None:
+            yield folders
+        matched.append(other)
     cases = {c.id: c for c in first.cases}
     for other in captures[1:]:
         theirs_cases = {c.id: c for c in other.cases}
@@ -431,7 +466,7 @@ def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: 
             | {k for k in set(cases) & set(theirs_cases) if cases[k] != theirs_cases[k]}
         )
         if differ:
-            raise _refuse(
+            yield _refuse(
                 "E_POOL_CASES",
                 f"the cases {', '.join(differ)} differ between the captures "
                 f"{first.capture_id} and {other.capture_id}",
@@ -440,10 +475,11 @@ def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: 
     machines = {_machine_key(c) for c in captures}
     if len(machines) > 1:
         if not allow_mixed_machines:
-            raise _refuse(
+            yield _refuse(
                 "E_POOL_MACHINE",
                 "the CPU or GPU identity differs between the pooled captures",
             )
+            return
         notes.append(
             Note(
                 code=NOTE_ALLOW_MIXED_MACHINES,
@@ -451,6 +487,42 @@ def _check_pool(captures: Sequence[Capture], allow_mixed_machines: bool, notes: 
                 "because mixed machines were allowed",
             )
         )
+
+
+def pool_refusals(
+    captures: Sequence[Capture], *, allow_mixed_machines: bool = False
+) -> list[Refusal]:
+    """Return every refusal the analysis of ``captures`` pooled would meet in its pool checks.
+
+    The checks are those of ``analyse_captures`` and share its code: the same
+    capture given twice, identical rows, a truncated copy (``E_POOL_SAME``,
+    ``E_POOL_IDENTICAL_ROWS``, ``E_POOL_TRUNCATED_COPY``), names a run marked
+    that cannot be read alike (``E_USAGE``), and then a capture of one side
+    against its twins pooled with a comparison, sides, workloads, setups or
+    working folders that differ, other cases and other machines
+    (``E_POOL_MIXED_PURPOSE``, ``E_POOL_SIDE_DRIFT``, ``E_POOL_CASES``,
+    ``E_POOL_MACHINE``). The list is empty when the captures pool. Its first
+    refusal is the one the analysis raises for the captures in the same order
+    when each is complete or incomplete captures are allowed; the analysis
+    refuses an incomplete capture with ``E_CAPTURE_INCOMPLETE`` after the first
+    three checks. Nothing is raised for a refusal of the pool and nothing is
+    printed. Whether each capture is complete, and its own grid, are checked
+    by the analysis, not here.
+    """
+    given = tuple(captures)
+    if any(not isinstance(c, Capture) for c in given):
+        raise Refusal("E_USAGE", "check_pool takes captures")
+    if not isinstance(allow_mixed_machines, bool):
+        raise Refusal("E_USAGE", "allow_mixed_machines is true or false")
+    found = list(_identity_refusals(given))
+    if len(given) < 2:
+        return found
+    try:
+        named = _named_alike(given)
+    except Refusal as refusal:
+        return [*found, refusal]
+    found += _pool_refusals(named, allow_mixed_machines, [])
+    return found
 
 
 def _case_tells(capture: Capture) -> dict[str, str]:
@@ -1708,12 +1780,12 @@ def analyse_captures(
     """
     given = _given(captures, rule, floors)
     notes: list[Note] = []
-    _check_identity(given)
+    _raise_first(_identity_refusals(given))
     for capture in given:
         _check_complete(capture, allow_incomplete, notes)
     given = _named_alike(given)
     if len(given) > 1:
-        _check_pool(given, allow_mixed_machines, notes)
+        _raise_first(_pool_refusals(given, allow_mixed_machines, notes))
         notes += _pool_merge_notes(given)
     notes += _named_apart_notes(given)
     for capture in given:

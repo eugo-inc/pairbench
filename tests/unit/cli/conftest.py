@@ -26,7 +26,7 @@ from pairbench.results import writer
 
 # The start of the line that follows a refusal's line on standard error: the address of
 # the code's entry in the documentation of the installed version.
-DOCS_LINE = "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#"
+DOCS_LINE = "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#"
 # The note a run or a compare prints once when it writes results: what the shared files show
 # of the command, and where secrets belong.
 COMMAND_NOTE = (
@@ -34,7 +34,7 @@ COMMAND_NOTE = (
     "with each --side spec, each --set value and the secret forms pairbench recognises hidden, "
     "and each absolute path cut to its last part (report.include_image_refs shows image "
     "references); put secrets in environment variables: "
-    "https://eugo.io/docs/pairbench/0.1/reference/config/#what-the-shared-files-hide\n"
+    "https://eugo.io/docs/pairbench/0.2/reference/config/#what-the-shared-files-hide\n"
 )
 
 

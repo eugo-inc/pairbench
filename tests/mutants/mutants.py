@@ -171,8 +171,8 @@ MUTANTS: tuple[Mutant, ...] = (
         id="M13",
         title="pool the same file twice",
         file="src/pairbench/stats/analyse.py",
-        old="                if first.path is not None and first.path == second.path:",
-        new="                if False:",
+        old="        if first.path is not None and first.path == second.path:",
+        new="        if False:",
         test=(
             "tests/unit/stats/test_analyse.py::"
             "test_the_same_path_twice_is_the_same_file_whatever_its_hash"

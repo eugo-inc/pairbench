@@ -21,7 +21,7 @@ so report a reason you do not know as it is written.
 | `refusals[]` | text code, scope and message of anything refused |
 | `same_vs_same[].p_raw` | the uncorrected p-value of a side against its own twin on one case |
 | `twin_checks[]` | one combined check per side against its twin across its primary cases, each round scored by the median of their turned logs, side over twin: rounds scored, rounds better and worse, `p_raw`, and `p_corrected` after the correction for testing every side that has a twin; at 8 rounds, the serving default, the note needs every untied round of the side to lean the same way, and its absence says nothing more |
-| `notes[]` | loud notes, such as the launch-cost note; `twin_differs` when a side's combined check has a corrected p-value below 0.05; `sides_differ_in_hidden_value` when two sides with one fingerprint differ in a value the results hide, other than a credential's value, or in their working folder; and `sides_declared_identical` when sides that are one side were compared under `--allow-identical` |
+| `notes[]` | loud notes, such as the launch-cost note; `twin_differs` when a side's combined check has a corrected p-value below 0.05; `sides_differ_in_hidden_value` when two sides with one fingerprint differ in a value the results hide, other than a credential's value, or in their working folder; `sides_declared_identical` when sides that are one side were compared under `--allow-identical`; and `value_not_finite`, one per cell, for each value that `pairbench compare --lenient` read from a text file as a missing cell, naming the side, the round and the case |
 | `figures` | every number with its text, keyed `CASE.SUBJECT_vs_BASELINE.NAME` |
 
 ## Outcomes

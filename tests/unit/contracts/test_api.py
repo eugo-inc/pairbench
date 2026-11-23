@@ -152,6 +152,18 @@ def test_the_lines_printed_on_standard_error() -> None:
     assert api.gate_line(silent) == "pairbench: check census: unavailable"
 
 
+def test_a_printed_line_escapes_the_control_characters_of_its_message() -> None:
+    from pairbench.model import GateRecord
+
+    forged = "x\x1b[31m red\r\npairbench: E_USAGE: made-up\x85\x7f\tend\x00"
+    shown = "x\\x1b[31m red\\r\\npairbench: E_USAGE: made-up\\x85\\x7f\\tend\\x00"
+    assert api.note_line("floor_provisional", forged) == (
+        f"pairbench: note: floor_provisional: {shown}"
+    )
+    failed = GateRecord(name="quiet", mode="warn", status="fail", detail={"message": forged})
+    assert api.gate_line(failed) == f"pairbench: check quiet: fail: {shown}"
+
+
 def test_no_ci_variable_is_no_automated_pipeline() -> None:
     assert api.is_ci({}) is False
     assert api.is_ci({"CI_JOB": "1"}) is False

@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, TextIO, get_args
 
-from pairbench.errors import EXIT_CHECK_FAILED, EXIT_OK, Refusal
+from pairbench.errors import EXIT_CHECK_FAILED, EXIT_OK, Refusal, printable
 from pairbench.model import (
     CONTROL_MODES,
     EXPLAIN_MODES,
@@ -126,8 +126,9 @@ def emit(text: str, stream: TextIO | None = None) -> None:
 
 
 def say(message: str) -> None:
-    """Print one line of the command's own on standard error."""
-    print(f"pairbench: {message}", file=sys.stderr)
+    """Print one line of the command's own on standard error, with each control character of
+    the message escaped, as a refusal's line has it."""
+    print(f"pairbench: {printable(message)}", file=sys.stderr)
 
 
 def print_note(code: str, message: str) -> None:

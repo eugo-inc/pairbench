@@ -56,10 +56,60 @@ suite<TAB>new<TAB>2<TAB>matmul<TAB>1911000000
    space, `+` and eight hex digits (`t +1a2b3c4d`), is refused with `E_USAGE`: no run gave
    it that mark.
 7. **Malformed rows.** A row with a different field count, or a round or value that does not
-   parse, is malformed: counted, reported and skipped. A value that parses as a number and is
+   parse, is malformed: counted, reported and skipped. A value that is not a finite number is
+   malformed too, unless the file is read in the [lenient mode](#lenient-reading). A value that parses as a number and is
    zero or less is not malformed: the row is kept and its case gets
    `NO VERDICT (nonpositive_value)`.
 8. **Twins.** A twin relation is declared with a metadata line `twin=NAME:SIDE`.
+
+## Lenient reading
+
+The reader is strict by default. Its lenient mode reads two things the strict mode does not:
+
+```
+pairbench compare results.txt --reader text --lenient
+```
+
+From Python, `pairbench.load_capture(path, reader="text", strict=False)` reads the same way, and
+so does `pairbench.capture.pool.load_captures(paths, reader="text", strict=False)`. Another
+reader has no lenient mode and is refused with `E_USAGE`, also when it was the one that
+recognised the file.
+
+| Input | Strict, the default | Lenient |
+|---|---|---|
+| a value that is not a finite number: `nan`, `inf`, `-inf` in any case, or a number too large to hold, as `1e999` | a malformed row: counted, reported and skipped; a side left with no row in a round is refused with `E_GRID` | a missing cell, with a `value_not_finite` note |
+| a round that gives a side two positions | refused with `E_USAGE` | read with its order not recorded, with an `order_contradicted` note |
+| rows that no `pass_order=` line precedes | no recorded order | no recorded order, as in the strict mode |
+
+**A missing cell** is one side in one round on one case. The side keeps its place in the
+round, so the grid of rounds and sides stays whole, and the cell has no value. The capture
+holds one `value_not_finite` note for each missing cell, printed on standard error when the
+file is read, naming the side, the round by its label, the case and the capture; when the
+capture numbers the round otherwise than its label, as it numbers rounds labelled 3 to 18
+from 1, the note also gives that number, as `in round 9 (the capture's round 7)`. The notes are
+part of the capture's records, so a capture written to `capture.jsonl` and read again keeps
+them and prints them on standard error again, and the results list them in `notes[]`, one
+entry per cell; `refusals[]` stays empty.
+The analysis goes on: the round of a missing cell gives that case no pair, and is counted in
+the comparison's `n_unpaired`. The twin of a side is compared with it over the rounds both have a value in, so
+a missing cell of a side or of its twin leaves that round out of the side's noise floor. A
+missing cell is never read as a value and never dropped silently.
+
+**An order not recorded** is read as it is in the strict mode, so that no verdict claims more
+than the rows show:
+
+- A comparison whose paired rounds include one where the order of either side is not
+  recorded gets `NO VERDICT (order_not_recorded)`, unless `--assume-interleaved` is given, which
+  the results stamp with an `assume_interleaved` note. A comparison whose paired rounds all
+  have a recorded order is graded; a round that gives the case no pair, as one with a missing
+  cell, does not count against it.
+- The balance check counts only the rounds whose order is recorded: `order_split` of a
+  comparison, and the refusal `E_ORDER_NOT_VARIED` when a pair ran in the same order in every
+  one of two or more such rounds. A round of unknown order never counts as balanced.
+- Disturbed rounds are set aside by the machine checks of a run, which rows read from text do
+  not have; the order changes nothing in them.
+- A two-sided view (`project`, below) keeps only the rounds whose recorded order names both
+  sides, so a round of unknown order is left out of it, with its missing cells.
 
 ## Round numbers are labels
 
@@ -114,4 +164,8 @@ from an ordinary value and is shown; give a secret to a side through the environ
 
 `pairbench.capture.text.project(capture, a, b)` returns a two-sided view of a many-sided run:
 only rounds whose recorded order names both sides are kept, and the relative order of the two
-is preserved.
+is preserved. The view keeps the `value_not_finite` notes of its two sides in the rounds it
+keeps, each named by the view's capture id and numbered as the view numbers the round. It reads
+each cell from its note, so a capture read back from `capture.jsonl` gives the same view notes
+as the text file it came from; a note of that code which does not read as a cell, such as one
+written by hand, stays in the view word for word, with the capture id of the run it names.

@@ -45,6 +45,35 @@ A refused analysis raises `Refusal`, which carries as `results` the
 results document of the refused analysis: no comparisons and the refusal
 listed. Every note the analysis adds is also printed on standard error.
 
+### <span id="pairbench.check_pool"></span>`pairbench.check_pool`
+
+```python
+def check_pool(
+    captures: Sequence[Capture],
+    *,
+    allow_mixed_machines: bool = False,
+) -> list[Refusal]
+```
+
+Run the checks that pooling `captures` in one analysis makes, and return what they refuse.
+
+The checks and their refusals are those of `analyse`, which runs the
+same code: the same capture, file or bytes given twice
+(`E_POOL_SAME`), identical rows (`E_POOL_IDENTICAL_ROWS`), a truncated
+copy (`E_POOL_TRUNCATED_COPY`), a capture of one side against its twins
+pooled with a comparison (`E_POOL_MIXED_PURPOSE`), a side, workload,
+setup or working folder that changed (`E_POOL_SIDE_DRIFT`), other cases
+or units (`E_POOL_CASES`), another machine (`E_POOL_MACHINE`, not
+listed with `allow_mixed_machines`) and names a run marked that cannot
+be read alike (`E_USAGE`). Each is a `Refusal` with its text code,
+exit code, scope, message and detail, returned, not raised, in the order
+the analysis meets them. The first is the one `analyse` raises for the
+captures in the same order when each is complete or incomplete captures
+are allowed; `analyse` refuses an incomplete capture with
+`E_CAPTURE_INCOMPLETE` once the first three checks pass. An empty list
+says the captures pool. Nothing is printed. Completeness and the grid of
+each capture are checked by `analyse` alone.
+
 ### <span id="pairbench.draw"></span>`pairbench.draw`
 
 ```python
@@ -100,7 +129,12 @@ refused, all of them listed.
 ### <span id="pairbench.load_capture"></span>`pairbench.load_capture`
 
 ```python
-def load_capture(path: Path | str, *, reader: str | None = None) -> list[Capture]
+def load_capture(
+    path: Path | str,
+    *,
+    reader: str | None = None,
+    strict: bool = True,
+) -> list[Capture]
 ```
 
 Read the captures in a file: one per run it holds.
@@ -108,6 +142,13 @@ Read the captures in a file: one per run it holds.
 `reader` names a capture reader. Without it the readers are asked in
 turn, built-ins first, whether the file is theirs; a file no reader
 claims is refused.
+
+`strict=False` reads the file with the lenient mode of the text
+reader: a value that is no finite number is a missing cell, which the
+capture notes as `value_not_finite`, one note per cell, and which
+`analyse` leaves unpaired while it grades the rest; `refusals` stays
+empty. A round whose order contradicts itself is read with its order not
+recorded. A reader that has no lenient mode is refused with `E_USAGE`.
 
 ### <span id="pairbench.load_diagnostics"></span>`pairbench.load_diagnostics`
 
@@ -1826,7 +1867,8 @@ such things belong in `detail`.
 def line(self) -> str
 ```
 
-The one line printed on standard error: `CODE: message`.
+The one line printed on standard error: `CODE: message`, with each control
+character of the message escaped.
 
 #### <span id="pairbench.errors.Refusal.to_json"></span>`Refusal.to_json`
 

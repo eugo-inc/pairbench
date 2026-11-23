@@ -52,6 +52,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--levels", metavar="LIST", help="the load level the result files were made at"
     )
     parser.add_argument("--reader", metavar="NAME", help="the reader of the capture files")
+    parser.add_argument(
+        "--lenient",
+        action="store_true",
+        help="read text capture files leniently: a value that is not finite is a missing cell",
+    )
     parser.add_argument("--no-plugins", action="store_true", dest="no_plugins")
 
 
@@ -132,6 +137,8 @@ def command(options: argparse.Namespace) -> int:
         raise Refusal("E_USAGE", "compare needs capture files or --side NAME=file:GLOB")
     if options.reader and options.side:
         raise Refusal("E_USAGE", "--reader reads capture files; result files take --driver")
+    if options.lenient and options.side:
+        raise Refusal("E_USAGE", "--lenient reads text capture files; result files take --driver")
     if options.driver and not options.side:
         raise Refusal("E_USAGE", "--driver reads result files given with --side")
     if options.levels and not options.side:
@@ -147,7 +154,9 @@ def command(options: argparse.Namespace) -> int:
         captures = [
             capture
             for path in options.captures
-            for capture in pairbench.load_capture(path, reader=options.reader)
+            for capture in pairbench.load_capture(
+                path, reader=options.reader, strict=not options.lenient
+            )
         ]
         folder = Path(options.out) if options.out else None
         baseline = one_baseline(options)

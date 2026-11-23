@@ -44,10 +44,10 @@ EXIT_USAGE = 2
 EXIT_INTERNAL = 8
 MADE_UP_RELEASE = "2.3.0"
 DOCS_LINE_USAGE = (
-    "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage\n"
+    "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage\n"
 )
 DOCS_LINE_INTERNAL = (
-    "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_internal\n"
+    "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_internal\n"
 )
 NOT_INSTALLED = "the tool server is not available here (mcp): install pairbench[mcp]"
 REINSTALL = "reinstall it with pip install 'pairbench[mcp]'"
@@ -495,7 +495,7 @@ def test_a_refusal_is_an_answer_with_code_exit_code_scope_and_message() -> None:
     assert refused["refusal"]["docs"] == DOCS_E_USAGE
 
 
-DOCS_E_USAGE = "https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_usage"
+DOCS_E_USAGE = "https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage"
 
 
 def test_an_unexpected_error_is_answered_as_an_internal_refusal(

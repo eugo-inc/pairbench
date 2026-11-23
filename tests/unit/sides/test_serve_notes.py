@@ -524,6 +524,6 @@ def test_the_gpu_profilers_refuse_a_serving_side_before_any_launch(
     assert refused.err.splitlines() == [
         PROFILER_NOTICES[tool],
         "E_ENGINE_UNSUPPORTED: side 'old' has no command to put a profiler in front of",
-        "pairbench: see https://eugo.io/docs/pairbench/0.1/reference/exit-codes/#e_engine_unsupported",
+        "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_engine_unsupported",
     ]
     assert len(launches) == 4
