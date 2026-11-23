@@ -65,7 +65,7 @@ from pairbench.errors import Refusal
 # ---------------------------------------------------------------------------
 
 TOOL_NAME: Final = "pairbench"
-TOOL_VERSION: Final = "0.1.0"
+TOOL_VERSION: Final = "0.1.1"
 
 SCHEMA_CAPTURE: Final = "pairbench/capture/v1"
 SCHEMA_RESULTS: Final = "pairbench/results/v1"
@@ -4406,14 +4406,22 @@ def _ends_at_home(path: str) -> bool:
     with ``..`` (``../home/NAME``, ``data/../../home/NAME``) or after a folder
     and its ``..`` (``/home/a/../NAME``), and a user's home written ``~NAME``.
     In a list of paths joined by ``:`` or ``,`` (``/usr/bin:/home/NAME``), the
-    last path is the one judged. A path that goes on into the folder
-    (``/home/NAME/data``) and a folder of that name anywhere else
+    last path is the one judged. So is the path after its last ``=`` that a
+    path follows, as a path cut whole may hold one there: ``/a/k=/home/NAME``
+    ends at a home folder as ``/home/NAME`` does. A path that goes on into
+    the folder (``/home/NAME/data``) and a folder of that name anywhere else
     (``/srv/home/NAME``) do not, and no path does while home folders' names
     are kept (``_HOME_NAMES_KEPT``), as they are in a case id.
     """
     if _HOME_NAMES_KEPT.get():
         return False
     path = _LIST_JOIN.split(path)[-1]
+    after = _PATH_AFTER_EQUALS.split(path)[-1]
+    return _one_ends_at_home(path) or (after != path and _one_ends_at_home(after))
+
+
+def _one_ends_at_home(path: str) -> bool:
+    """Say whether the one path ``path`` ends at a home folder (``_ends_at_home``)."""
     parts = [part for part in path.split("/") if part not in ("", ".")]
     if path.startswith("~"):
         return len(parts) == 1 and _TILDE_HOME.fullmatch(parts[0]) is not None
@@ -4425,6 +4433,8 @@ def _ends_at_home(path: str) -> bool:
 # The ``:`` or ``,`` that joins one path to the next in a list of paths: before ``/``, ``~``
 # or ``../``.
 _LIST_JOIN = re.compile(r"[:,](?=[/~]|\.\./)")
+# An ``=`` inside a path that a path follows: before ``/``, ``~`` or ``../``.
+_PATH_AFTER_EQUALS = re.compile(r"=(?=[/~]|\.\./)")
 
 
 def _home_parts(parts: list[str], rooted: bool) -> bool:
@@ -4818,12 +4828,27 @@ _ADDRESS_INNER_PATH = re.compile(
     + r"""*"""
     + _run_on(_PART_CHAR, _PART_NO_SLASH)
 )
+# What follows the ``../`` of a relative path inside an address that climbs: a part that is
+# no ``..`` and ends no query parameter, as ``_CLIMB_END`` says for a free text.
+_PART_CLIMB_END = r"""(?!\.\.(?:/|(?!""" + _PART_CHAR + r""")))(?=""" + _PART_CHAR + r""")"""
+# A path inside an address as ``_ADDRESS_INNER_PATH`` finds one, or a relative path that may
+# climb out of its folder with ``..``, where an absolute one may start, as ``_CLIMB`` reads one
+# in a free text: ``?k=../a/ca.pem``, ``#./../a/ca.pem``, ``&k=data/../../a/ca.pem``.
+# ``_address_rest`` cuts such a relative path only when it climbs out (``_climbs``).
+_ADDRESS_INNER_PATH_OR_CLIMB = re.compile(
+    r"""(?:(?<![\w/.~-])(?:~[\w.@-]*/|(?<!\+\+)/(?!/)|(?!-)(?:[\w.-]+/)*\.\./"""
+    + _PART_CLIMB_END
+    + r""")|(?<![\w/.~:-])//(?=[^\s/'"`,;()\[\]{}<>]))"""
+    + _PART_CHAR
+    + r"""*"""
+    + _run_on(_PART_CHAR, _PART_NO_SLASH)
+)
 # The same inside an address in a case id, where a path may start with three ``/`` or more
 # too, as one may after ``=`` in a case id (``_CASE_PATH``): ``postgresql:///db?host=///a/run``
 # shows ``postgresql:///db?host=/run``. A path may also start there as a relative path that
 # climbs with ``..`` does anywhere in a case id (``_CLIMB``), so one that climbs out of its
 # folder is cut wherever it stands in the address: ``postgresql:///db?c=../../a/ca.pem``
-# shows ``postgresql:///db?c=ca.pem``. ``_address_rest`` keeps as typed one that stays
+# shows ``postgresql:///db?c=ca.pem``. ``_case_address_rest`` keeps as typed one that stays
 # inside its folder (``?c=data/../ca.pem``).
 _CASE_INNER_PATH = re.compile(
     r"""(?:(?<![\w/.~-])(?:~[\w.@-]*/|(?<!\+\+)/(?!/)|""" + _CLIMB + r""")"""
@@ -4902,6 +4927,53 @@ def _last_part_start(path: str) -> int:
 
 # White space, which ends the rest of an address outside a path in it.
 _ADDRESS_REST_END = re.compile(r"\s")
+# What a climbing path or a nested local path in the rest of an address holds when it runs past
+# the end of the address or on into another address: white space or ``://``.
+_RUNS_PAST = re.compile(r"://|\s")
+# The ``://`` of an address with a host, whose host the shown command hides.
+_HOSTED_ADDRESS = re.compile(r"://(?!/)")
+
+
+class _RandomRuns:
+    """The token runs of a text that look random, as ``_hidden_random`` reads them.
+
+    A run is one that ``_TOKEN_RUN`` finds in the whole text, read as
+    ``_hidden_random`` reads it without ``paths``: one of ``_SHORTEST_RANDOM``
+    characters or more, with a random-looking part (``_random_spans``), or
+    whose percent escapes stand for a text with one. The runs are found once,
+    when first asked for. A path that keeps only its last part when it is
+    cut leaves that part to be read on its own, where it may not look random,
+    so the rest of an address keeps a path that such a run reaches into as
+    typed, and the run is hidden as it is in the typed text.
+    """
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self._starts: list[int] = []
+        self._ends: list[int] | None = None
+
+    def reach(self, start: int, end: int) -> bool:
+        """Say whether a random-looking run reaches into ``text[start:end]``."""
+        if self._ends is None:
+            self._ends = []
+            for found in _TOKEN_RUN.finditer(self._text):
+                if _run_looks_random(found, self._text):
+                    self._starts.append(found.start())
+                    self._ends.append(found.end())
+        k = bisect.bisect_right(self._ends, start)
+        return k < len(self._starts) and self._starts[k] < end
+
+
+def _run_looks_random(found: re.Match[str], text: str) -> bool:
+    """Say whether ``_hidden_random`` without ``paths`` hides a part of the token run ``found``."""
+    run = found.group(0)
+    if len(run) < _SHORTEST_RANDOM:
+        return False
+    if _PERCENT_ESCAPE.search(run):
+        meant = _PERCENT_ESCAPE.sub(lambda escape: chr(int(escape.group(1), 16)), run)
+        before = _before(text, found.start())
+        return bool(_random_spans(meant, len(before), before + meant))
+    return bool(_random_spans(run, found.start(), text))
 
 
 def _address_rest(
@@ -4909,8 +4981,7 @@ def _address_rest(
     begin: int,
     end: int,
     dropped: list[tuple[int, int]],
-    inner: re.Pattern[str] = _ADDRESS_INNER_PATH,
-    in_case: bool = False,
+    randoms: _RandomRuns,
 ) -> tuple[str, int]:
     """Return the rest of an address from ``begin`` with each path in it cut, and where it ends.
 
@@ -4920,22 +4991,93 @@ def _address_rest(
     stretch the cut leaves out, from the path's start to its last part, is
     added to ``dropped``. What follows the rest is no part of the address:
     a path runs on over it only as it runs on over any word, so it is read
-    again as a free text. ``inner`` finds the paths: ``_ADDRESS_INNER_PATH``
-    in a free text, ``_CASE_INNER_PATH`` in a case id, which finds a relative
-    path with ``..`` in it too: it is cut when it climbs out of its folder
-    (``?c=../a/ca.pem`` shows ``?c=ca.pem``) and kept as typed when it stays
-    inside it (``?c=data/../ca.pem``). In a case id
-    (``in_case``) the rest also ends where the local path of an address in
-    it starts, so that path is read again as the local path of an address
-    with no host: ``postgresql:///db?c=file:///a/ca.pem`` shows
+    again as a free text. ``_ADDRESS_INNER_PATH_OR_CLIMB`` finds the paths.
+    A relative path it finds is cut only when it climbs out of its folder
+    (``_climbs``): ``?k=../a/ca.pem`` shows ``?k=ca.pem``. One that stays
+    inside its folder is kept, and the search for an absolute path goes on
+    inside it, so ``?k=a/../b:/a/x`` shows ``?k=a/../b:/x``; a climbing path
+    that ``_climb_kept`` keeps is read so too. The local path of an address
+    nested in the rest (``:///``) is cut where it stands, as ``_local_part``
+    cuts the local path of an address with no host, up to the next query
+    parameter, and the search goes on after it:
+    ``postgresql:///db?c=file:///a/ca.pem&k=1`` shows
+    ``postgresql:///db?c=file://ca.pem&k=1``, whatever stands before the
+    query. One that ``_nested_kept`` keeps is left as typed. ``randoms``
+    reads the random-looking runs of ``text``. A case id reads the rest of
+    an address as ``_case_address_rest`` says.
+    """
+    out: list[str] = []
+    at = begin
+    stop = end
+    local = text.find(":///", begin, end)
+    found = _ADDRESS_INNER_PATH_OR_CLIMB.search(text, begin, end)
+    while found is not None or local != -1:
+        nested = found is None or -1 < local < found.start()
+        if found is not None and not nested:
+            path = found.group(0)
+            if not path.startswith(("/", "~")) and (
+                not _climbs(path) or _climb_kept(text, found, randoms)
+            ):
+                # A relative path that stays inside its folder, or one kept as typed: an
+                # absolute path may start inside it after a mark, and any other path after it.
+                inside = _ADDRESS_INNER_PATH.search(text, found.start() + 1, found.end())
+                found = inside or _ADDRESS_INNER_PATH_OR_CLIMB.search(text, found.end(), end)
+                continue
+            start, after = found.start(), found.end()
+        else:
+            path, start, after = "", local + 3, -1
+            if _nested_kept(text, local, end, randoms):
+                local = text.find(":///", start, end)
+                continue
+        blank = _ADDRESS_REST_END.search(text, at, start)
+        if blank is not None:
+            stop = blank.start()
+            break
+        out.append(text[at:start])
+        if nested:
+            shown, at = _local_part(text, start, end, dropped, _ADDRESS_PART_END)
+        else:
+            shown, at = _address_part(path), after
+            dropped.append((start, start + _last_part_start(path)))
+        out.append(shown)
+        if -1 < local < at:
+            local = text.find(":///", at, end)
+        if found is not None and found.start() < at:
+            found = _ADDRESS_INNER_PATH_OR_CLIMB.search(text, at, end)
+    else:
+        blank = _ADDRESS_REST_END.search(text, at, end)
+        if blank is not None:
+            stop = blank.start()
+    out.append(text[at:stop])
+    return "".join(out), stop
+
+
+def _case_address_rest(
+    text: str, begin: int, end: int, dropped: list[tuple[int, int]]
+) -> tuple[str, int]:
+    """Return the rest of an address in a case id from ``begin`` cut, and where it ends.
+
+    The rest ends at the first white space before ``end`` that no path in
+    it runs over; a path that runs on over blanks (``?host=/a/Zq Files/run``)
+    is part of it. ``_CASE_INNER_PATH`` finds the paths, which finds a
+    relative path with ``..`` in it too: it is cut when it climbs out of its
+    folder (``?c=../a/ca.pem`` shows ``?c=ca.pem``) and kept as typed when it
+    stays inside it, with any path inside it (``?c=data/../ca.pem``,
+    ``?k=a/../b:/a/x``). Each path is cut as ``_address_part`` says, and the
+    stretch the cut leaves out, from the path's start to its last part, is
+    added to ``dropped``. What follows the rest is no part of the address,
+    so it is read again as a free text. The rest also ends where the local
+    path of an address in it starts, so that path is read again as the
+    local path of an address with no host:
+    ``postgresql:///db?c=file:///a/ca.pem`` shows
     ``postgresql:///db?c=file://ca.pem``, as it does with a host before it.
     """
-    if in_case and (local := text.find(":///", begin, end)) != -1:
+    if (local := text.find(":///", begin, end)) != -1:
         end = local + 3
     out: list[str] = []
     at = begin
     stop = end
-    for found in inner.finditer(text, begin, end):
+    for found in _CASE_INNER_PATH.finditer(text, begin, end):
         blank = _ADDRESS_REST_END.search(text, at, found.start())
         if blank is not None:
             stop = blank.start()
@@ -4955,6 +5097,57 @@ def _address_rest(
     return "".join(out), stop
 
 
+def _climb_kept(text: str, found: re.Match[str], randoms: _RandomRuns) -> bool:
+    """Say whether a climbing path that ``found`` holds in the rest of an address stays as typed.
+
+    It does when it runs past the end of the address or on into another
+    address (``_RUNS_PAST``), and when a random-looking run reaches into it
+    (``_RandomRuns``), so the hosts and the runs that the shown command hides
+    in the typed text are hidden.
+    """
+    return _RUNS_PAST.search(found.group(0)) is not None or randoms.reach(
+        found.start(), found.end()
+    )
+
+
+def _nested_kept(text: str, local: int, end: int, randoms: _RandomRuns) -> bool:
+    """Say whether the local path of an address nested at ``local`` in the rest of an address stays.
+
+    The path starts at the third ``/`` of the ``:///`` at ``local`` and ends at
+    the next query parameter, the fragment or ``end``. It is kept as typed
+    when it holds white space or another address (``_RUNS_PAST``), as it then
+    runs past the end of the address or on into that address, and when a
+    random-looking run reaches into it (``_RandomRuns``). The shown command
+    then hides the host of the other address and the run as it hides them in
+    the typed text.
+    """
+    start = local + 3
+    past = _RUNS_PAST.search(text, start, end)
+    bound = end if past is None else past.start()
+    stretch = _part_end(_ADDRESS_PART_END, text, start, bound)
+    if stretch == bound and past is not None:
+        return True
+    return randoms.reach(local + 1, stretch)
+
+
+def _local_part(
+    text: str,
+    start: int,
+    stop: int,
+    dropped: list[tuple[int, int]],
+    ends: re.Pattern[str] = _LOCAL_PATH_END,
+) -> tuple[str, int]:
+    """Return the local path of an address with no host that starts at ``start`` cut, and its end.
+
+    The path ends at the query or the fragment, or at ``stop``, and is cut as
+    ``_local_address_path`` says. The stretch the cut leaves out, from the
+    path's start to its last part, is added to ``dropped``.
+    """
+    end = _part_end(ends, text, start, stop)
+    dropped.append((start, start + _last_part_start(text[start:end])))
+    return _local_address_path(text[start:end], text[max(0, start - 7) : start]), end
+
+
 def _part_end(pattern: re.Pattern[str], text: str, start: int, stop: int) -> int:
     found = pattern.search(text, start, stop)
     return stop if found is None else found.start()
@@ -4962,11 +5155,93 @@ def _part_end(pattern: re.Pattern[str], text: str, start: int, stop: int) -> int
 
 def _path_cutter(
     text: str,
-    dropped: list[tuple[int, int]] | None = None,
-    inner: re.Pattern[str] = _ADDRESS_INNER_PATH,
-    in_case: bool = False,
 ) -> Callable[[re.Match[str], str], str | tuple[str, int] | None]:
-    """Return how ``public_text`` and ``public_case`` show each absolute path in ``text``.
+    """Return how ``public_text`` shows each absolute path in ``text``.
+
+    The callable gets a match whose path starts where the match starts, and
+    the path (``_paths_cut``). A path right after ``scheme://`` is the local
+    path of an address with no host: it ends at the query or the fragment,
+    and is cut as ``_local_address_path`` says (``sqlite:////a/db.sqlite?mode=ro``
+    shows ``sqlite:///db.sqlite?mode=ro``). The path of an address right
+    after its host is kept (``https://<hidden>/api``,
+    ``http://[fd00::1]/v1``, ``http://host:/v1``). Any other path inside an
+    address, as in a query value or after ``=`` in the address's path, is cut
+    as ``_address_part`` says and ends at the end of its query parameter. A
+    relative path there whose query parameter climbs out of its folder is cut
+    the same way (``?k=a/../..&`` shows ``?k=..&``). One whose query
+    parameter stays inside its folder, and holds no address with a host
+    (``_HOSTED_ADDRESS``) and no random-looking run (``_RandomRuns``), is
+    read with the rest of the address from its start: it is kept, with a
+    path inside it or after it cut (``?k=a/../b:/a/x`` shows
+    ``?k=a/../b:/x``). When that rest ends at a blank before the end of the
+    path's query parameter, the query parameter is kept as typed from the
+    blank to its end and the rest of the address is read after it
+    (``?k=a/../b x/../&j=/a/x`` shows ``?k=a/../b x/../&j=/x``). A path after
+    a ``>`` that closes the arguments of a template is kept, and any other
+    path shows its last part. The rest of an address ends as
+    ``_address_rest`` says, and the callable then gives what stands in the
+    place of the path up to there with where that is, so the words after
+    it are read again as a free text. A case id is read as
+    ``_case_path_cutter`` says.
+    """
+    spans = [found.span() for found in _address_matches(_ADDRESS_SPAN, text)]
+    starts = [one for one, _two in spans]
+    randoms = _RandomRuns(text)
+    left: list[tuple[int, int]] = []
+
+    def inside(at: int) -> bool:
+        k = bisect.bisect_right(starts, at) - 1
+        return k >= 0 and at < spans[k][1]
+
+    def cut(found: re.Match[str], path: str) -> str | tuple[str, int] | None:
+        start = found.start()
+        stop = start + len(path)
+        if text[max(0, start - 3) : start] == "://":
+            local, end = _local_part(text, start, stop, left)
+            rest, last = _address_rest(text, end, stop, left, randoms)
+            return local + rest, last
+        if start and text[start - 1] == ">" and _template_open(text, start - 1):
+            return None
+        reach = max(0, start - _AUTHORITY_REACH)
+        # An address's host ends at the path only where a ``://`` stands before it.
+        if text.find("://", reach, start) >= 0 and _AUTHORITY_END.search(text, reach, start):
+            rest, last = _address_rest(text, start + 1, stop, left, randoms)
+            return text[start] + rest, last
+        if inside(start):
+            end = _part_end(_ADDRESS_PART_END, text, start, stop)
+            if (
+                not path.startswith(("/", "~"))
+                and not _climbs(text[start:end])
+                and _HOSTED_ADDRESS.search(text, start, end) is None
+                and not randoms.reach(start, end)
+            ):
+                # A relative path whose query parameter stays inside its folder, with no other
+                # address and no random-looking run in it, whose hosts and runs a cut of a path
+                # inside it would leave to be read on their own: the rest of
+                # the address reads it from its start, with the paths inside it and after it,
+                # where one that climbs out is cut as an absolute path is (``?k=a/../..&``
+                # shows ``?k=..&``). A rest that ends at a blank before the end of the path's
+                # query parameter would leave the words after it, the next parameters among
+                # them, to be read as a free text, where a word that holds a relative path that
+                # stays inside its folder is kept whole, so the query parameter is kept as typed
+                # from there to its end, and the rest of the address read after it
+                # (``?k=a/../b x/../&j=/a/x`` shows ``?k=a/../b x/../&j=/x``).
+                shown, last = _address_rest(text, start, stop, left, randoms)
+                if last >= end:
+                    return shown, last
+                rest, after = _address_rest(text, end, stop, left, randoms)
+                return shown + text[last:end] + rest, after
+            rest, last = _address_rest(text, end, stop, left, randoms)
+            return _address_part(text[start:end]) + rest, last
+        return _last_part(path)
+
+    return cut
+
+
+def _case_path_cutter(
+    text: str, dropped: list[tuple[int, int]]
+) -> Callable[[re.Match[str], str], str | tuple[str, int] | None]:
+    """Return how ``public_case`` shows each absolute path in the case id ``text``.
 
     The callable gets a match whose path starts where the match starts, and
     the path (``_paths_cut``). A path right after ``scheme://`` is the local
@@ -4979,29 +5254,26 @@ def _path_cutter(
     as ``_address_part`` says and ends at the end of its query parameter. A
     path after a ``>`` that closes the arguments of a template is kept, and
     any other path shows its last part. The rest of an address ends as
-    ``_address_rest`` says, and the callable then gives what stands in the
-    place of the path up to there with where that is, so the words after
+    ``_case_address_rest`` says, and the callable then gives what stands in
+    the place of the path up to there with where that is, so the words after
     it are read again as a free text. Each stretch of ``text`` a cut leaves
-    out, from a path's start to its last part, is added to ``dropped``.
-    ``inner`` finds the paths in the rest of an address (``_address_rest``),
-    which ends as ``in_case`` says there. In a case id (``in_case``) a path
-    may start right after ``?``, ``&`` or ``#`` (``_CASE_PATH``): inside an
-    address it is cut as one after ``=`` there (``?/a/ca.pem`` shows
-    ``?/ca.pem``). Outside one such a mark joins the parts of a name
+    out, from a path's start to its last part, is added to ``dropped``. A
+    path may start right after ``?``, ``&`` or ``#`` (``_CASE_PATH``):
+    inside an address it is cut as one after ``=`` there (``?/a/ca.pem``
+    shows ``?/ca.pem``). Outside one such a mark joins the parts of a name
     (``BM_x#/8/cpu_time``): its ``/`` is kept, and the search for a path
     goes on right after it, so a path later in the id is cut as it is
     without the mark (``BM_x&/b tail k=/a/x.bin`` shows ``BM_x&/b tail k=x.bin``).
     """
     spans = [found.span() for found in _address_matches(_ADDRESS_SPAN, text)]
     starts = [one for one, _two in spans]
-    left: list[tuple[int, int]] = [] if dropped is None else dropped
 
     def inside(at: int) -> bool:
         k = bisect.bisect_right(starts, at) - 1
         return k >= 0 and at < spans[k][1]
 
     def kept(start: int, end: int) -> None:
-        left.append((start, start + _last_part_start(text[start:end])))
+        dropped.append((start, start + _last_part_start(text[start:end])))
 
     def cut(found: re.Match[str], path: str) -> str | tuple[str, int] | None:
         start = found.start()
@@ -5010,21 +5282,21 @@ def _path_cutter(
             end = _part_end(_LOCAL_PATH_END, text, start, stop)
             local = _local_address_path(text[start:end], text[max(0, start - 7) : start])
             kept(start, end)
-            rest, last = _address_rest(text, end, stop, left, inner, in_case)
+            rest, last = _case_address_rest(text, end, stop, dropped)
             return local + rest, last
         if start and text[start - 1] == ">" and _template_open(text, start - 1):
             return None
         reach = max(0, start - _AUTHORITY_REACH)
         # An address's host ends at the path only where a ``://`` stands before it.
         if text.find("://", reach, start) >= 0 and _AUTHORITY_END.search(text, reach, start):
-            rest, last = _address_rest(text, start + 1, stop, left, inner, in_case)
+            rest, last = _case_address_rest(text, start + 1, stop, dropped)
             return text[start] + rest, last
         if inside(start):
             end = _part_end(_ADDRESS_PART_END, text, start, stop)
             kept(start, end)
-            rest, last = _address_rest(text, end, stop, left, inner, in_case)
+            rest, last = _case_address_rest(text, end, stop, dropped)
             return _address_part(text[start:end]) + rest, last
-        if in_case and text[start - 1 : start] in ("?", "&", "#"):
+        if text[start - 1 : start] in ("?", "&", "#"):
             return text[start], start + 1
         kept(start, stop)
         return _last_part(path)
@@ -5041,7 +5313,14 @@ def public_text(text: str) -> str:
     folder names hold a space and one glued to an option at the start of a
     word (``-I/a/include`` shows ``-Iinclude``). So is a relative path
     that climbs out of its folder with ``..`` (``_climbs``):
-    ``../../a/in.csv`` shows ``in.csv``. The user part of an
+    ``../../a/in.csv`` shows ``in.csv``. Both are cut so in the query or the
+    fragment of an address too, whatever stands before it: no host, a host
+    and an empty port, a host in brackets or an earlier path in the query
+    (``postgresql:///db?c=file:///a/ca.pem`` shows
+    ``postgresql:///db?c=file://ca.pem``, and ``mysql://localhost:/db?c=../a/ca.pem``
+    shows ``mysql://localhost:/db?c=ca.pem``), except one that holds another
+    address, a blank or a random-looking run, which is kept as typed
+    (``_address_rest``). The user part of an
     address, a user name and maybe a password before ``@``
     (``scheme://madeup:secret@host``), is hidden.
     The rest of an address such as ``https://...`` and a relative path that
@@ -5174,7 +5453,7 @@ def _template_open(text: str, end: int) -> bool:
 # (``BM_Vec<int>/8/cpu_time``), so a path starts only where a value starts: at
 # the start of the id, after white space or after one of ``= : , ; [ ( { ' " @``
 # (``test_read[/a/data.csv]``, ``File=/a/data.bin``) or of ``? & #`` inside an
-# address (``_path_cutter`` keeps a path after those outside one), there also at
+# address (``_case_path_cutter`` keeps a path after those outside one), there also at
 # ``~/`` or ``~user/``, right after ``scheme://`` as in ``_ABSOLUTE_PATH``, or after the
 # ``/`` that ends one part of a name when two more parts follow, with one ``/``
 # or more (``BM_Read//a/data.bin``, ``BM_Read///a/data.bin``). At the start of
@@ -5299,7 +5578,7 @@ def _public_case(case: str) -> tuple[str, bool]:
     try:
         read = _case_addresses_read(case)
         left: list[tuple[int, int]] = []
-        cutter = _path_cutter(read, left, _CASE_INNER_PATH, in_case=True)
+        cutter = _case_path_cutter(read, left)
         cut = _paths_cut(_CASE_PATH, read, cutter, None)
         shown = _hidden_random(_case_secrets_hidden(cut), paths=False)
         dropped = _drops_words(read, left) or (
@@ -5333,7 +5612,7 @@ def _case_folders_out(text: str, left: list[tuple[int, int]]) -> str:
     """Return ``text`` with the folders of each path its cut leaves out read alike.
 
     ``left`` holds the stretches of ``text`` that the cuts of its paths leave
-    out, each from a path's start to its last part (``_path_cutter``). In
+    out, each from a path's start to its last part (``_case_path_cutter``). In
     each stretch, a word that holds no ``/`` (``_drops_words``) is kept, and
     so is a word that holds a ``/`` and a secret (``API_KEY=q/a``), as its
     secret may hide its ``/``; the folder words right after such a word go
@@ -5381,7 +5660,7 @@ def _drops_words(text: str, left: list[tuple[int, int]]) -> bool:
     """Say whether a word of ``text`` that holds no ``/`` starts in a stretch the cut leaves out.
 
     ``left`` holds the stretches of ``text`` that the cuts of its paths leave
-    out, each from a path's start to its last part (``_path_cutter``). A word
+    out, each from a path's start to its last part (``_case_path_cutter``). A word
     that starts in one and holds no ``/`` is dropped: a word the path runs
     over (``copy /a/in.bin fast mode/x`` shows ``copy x``), or the middle
     word of a folder named in three words. A word is judged whole, so the
@@ -5527,7 +5806,7 @@ def case_tell_words(case: str) -> list[str]:
     try:
         read = _case_addresses_read(case)
         left: list[tuple[int, int]] = []
-        _paths_cut(_CASE_PATH, read, _path_cutter(read, left, _CASE_INNER_PATH, in_case=True), None)
+        _paths_cut(_CASE_PATH, read, _case_path_cutter(read, left), None)
         return _case_tell_words(_case_folders_out(read, left))
     finally:
         _HOME_NAMES_KEPT.reset(token)
@@ -11619,26 +11898,63 @@ def _hidden_host(text: str, *, shell: bool = False) -> str:
     path has lost its host (``_hidden_file_host``). With ``shell`` the text
     is a shell text, and a host ends at an operator that ends a command
     (``_operator_spans``): ``curl http://made-up.example&& ls`` shows
-    ``curl http://<hidden>&& ls``.
+    ``curl http://<hidden>&& ls``. Each ``://`` is read as the start of an
+    address of its own, from the first letter of the scheme before it
+    (``_every_host_hidden``).
     """
-
-    def shown(found: re.Match[str]) -> str:
-        if found.group(2).lower() in LOOPBACK_HOSTS or found.group(1).lower().endswith("file://"):
-            return found.group(0)
-        return found.group(1) + HIDDEN
-
     # Every address holds ``://``: a text with none has no host to hide.
     if "://" not in text:
         return text
     if not shell or not any(char in text for char in ";&|"):
-        return _address_sub(_ADDRESS_HOST, shown, text)
+        return _every_host_hidden(text)
     out: list[str] = []
     end = 0
     for one, two in _operator_spans(text):
-        out.append(_address_sub(_ADDRESS_HOST, shown, text[end:one]))
+        out.append(_every_host_hidden(text[end:one]))
         out.append(text[one:two])
         end = two
-    out.append(_address_sub(_ADDRESS_HOST, shown, text[end:]))
+    out.append(_every_host_hidden(text[end:]))
+    return "".join(out)
+
+
+def _every_host_hidden(text: str) -> str:
+    """Hide the host of the address at every ``://`` of a text, as ``_ADDRESS_HOST`` reads it.
+
+    Each address is read from the first letter of the run of scheme
+    characters right before its ``://`` (``_scheme_start``), also where that
+    run stands in the host or the user part of an address before it, so a
+    host is hidden however the text before it reads:
+    ``file://ca.pem&next=https://made-up.example`` shows
+    ``file://ca.pem&next=https://<hidden>``. A loopback name and the host of
+    a ``file://`` address with no user part are kept. A user part is hidden
+    before the paths are cut (``_ADDRESS_USER``); one that the cut of a path
+    made, as ``s://made-up.example?~/&../@h`` makes ``s://made-up.example?~&@h``,
+    holds the host and is hidden with it: ``s://<hidden>@<hidden>``.
+    """
+    out: list[str] = []
+    end = 0
+    at = text.find("://")
+    while at != -1:
+        start = _scheme_start(text, at, 0)
+        found = None if start is None else _ADDRESS_HOST.match(text, start)
+        if found is None or found.start(2) < end:
+            at = text.find("://", at + 1)
+            continue
+        user = found.start(2) - (at + 3)
+        if user and text[at + 3 : found.start(2)] != HIDDEN + "@":
+            out.append(text[end : at + 3])
+            out.append(HIDDEN + "@")
+            end = found.start(2)
+        if found.group(2).lower() not in LOOPBACK_HOSTS and not (
+            not user and found.group(1).lower().endswith("file://")
+        ):
+            out.append(text[end : found.start(2)])
+            out.append(HIDDEN)
+            end = found.end(2)
+        at = text.find("://", at + 1)
+    if not out:
+        return text
+    out.append(text[end:])
     return "".join(out)
 
 

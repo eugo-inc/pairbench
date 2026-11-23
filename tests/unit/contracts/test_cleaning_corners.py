@@ -86,21 +86,22 @@ NESTED_SHOWN = {
 }
 
 # Two addresses written with no blank between them: the second starts where the first ends,
-# so the first host is hidden whole and what follows it is read as its path.
+# so the first host is hidden whole with what follows it up to the second `://`, and the host
+# after that is hidden too.
 GLUED: dict[str, tuple[tuple[str, ...], str, list[str]]] = {
     "two addresses": (
         ("curl", "https://made-up-one.examplehttps://made-up-two.example/v1"),
-        "curl 'https://<hidden>://made-up-two.example/v1'",
+        "curl 'https://<hidden>://<hidden>/v1'",
         ["curl", "https://made-up-one.examplehttps://made-up-two.example/v1"],
     ),
     "two addresses with user parts": (
         ("curl", "https://u:{a}@made-up-one.examplehttps://u:{b}@made-up-two.example/v1"),
-        "curl 'https://<hidden>@<hidden>://<hidden>@made-up-two.example/v1'",
+        "curl 'https://<hidden>@<hidden>://<hidden>@<hidden>/v1'",
         ["curl", "https://<hidden>@made-up-one.examplehttps://<hidden>@made-up-two.example/v1"],
     ),
     "two addresses in a shell text": (
         ("sh", "-c", "curl https://made-up-one.examplehttps://made-up-two.example/v1 && ls"),
-        "sh -c 'curl https://<hidden>://made-up-two.example/v1 && ls'",
+        "sh -c 'curl https://<hidden>://<hidden>/v1 && ls'",
         ["sh", "-c", "curl https://made-up-one.examplehttps://made-up-two.example/v1 && ls"],
     ),
 }

@@ -118,6 +118,13 @@ of names are not read as you may mean them:
   the name of a command that hyperfine runs, a path with a blank in a folder name and no quotes
   around it is read as the shell splits it, as two words, so the parts of the folder name on
   both sides of the blank show: `tool /srv/Zq One/x.txt` shows `tool Zq One/x.txt`.
+- **A path that starts with three `/` or more inside a word.** In a shell text, in the value of
+  an option or a variable and in the query of an address, a path that starts with three `/` or
+  more is not read as a path, so its folders show as typed: `sh -c 'cat ///made/up/x.txt'`,
+  `--in=///made/up/x.txt` and `https://made-up.example/v1?file=///made/up/x.txt` show the
+  folders. An argument that starts so is cut (`cat ///made/up/x.txt` shows `cat x.txt`), and so
+  is a path inside a word that starts with one or two `/` (`--in=//made/up/x.txt` shows
+  `--in=x.txt`); write the path with one `/` at its start.
 - **A path quoted in part in a shell text.** In a shell text, a path in quotes is cut to its
   last part when the quotes are around the whole path. A word with quotes around only some of
   its folders is read as paths that end at each quote, so the folder names in quotes show:
@@ -192,29 +199,86 @@ of names are not read as you may mean them:
   `E_CASES_DIFFER`. Written with `%20` for each blank, as in
   `get[?host=%2Fmade%2FZq%20dir%2Frun]`, the folder is cut with the rest and shows
   `get[?host=%2Frun]`, so the sides pair the case.
-- **A path in the query of an address that a path before it runs over.** Inside an address, the
-  shown command cuts a path and reads the rest of the address after it, up to the first `;`,
-  blank, quote, comma or bracket, cutting there only the paths that start at one `/`, at two `/`
-  or at `~`. So a relative path that climbs out of its folder with `..`, a `file:` address with
-  two `/` or more and a path that starts with three `/` or more show their folders in the query
-  or the fragment of an address where such a rest runs over them. The path of the address runs
-  over its query and its fragment when no host name and no port stand right before it: with no
-  host, after a host in brackets with no port, after an empty port, in a `unix://` address with
-  no user and no host in brackets, and in a `file://` address:
-  `psql 'postgresql:///db?sslrootcert=../../made/up/ca.pem'` shows whole, and
-  `psql 'postgresql://db.example:/db?sslrootcert=file:///made/up/ca.pem'` shows
-  `psql 'postgresql://<hidden>:/db?sslrootcert=file:///made/up/ca.pem'`. So does a path before
-  it in the same query or fragment that starts at `/` or `~` or holds `../`, and a `file:`
-  address whose `#` comes before it:
-  `psql 'postgresql://db.example/db?a=/made/up&sslrootcert=../made/up/ca.pem'` shows
-  `psql 'postgresql://<hidden>/db?a=/up&sslrootcert=../made/up/ca.pem'`. After a host name or a
-  port with no such path before it, and after a `;`, a climbing path and a `file:` address are
-  cut: `psql 'postgresql://db.example/db?sslrootcert=../made/up/ca.pem'` shows
-  `psql 'postgresql://<hidden>/db?sslrootcert=ca.pem'`. A path that starts with three `/` or
-  more shows whole there too: `psql 'postgresql://db.example/db?sslrootcert=///made/up/ca.pem'`
-  shows `psql 'postgresql://<hidden>/db?sslrootcert=///made/up/ca.pem'`. A case id cuts these
-  paths: `test_conn[postgresql:///db?sslrootcert=../../made/up/ca.pem]` shows
-  `test_conn[postgresql:///db?sslrootcert=ca.pem]`.
+- **A path after a relative path that stays inside its folder.** A relative path with `..`
+  parts that stays inside its folder, such as `x/../y` or `lib/../lib`, is kept as typed to the
+  end of its word, so a path that follows it in the same word shows its folders:
+  `tool --path=lib/../lib:/made/up/lib` shows whole. In the query of an address such a path ends
+  with its query parameter, and a path that starts at one `/` or at `~`, or a local address,
+  after it is cut: `psql 'postgresql://db.example/db?k=a/../b:/made/up/ca.pem'` shows
+  `psql 'postgresql://<hidden>/db?k=a/../b:/ca.pem'`. After a host name, a port number or an
+  empty host, the words after a blank in such a query parameter that no path runs on over are
+  kept as typed to its end, so a path there shows its folders, and a path in a later parameter
+  is cut, though not after a host in brackets with no port or a host and an empty port:
+  `psql 'postgresql://db.example/db?k=a/../b x/c:/made/up/ca.pem&j=/made/up/ca.pem'` shows
+  `psql 'postgresql://<hidden>/db?k=a/../b x/c:/made/up/ca.pem&j=/ca.pem'`. A word and two `/`
+  after it are read as an address with a host, whose path shows:
+  `psql 'postgresql:///db?k=a/../b://made/up/ca.pem'` shows
+  `psql 'postgresql:///db?k=a/../b://<hidden>/up/ca.pem'`. A climbing path after it in the same query
+  parameter is read with it as one path, in which `b:..` is a folder, so its folders show
+  unless that one path climbs out of its folder:
+  `psql 'postgresql://db.example/db?k=a/../b:../../made/up/ca.pem'` shows
+  `psql 'postgresql://<hidden>/db?k=a/../b:../../made/up/ca.pem'`, and
+  `psql 'postgresql:///db?k=a/../b:./../made/up/ca.pem'` shows whole, while
+  `psql 'postgresql://db.example/db?k=a/../b:../../../made/up/ca.pem'` shows
+  `psql 'postgresql://<hidden>/db?k=ca.pem'`. After a `;`, a comma, a bracket or a
+  quote in the query, and in the query of an address with two hosts or more, the words are read
+  as any others, so a path that follows such a path there shows its folders, a local address and
+  a climbing path too:
+  `psql 'postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem'` shows whole, and
+  `psql 'postgresql://db1.example,db2.example/db?a=b/../c&sslrootcert=../../made/up/ca.pem'`
+  shows `psql 'postgresql://<hidden>/db?a=b/../c&sslrootcert=../../made/up/ca.pem'`. With no
+  such path before it, a path there is cut:
+  `psql 'postgresql:///db?a=b;sslrootcert=file:///made/up/ca.pem'` shows
+  `psql 'postgresql:///db?a=b;sslrootcert=file://ca.pem'`. After a host name, a port number or
+  an empty host, a query parameter of such a path that holds an address with a host shows whole,
+  with a `/` put before it:
+  `psql 'postgresql://db.example/db?k=a/../b:/made/up/x/s3://db2.example/y'` shows
+  `psql 'postgresql://<hidden>/db?k=/a/../b:/made/up/x/s3://<hidden>/y'`. A case id keeps
+  such a path as typed with an absolute path right after it and a `:`, `=` or `@`, so that path
+  shows its folders, and reads a climbing path after it with it as one path, as the shown
+  command does, with no host before them, after a host and an empty port, and after an earlier
+  path in the query of an address with one host:
+  `test_conn[postgresql:///db?k=a/../b:../../made/up/ca.pem]` and
+  `test_conn[postgresql:///db?k=a/../b:/made/up/ca.pem]` show whole. In a case id, after a
+  single host, with a port number or none, in brackets or not, and with no path, `;`, comma,
+  bracket or quote before it in the query or the fragment, the query parameter of such a path
+  shows whole, with a `/` put before it, so a path after it in that parameter shows its folders:
+  `test_conn[postgresql://db.example/db?k=a/../b:/made/up/ca.pem]` shows
+  `test_conn[postgresql://db.example/db?k=/a/../b:/made/up/ca.pem]`.
+- **A local address or a climbing path that runs into another address.** In the query or the
+  fragment of an address with no host, a host and an empty port, a host in brackets with no port, a
+  `unix://` socket, the path of a `file://` address or an earlier path in the query before it, a
+  local address ends at the next `&`, `?` or `#`. One that holds a blank before then followed by a
+  word with a `/`, which the path runs on over as it does over the words of a folder named in words,
+  or that holds another address before then, or a value that looks random, shows as typed, with that
+  value hidden, and so does a climbing path that holds such a blank and word before the next `&`,
+  `?` or `#`, another address or such a value, so the host of the other address is hidden: `psql
+  'postgresql:///db?c=../made/up/s3://db.example/x'` shows `psql
+  'postgresql:///db?c=../made/up/s3://<hidden>/x'`, and `psql
+  'postgresql:///db?sslrootcert=file:///made/Zq Files/ca.pem'` shows whole. A blank with no such
+  word after it ends the path, which is cut: `psql
+  'postgresql:///db?sslrootcert=file:///made/up/ca.pem fast'` shows `psql
+  'postgresql:///db?sslrootcert=file://ca.pem fast'`. After a host name or a port number, with no
+  path before it in the query, a local address there ends at the next `?` or `#` only, so an address
+  after it in the same query is read as a part of its path, whose last part shows that address's
+  host: `psql 'postgresql://db.example/db?c=unix:///made/up/s.sock&next=https://db2.example:443?x'`
+  shows `psql 'postgresql://<hidden>/db?c=unix:///db2.example:443?x'`.
+- **A host after a port or a host in brackets.** In an address with two hosts or more, the
+  hosts after a port show, and so do the hosts after a host in brackets and a host in brackets
+  after the first: `psql 'postgresql://db1.example:5432,db2.example:5433/db'` shows
+  `psql 'postgresql://<hidden>:5432,db2.example:5433/db'`,
+  `psql 'postgresql://[fd00::1],db2.example:5433/db'` shows
+  `psql 'postgresql://<hidden>,db2.example:5433/db'`, and
+  `psql 'postgresql://db1.example,[fd00::2]:5433/db'` shows
+  `psql 'postgresql://<hidden>[fd00::2]:5433/db'`. Host names with a port on the last host only
+  are hidden together: `psql 'postgresql://db1.example,db2.example:5433/db'` shows
+  `psql 'postgresql://<hidden>:5433/db'`.
+- **A credential after a second `?` in an address.** In the query of an address, a `?` inside
+  a value starts no parameter, so a credential after it is read as a part of that value and
+  is not hidden: `curl 'https://made-up.example/v1?next=/a?token=made-up'` shows
+  `curl 'https://<hidden>/v1?next=/a?token=made-up'`. Written before that value, it is
+  hidden: `curl 'https://made-up.example/v1?token=made-up&next=/a?b'` shows
+  `curl 'https://<hidden>/v1?token=<hidden>&next=/a?b'`.
 - **A Redis command a client reads from its input.** A command that a program writes to the
   input of `redis-cli` or `valkey-cli`, as in `echo 'AUTH password' | redis-cli`, is an
   argument of that program and is not read as a Redis command, so its password shows.
@@ -456,8 +520,10 @@ of names are not read as you may mean them:
 Give an address a host name it can have, put a space between two addresses, and write a
 password word or a key apart from the word after it. Write a path with `/` and start it with
 `/` rather than a variable, and in a shell text put quotes around the whole of a path whose
-folder names hold a blank. In the query of an address, start a path at one `/` rather than with
-`..`, `file:` or three `/` (`?sslrootcert=/made/up/ca.pem` shows `?sslrootcert=/ca.pem`). In code, write a credential's value as one string on one line,
+folder names hold a blank. Write a relative path that stays inside its folder without `..`
+parts (`--path=lib:/made/up/lib` shows `--path=lib:lib`), give an address with two hosts or
+more host names, none in brackets, and a port on the last host only, and write a credential in
+the query of an address before any value that holds a `?`. In code, write a credential's value as one string on one line,
 with nothing before its opening quote and no quote of its own inside it. Give a key to a side
 through
 `launch.env_pass` or a key file, and a Redis password with `-a` or `--pass`, or through

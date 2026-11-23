@@ -61,6 +61,15 @@ HOME_FORMS: dict[str, tuple[str, str]] = {
     "a climbing home folder as the last path of a list": (f"/usr/bin:../home/{NAME}", H),
     "a list given to an option": (f"--in=/usr/bin:/home/{NAME}", f"--in={H}"),
     "a list in an assignment": (f"PATH=/usr/bin:/home/{NAME}", f"PATH={H}"),
+    "a home folder after an equals sign in a path": (f"/srv/k=/home/{NAME}", H),
+    "a home folder after an equals sign in a nested local address": (
+        f"postgresql:///db?c=file:///made/k=/home/{NAME}&j=1",
+        f"postgresql:///db?c=file://{H}&j=1",
+    ),
+    "a home folder after an equals sign in a climbing path in a query": (
+        f"postgresql:///db?c=../made=/Users/{NAME}/",
+        f"postgresql:///db?c={H}",
+    ),
 }
 
 # (the argument, as the shown command gives it): a path that goes on into a home folder, a
@@ -161,6 +170,10 @@ CASE_FORMS: dict[str, tuple[str, str]] = {
     "a file in a home folder": (f"test_read[/home/{NAME}/x.csv]", "test_read[x.csv]"),
     "a file in a tilde home": (f"test_read[~{NAME}/x.csv]", "test_read[x.csv]"),
     "a list that ends at a home folder": (f"bench[/usr/bin:/home/{NAME}]", f"bench[{NAME}]"),
+    "a path that ends at a home folder after an equals sign": (
+        f"bench[/srv/k=/home/{NAME}]",
+        f"bench[{NAME}]",
+    ),
 }
 
 

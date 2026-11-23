@@ -192,14 +192,46 @@ runs over, so the words after it are read as any others. A relative path that cl
 its folder with `..` may name a folder outside the run folder, so it is read and cut as an
 absolute path is, wherever the climb stands in it: `../../Zq Files/in.csv`, `./../a/in.csv` and
 `data/../../a/in.csv` each show `in.csv`. One that stays inside its folder, such as `a/../b`, and
-`..` parts alone, as in `cd ../..`, show as typed. In the query of an address in the shown
-command, a climbing path and a `file:` address show their folders where a path before them runs
-over them, and a path that starts with three `/` shows whole, as the
-[known limits](../../SECURITY.md#known-limits-of-the-shown-command) say; a case id cuts them. In
-a case id, a path that starts with two `/` or more at the start of the id or after a blank is
-cut like one that starts with a single `/` (`run //made/up/in.bin` shows `run in.bin`). A path
-also starts at three `/` or more after one of `[`, `=`, `,`, `;`, `(`, `{`, `@` or a quote
-(`test_read[///made/up/in.bin]` shows
+`..` parts alone, as in `cd ../..`, show as typed. In the shown command, a local address and a
+climbing path in the query or the fragment of an address are cut as they are after a host,
+whatever stands before them: no host, a host and an empty port, a host in brackets with no port,
+a `unix://` socket, the path of a `file://` address or an earlier path in the query
+(`postgresql:///db?sslrootcert=file:///made/up/ca.pem`
+shows `postgresql:///db?sslrootcert=file://ca.pem`, and
+`mysql://localhost:/db?ssl-ca=../../made/up/ca.pem` shows `mysql://localhost:/db?ssl-ca=ca.pem`),
+but a path inside a word that starts with three `/` or more, as in `--in=///made/up/x.txt`, is not
+read as a path, so its folders show, as the
+[known limits](../../SECURITY.md#known-limits-of-the-shown-command) say. After one
+of those, a local address ends at the next `&`, `?` or `#`, and one that holds a blank before then
+followed by a word with
+a `/`, which the path runs on over as it does over the words of a folder named in words, or that
+holds another address before then, or a value that looks random, shows as typed, as does a
+climbing path that holds such a blank and word before the next `&`, `?` or `#`, another address
+or such a value, so the host of the other address is hidden
+(`postgresql:///db?c=../made/up/s3://db.example/x` shows
+`postgresql:///db?c=../made/up/s3://<hidden>/x`), as the known limits say too. A blank with no
+such word after it ends the path, which is cut
+(`postgresql:///db?sslrootcert=file:///made/up/ca.pem fast` shows
+`postgresql:///db?sslrootcert=file://ca.pem fast`). So do the folders of a
+path that follows a relative path that stays inside its folder in the same word, as in
+`--path=lib/../lib:/made/up/lib`; in the query of an address, only those of a climbing path
+read with it as one path in its query parameter
+(`postgresql:///db?k=a/../b:../../made/up/ca.pem` shows whole), those of a query parameter that
+holds an address with a host, and those of a path after a blank in such a query parameter that no
+path runs on over, after a host name, a port number or an empty host, and those of any
+path after a
+`;`, a comma, a bracket or a quote, or with two hosts or more
+(`postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem` shows whole), as the known limits
+say too. A case id cuts a local address and a climbing path there when no relative path that
+stays inside its folder stands before them in the query, one that runs into another address
+included (`test_conn[postgresql:///db?c=../made/up/s3://db.example/x]` shows
+`test_conn[postgresql:///db?c=x]`). In the query of an address with one host or none it shows
+the folders of an absolute path right after such a relative path and a `:`, `=` or `@`
+(`test_conn[postgresql:///db?k=a/../b:/made/up/ca.pem]` shows whole), as the known limits say.
+In a case id, a path that starts with two `/` or more at the start of the
+id or after a blank is cut like one that starts with a single `/` (`run //made/up/in.bin` shows
+`run in.bin`). A path also starts at three `/` or more after one of `[`, `=`, `,`, `;`, `(`,
+`{`, `@` or a quote (`test_read[///made/up/in.bin]` shows
 `test_read[in.bin]`), and at two `/` or more after the `/` that ends a part of a name when two
 more parts follow (`BM_Read///made/up/in.bin` shows `BM_Read/in.bin`). After `:` the `/` start
 an address (`file:///made/up/in.bin` shows `file://in.bin`), and two `/` after one of the other

@@ -6,6 +6,23 @@ description: "What each release of pairbench added and changed, newest first."
 
 This page lists what each release of pairbench added and changed, newest first.
 
+## 0.1.1
+
+A fix to what a results file shows of a command.
+
+- **Shown command**: a local address (`file:` and `scheme:///` forms) and a climbing relative
+  path (`../`, `./../`, `data/../../`) in the query or the fragment of an address are cut as
+  they are after a host, whatever stands before them, so their folders and the hosts and
+  credentials around them are hidden in the shown command, in `sh -c` texts and in `--opt=`
+  values. A path that ends at a home folder after a `=` shows `<hidden>`. The
+  [security policy](../SECURITY.md#known-limits-of-the-shown-command) lists what still shows.
+- **Case ids** are read as in 0.1.0. The names of `hyperfine` cases come from their commands,
+  so a command with such a path can name its case differently in 0.1.1: pooling a capture of
+  0.1.0 with one of 0.1.1 is then refused with `E_POOL_CASES`, and a `cases.groups` pattern
+  written for the 0.1.0 name may miss the 0.1.1 name.
+- **Publishing**: the release is built again from its tag before the upload, which goes ahead
+  only when the attached files are the files that build makes.
+
 ## 0.1.0
 
 The first release.
