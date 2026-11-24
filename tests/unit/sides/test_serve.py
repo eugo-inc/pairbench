@@ -2255,3 +2255,57 @@ def test_a_secret_of_a_container_server_leaves_its_fingerprint_alone(
         for word in ("kiwi7", "plum4")
     ]
     assert len({side.fingerprint for side in found}) == 1
+
+
+class _Answer:
+    """A server's answer as the opener hands it back, with a body of fixed bytes."""
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self) -> _Answer:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.body
+
+
+class _Opener:
+    """Stands in for the opener: every address answers with the same body, nothing is sent."""
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+        self.asked: list[str] = []
+
+    def open(self, url: str, timeout: float) -> _Answer:
+        self.asked.append(url)
+        return _Answer(self.body)
+
+
+def test_the_listed_model_is_the_first_id_of_the_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    opener = _Opener(b'{"data": [{"id": "made-up-model"}, {"id": "other"}]}')
+    monkeypatch.setattr(serve, "_opener", lambda: opener)
+
+    assert serve.listed_model("http://127.0.0.1:9", 1.0) == "made-up-model"
+    assert opener.asked == ["http://127.0.0.1:9/v1/models"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(b'{"data": [{"id": "made-up-model"}, {"id": "w\\udcffk"}]}', id="second"),
+        pytest.param(
+            b'{"data": [{"id": "made-up-model", "root": "/made-up/w\\udcffk"}]}', id="root"
+        ),
+    ],
+)
+def test_the_listed_model_is_read_when_a_text_it_does_not_read_holds_a_lone_surrogate(
+    monkeypatch: pytest.MonkeyPatch, body: bytes
+) -> None:
+    opener = _Opener(body)
+    monkeypatch.setattr(serve, "_opener", lambda: opener)
+
+    assert serve.listed_model("http://127.0.0.1:9", 1.0) == "made-up-model"

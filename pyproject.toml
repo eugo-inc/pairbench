@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pairbench"
-version = "0.2.1"
+version = "0.3.0"
 description = "Benchmark performance optimizations with statistics you can trust: paired, alternating runs with a measured noise floor and exact p-values. Compare container images, Python versions or inference servers on your own machine."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -138,7 +138,9 @@ dev-mode-dirs = ["src"]
 # What the tests, the lint and the type check need. The package itself needs nothing.
 [dependency-groups]
 test = ["pytest>=8", "jsonschema>=4.18"]
-lint = ["ruff", "mypy"]
+# Each tool of the lint group is pinned to one release, so a new release cannot
+# change what the checks report by itself.
+lint = ["ruff==0.17.5", "mypy==2.4.1"]
 build = ["build", "hatchling"]
 dev = [{ include-group = "test" }, { include-group = "lint" }, { include-group = "build" }]
 

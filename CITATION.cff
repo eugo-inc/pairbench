@@ -8,7 +8,7 @@ abstract: >-
 type: software
 authors:
   - name: "Eugo, Inc."
-version: "0.2.1"
+version: "0.3.0"
 license: Apache-2.0
 repository-code: "https://github.com/eugo-inc/pairbench"
 url: "https://eugo.io/docs/pairbench/latest/"

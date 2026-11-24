@@ -25,8 +25,15 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from pairbench.api import API_VERSION, ReportOptions
-from pairbench.errors import Refusal
-from pairbench.model import FILE_CAPTURE, FILE_MARKDOWN, FILE_PLAN, FILE_RESULTS, Results
+from pairbench.errors import Refusal, _first_surrogate, lone_surrogate, surrogate_place
+from pairbench.model import (
+    FILE_CAPTURE,
+    FILE_MARKDOWN,
+    FILE_PLAN,
+    FILE_RESULTS,
+    Results,
+    public_case,
+)
 
 # The mode of a results file written for the first time: readable by all.
 NEW_FILE_MODE = 0o644
@@ -35,18 +42,53 @@ NEW_FILE_MODE = 0o644
 def results_text(results: Results) -> str:
     """Return the text of ``results.json``: the document as JSON, indented, one newline at the end.
 
-    Every number is finite; the model refuses any other.
+    Every number is finite; the model refuses any other. A document that holds a text or a
+    key with a lone surrogate (``pairbench.errors.lone_surrogate``), which UTF-8 text cannot
+    hold, is refused with ``E_USAGE``. The message names the place of the first such text
+    and shows the text as the results show a case id (``pairbench.model.public_case``): its
+    secret forms hidden and its paths cut, then escaped, at most 40 characters on each side
+    of the surrogate, or no text where the cut leaves the surrogate out.
     """
-    return json.dumps(results.to_json(), indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    data = results.to_json()
+    found = _first_surrogate(data)
+    if found is not None:
+        raise Refusal("E_USAGE", f"the results cannot be written: {_unwritable(data, found)}")
+    return _json_text(data)
+
+
+def _unwritable(data: object, found: tuple[str, str, bool]) -> str:
+    """Say where ``data`` holds the text ``found`` with a lone surrogate, the text shown as
+    ``results_text`` says."""
+    place, text, is_key = found
+    shown = lone_surrogate(public_case(text))
+    if shown is None:
+        return f"{surrogate_place(data)} holds a lone surrogate, which is not UTF-8 text"
+    where = f"{place}: " if place else ""
+    return f"{where}{'the key ' if is_key else ''}{shown}"
+
+
+def results_text_as_held(results: Results) -> str:
+    """Return the text ``results_text`` gives, a lone surrogate kept in it as it stands.
+
+    Such a text is for a stream that can write the surrogate, as standard output under a C
+    or POSIX locale writes one from U+DC80 to U+DCFF as the byte it stands for; no file
+    pairbench writes holds it.
+    """
+    return _json_text(results.to_json())
+
+
+def _json_text(data: object) -> str:
+    return json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
 
 
 def read_results(path: Path) -> Results:
     """Read a results document from a file.
 
-    A file that cannot be read, that is not JSON, that is nested deeper than
-    the interpreter can follow, or that is no valid results document is
-    refused with ``E_USAGE``; the message names the file by the last part of
-    its path.
+    A file that cannot be read, that is not JSON, that holds a text with a
+    lone surrogate (``pairbench.errors.lone_surrogate``), that is nested
+    deeper than the interpreter can follow, or that is no valid results
+    document is refused with ``E_USAGE``; the message names the file by the
+    last part of its path.
     """
     file = Path(path)
     try:
@@ -69,6 +111,9 @@ def read_results(path: Path) -> Results:
         raise Refusal("E_USAGE", f"results file is nested too deeply: {file.name}") from None
     except ValueError as exc:
         raise Refusal("E_USAGE", f"results file is not JSON: {file.name}: {exc}") from None
+    found = lone_surrogate(data)
+    if found is not None:
+        raise Refusal("E_USAGE", f"results file {file.name}: {found}")
     try:
         return Results.from_json(data)
     except RecursionError:
@@ -184,5 +229,6 @@ __all__ = [
     "read_results",
     "replace_file",
     "results_text",
+    "results_text_as_held",
     "write_results",
 ]

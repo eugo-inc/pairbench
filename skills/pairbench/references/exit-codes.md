@@ -52,7 +52,7 @@ backslashes show doubled there. Read the message from `refusals[]` of the result
 | `E_GRID` | 6 | the observed grid of rounds and lineup entries does not match the lineup |
 | `E_TWIN_ORPHAN` | 6 | a twin's side is absent |
 | `E_ORDER_NOT_VARIED` | 6 | a compared pair ran in the same order every round |
-| `E_POOL_SAME` | 6 | the same capture id, file path or file hash was given twice |
+| `E_POOL_SAME` | 6 | the same capture was given twice: the same id, file path or file hash, or of a file a reader splits into runs, the same run |
 | `E_POOL_IDENTICAL_ROWS` | 6 | two captures with different ids hold identical observation rows |
 | `E_POOL_TRUNCATED_COPY` | 6 | one capture's rows are a contiguous stretch of another's |
 | `E_POOL_SIDE_DRIFT` | 6 | a side's fingerprint, its recorded setup in more than a credential's value, its working folder, or the shared workload in more than a credential's value differs between captures |

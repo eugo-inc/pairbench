@@ -92,7 +92,7 @@ from pairbench.api import (
 )
 from pairbench.capture.reader import JsonlReader
 from pairbench.capture.writer import CaptureWriter
-from pairbench.errors import EXIT_SIDE, Refusal
+from pairbench.errors import EXIT_SIDE, Refusal, lone_surrogate, surrogate_place
 from pairbench.gates.discard import witness_notes
 from pairbench.gates.platform import all_selected, format_cpu_list, parse_cpu_list
 from pairbench.model import (
@@ -160,6 +160,7 @@ from pairbench.model import (
     hidden_difference,
     launch_cost_side,
     public_case,
+    public_command,
     safe_file_name,
     side_setup,
     undecided,
@@ -982,14 +983,21 @@ class _Run:
             ]
             for one in read:
                 refuse_reserved_cases(one)
-            version = self.tool_version(driver, done[0])
+            if repeat:
+                driver_samples = combine_runs(read[0], read[1], clock=clock_cases(driver))
+            elif control:
+                driver_samples = control_samples(read[0])
+            else:
+                driver_samples = list(read[0])
+            if _results_follow():
+                _refuse_read_text_not_utf8(driver_samples, where)
+            version = self.tool_version(driver, done[0], where)
         except Refusal:
             self.write(record)
             raise
         if version is not None:
             record = dataclasses.replace(record, tool_version=version)
         if repeat:
-            driver_samples = combine_runs(read[0], read[1], clock=clock_cases(driver))
             for case in uncombined_cases(read[0], read[1]):
                 self.notes.once(
                     NOTE_CONTROL_CASE_MISSING,
@@ -997,10 +1005,6 @@ class _Run:
                     "and has no value for it",
                     key=case,
                 )
-        elif control:
-            driver_samples = control_samples(read[0])
-        else:
-            driver_samples = list(read[0])
         samples = list(driver_samples)
         if control:
             samples += control_samples(outcome.samples)
@@ -1035,13 +1039,28 @@ class _Run:
         own = entry.spec.get("format") if entry.kind == KIND_FILE else None
         return registry.driver(own) if isinstance(own, str) and own else self.driver
 
-    def tool_version(self, driver: Driver, ctx: DriverContext) -> str | None:
+    def tool_version(self, driver: Driver, ctx: DriverContext, where: str) -> str | None:
+        """Return the version of the tool a launch ran, or ``None`` when the driver reads none.
+
+        In a run whose results follow (``_results_follow``), a version that holds a lone
+        surrogate is refused with ``E_LAUNCH_FAILED``, as the results show it and UTF-8 text
+        cannot hold one; so is a tool name that holds one where the note of an untested
+        version would show it. The message shows either as the results show a case id
+        (``_shown_surrogate``).
+        """
         if not isinstance(driver, ReportsToolVersion):
             return None
         found = driver.tool_version(ctx, ctx.artifacts)
         if found is None:
             return None
+        checked = _results_follow()
+        if checked and lone_surrogate(found.version) is not None:
+            shown = _shown_surrogate(found.version).removeprefix(":")
+            raise Refusal("E_LAUNCH_FAILED", f"{where}: the tool version{shown}")
         if not found.tested:
+            if checked and lone_surrogate(found.tool) is not None:
+                shown = _shown_surrogate(found.tool).removeprefix(":")
+                raise Refusal("E_LAUNCH_FAILED", f"{where}: the tool name{shown}")
             self.notes.once(
                 NOTE_TOOL_VERSION_UNTESTED,
                 f"{found.tool} {found.version} is a major version this driver was not tested with",
@@ -1103,6 +1122,52 @@ class _Run:
                     reducer=sample.reducer,
                 )
             )
+
+
+def _results_follow() -> bool:
+    """Say whether results follow the run: a run started under a recorded command line
+    (``api.command_line``, as the command line runs it) has its results written. A call of
+    the Python API records none and writes no results; its capture writes a lone surrogate
+    as a JSON escape, and only what then writes results refuses it (``results_text``)."""
+    return bool(recorded_command_line())
+
+
+def _refuse_read_text_not_utf8(samples: Sequence[Sample], where: str) -> None:
+    """Refuse a case, metric or unit a launch records that holds a lone surrogate, in a run
+    whose results follow (``_results_follow``).
+
+    ``samples`` are the samples recorded for the launch: what the driver read, with the cases
+    the positive control does not record left out (a case only one of its two runs gave, or a
+    case whose ``better`` is ``none``); a note names the first kind, escaped. The capture and the
+    results hold each case as the results show it, with its paths cut to their last part
+    (``shown_cases``), and its metric and unit as read; UTF-8 text cannot hold a lone
+    surrogate. Only what a recorded sample holds is looked at, so a text the driver did not
+    read into one, a case that is not recorded, or a folder its case id names and the cut
+    leaves out, is no reason to refuse.
+    The message quotes the case as the results show it, escaped, never the id as read, and a
+    metric or a unit as the results show a case id (``_shown_surrogate``).
+    """
+    for sample in samples:
+        said = lone_surrogate(sample.case)
+        if said is not None:
+            raise Refusal("E_LAUNCH_FAILED", f"{where}: the case {said}")
+        for what, text in (("metric", sample.metric), ("unit", sample.unit)):
+            if lone_surrogate(text) is not None:
+                raise Refusal(
+                    "E_LAUNCH_FAILED",
+                    f"{where}: the {what} of case {sample.case!r}{_shown_surrogate(text)}",
+                )
+
+
+def _shown_surrogate(text: str) -> str:
+    """Return the end of a message on a text with a lone surrogate, the text shown as the
+    results show a case id (``public_case``): its secret forms hidden and its paths cut, then
+    escaped, at most 40 characters on each side of the surrogate. When the cut leaves the
+    surrogate out, the end shows no text."""
+    said = lone_surrogate(public_case(text))
+    if said is None:
+        return " holds a lone surrogate, which is not UTF-8 text"
+    return f": {said}"
 
 
 class _Load:
@@ -1892,6 +1957,8 @@ def _carry_out(run: _Run, *, file_sides: bool) -> Capture:
         if not file_sides:
             build_plan(experiment)
         run.machine = _machine(run)
+        if _results_follow():
+            _refuse_text_not_utf8(run)
         _make_run_folder(run_dir)
         run.held = OpenFolder(run_dir)
         run.writer = CaptureWriter(run_dir / FILE_CAPTURE)
@@ -1927,6 +1994,88 @@ def _carry_out(run: _Run, *, file_sides: bool) -> Capture:
     return capture
 
 
+def _recorded_sides(run: _Run) -> list[Side]:
+    """The side records of the capture, in the order it holds them: each side, and its twin
+    after it when it has one."""
+    twinned = set(run.experiment.twinned())
+    out: list[Side] = []
+    for side in run.experiment.sides:
+        entry = run.entry(side.name)
+        out.append(entry)
+        if side.name in twinned:
+            out.append(entry.twin())
+    return out
+
+
+def _shown_command(argv: Sequence[str], config: Mapping[str, Any], sides: Sequence[Side]) -> str:
+    """The command as the results show it, or the empty text where none is shown."""
+    report = config.get("report")
+    include = isinstance(report, Mapping) and report.get("include_image_refs") is True
+    try:
+        shown = public_command(argv, include_image_refs=include, config=config, sides=sides)
+    except Exception:  # the analysis then shows no command either
+        return ""
+    return shown or ""
+
+
+def _refuse_text_not_utf8(run: _Run) -> None:
+    """Refuse, before the run folder is made, a text the results would show that is not
+    UTF-8 text, in a run whose results follow (``_results_follow``).
+
+    On a system that decodes its names and arguments as UTF-8, a byte that is not UTF-8 in
+    an argument, a variable or a name comes in as a lone surrogate. The capture writes it as
+    a JSON escape and reads it back; the results, which are UTF-8 text, cannot hold it. Only
+    what the results show is checked: the command as ``public_command`` shows it, the setting
+    ``run.node_type``, and each side as ``Side.for_results`` shows it. A text the results hide
+    or cut away, such as a ``--side`` spec, a ``--set`` value of another setting or a folder of
+    a path, runs. A refusal names the place and never the text: ``E_USAGE`` for the command
+    line and the setting, ``E_SIDE_UNIDENTIFIED`` for what a side reports of itself.
+    """
+    argv = recorded_command_line()
+    config = run.experiment.to_json()
+    sides = _recorded_sides(run)
+    shown = _shown_command(argv, config, sides)
+    if surrogate_place(shown) is not None:
+        count = _surrogates(shown)
+        for number, item in enumerate(argv):
+            if surrogate_place(item) is None:
+                continue
+            cleaned = [*argv[:number], _without_surrogates(item), *argv[number + 1 :]]
+            if _surrogates(_shown_command(cleaned, config, sides)) < count:
+                raise Refusal(
+                    "E_USAGE",
+                    f"argument {number} of the command line is not UTF-8 text, which the "
+                    "results are",
+                )
+        raise Refusal("E_USAGE", "the command line is not UTF-8 text, which the results are")
+    if surrogate_place(run.experiment.run.node_type or "") is not None:
+        raise Refusal(
+            "E_USAGE", "the setting run.node_type is not UTF-8 text, which the results are"
+        )
+    report = config.get("report")
+    include = isinstance(report, Mapping) and report.get("include_image_refs") is True
+    for side in sides:
+        try:
+            public = side.for_results(include_image_ref=include).to_json()
+        except Exception:  # the analysis then leaves the side out
+            continue
+        place = surrogate_place(public)
+        if place is not None:
+            raise Refusal(
+                "E_SIDE_UNIDENTIFIED",
+                f"side {side.name!r}: {place} of what the results show of it is not UTF-8 "
+                "text, which the results are",
+            )
+
+
+def _surrogates(text: str) -> int:
+    return sum(1 for c in text if "\ud800" <= c <= "\udfff")
+
+
+def _without_surrogates(text: str) -> str:
+    return "".join("?" if "\ud800" <= c <= "\udfff" else c for c in text)
+
+
 def _let_go(run: _Run) -> None:
     """Close the resolved sides and the run folder held open."""
     _close_all(run.resolved)
@@ -1951,12 +2100,8 @@ def _open(run: _Run) -> None:
         )
     )
     run.write(run.machine)
-    twinned = set(experiment.twinned())
-    for side in experiment.sides:
-        entry = run.entry(side.name)
+    for entry in _recorded_sides(run):
         run.write(entry)
-        if side.name in twinned:
-            run.write(entry.twin())
     run.notes.attach(run.writer)
 
 

@@ -24,7 +24,7 @@ from pairbench.cli.common import (
     refuse_file_sides,
     relative_to,
 )
-from pairbench.errors import EXIT_INTERRUPTED, Refusal, control_escaped, docs_line
+from pairbench.errors import EXIT_INTERRUPTED, Refusal, docs_line
 from pairbench.model import (
     FILE_DIAGNOSTICS,
     FILE_REPORT,
@@ -65,11 +65,10 @@ def _interrupted(error: BaseException) -> bool:
 
 def _failure(error: BaseException) -> str:
     """What a failed step says about its failure, in a note that the results keep: a refusal's
-    code and message, with each control character of the message written as an escape such
-    as ``\\x1b``, or the kind of error. The note's printed line escapes it as
-    ``errors.printable`` writes it."""
+    code and message as the refusal holds it, or the kind of error. The note's printed line
+    escapes it once, as ``errors.printable`` writes it, as a refusal's own line does."""
     if isinstance(error, Refusal):
-        return f"{error.code}: {control_escaped(error.message)}"
+        return f"{error.code}: {error.message}"
     return type(error).__name__
 
 

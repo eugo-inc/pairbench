@@ -75,7 +75,7 @@ loads a font from another host.
 
 | Package and version | What the site uses it for | Licence | Source |
 |---|---|---|---|
-| `astro` 7.4.4 | builds the pages; its client scripts are in the built pages | MIT | <https://github.com/withastro/astro> |
+| `astro` 7.4.13 | builds the pages; its client scripts are in the built pages | MIT | <https://github.com/withastro/astro> |
 | `@astrojs/starlight` 0.42.8 | the theme, the navigation, the table of contents and the search box | MIT | <https://github.com/withastro/starlight> |
 | `astro-expressive-code` 0.44.3 | the code blocks and their copy button, through Starlight | MIT | <https://github.com/expressive-code/expressive-code> |
 | `pagefind` 1.6.0 | builds the search index and the scripts that read it | MIT | <https://github.com/Pagefind/pagefind> |

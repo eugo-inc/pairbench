@@ -20,6 +20,8 @@ def check_pool(captures: Sequence[Capture], *,
                allow_mixed_machines: bool = False) -> list[Refusal]
 def load_capture(path: Path | str, *, reader: str | None = None,
                  strict: bool = True) -> list[Capture]
+def read_text_matching(inputs: str | Path | Sequence[str | Path], *,
+                       default_order: str) -> MatchingRead
 def load_results(path: Path | str) -> Results
 def load_diagnostics(path: Path | str) -> Diagnostics
 def render(results: Results, fmt: Literal["terminal", "markdown", "json", "html"], *,
@@ -35,12 +37,19 @@ def fill(template: str | Path, results: Results | Mapping[str, Results]) -> str
   raised as `pairbench.errors.Refusal`, which carries the text code and the exit code.
 - `check_pool` runs the checks that pooling the captures in one analysis makes, and returns
   what they refuse instead of raising it. See [checking a pool](#checking-a-pool).
+- `check_matching_pool` runs the pool checks of a read in the matching mode of the text
+  format and returns every refusal; `refuse_matching_pool` raises the first. See
+  [checking a pool of a matching read](#checking-a-pool-of-a-matching-read).
 - `load_capture` reads the captures in a file, one per run it holds, with the reader named or
   the one that recognises the file. `strict=False` reads it with the
   [lenient mode](text-format.md#lenient-reading) of the text reader: a value that is not a
   finite number is a missing cell, which the capture notes as `value_not_finite`, one note per
   cell, and which `analyse` leaves unpaired while it grades the rest. Another reader is refused
   with `E_USAGE`.
+- `read_text_matching` reads inputs of the text format in the
+  [matching mode](text-format.md#matching-reading): every row it keeps, with its run, its pass
+  order and its line, and the counts of what it could not read. See
+  [reading text in the matching mode](#reading-text-in-the-matching-mode).
 - `render` renders a results document. With `diagnostics`, the terminal and markdown reports
   add the findings and the page adds the diagnostics; with `folder`, the page embeds the
   chart and flame-graph files found there.
@@ -63,7 +72,7 @@ incomplete capture with `E_CAPTURE_INCOMPLETE` once the first three checks below
 
 | Text code | What the check found |
 |---|---|
-| `E_POOL_SAME` | the same capture id, file path or file bytes given twice |
+| `E_POOL_SAME` | the same capture id, file path or file bytes given twice; for a file a reader splits into runs, the same run of it |
 | `E_POOL_IDENTICAL_ROWS` | two captures with different ids and identical observation rows |
 | `E_POOL_TRUNCATED_COPY` | one capture's rows are a stretch of another's, its last row whole or cut short |
 | `E_USAGE` | names a run marked that cannot be read alike across the captures |
@@ -96,6 +105,37 @@ or not. The notes a pool adds to the results, such as `allow_mixed_machines` or
 ```
 
 The values above are made up.
+
+## Reading text in the matching mode
+
+`read_text_matching(inputs, *, default_order)` takes a `Path`, read as a UTF-8 file, a `str`,
+the text itself, or a list of them, and reads them as one text joined with one newline. It
+refuses no row and prints nothing; a file that cannot be read or is not UTF-8, and an input
+that is neither a `Path` nor a `str`, are refused with `E_USAGE`. `default_order` is the
+pass-order text of the rows no pass-order line orders. The rules are on the
+[text format page](text-format.md#matching-reading).
+
+It returns a frozen `pairbench.capture.matching.MatchingRead`:
+
+- `rows`: the kept rows, each a `MatchingRow` with `run`, `round`, `side`, `case`, `value`,
+  `suite`, `pass_order`, `order_from_line` and `line`;
+- `runs`: one `MatchingRun` per run with `index`, `banner_line`, `metadata`,
+  `metadata_lines`, `malformed_rows`, `kept_rows`, `pool_rows` and `pool_row_lines`;
+- `run_count`, `kept_rows`, `malformed_rows`, `default_order` and `sha256`.
+
+```python
+def MatchingRead.two_sided(first: str, second: str) -> MatchingView
+def MatchingView.capture(*, unit: str = "ns",
+                         better: Literal["lower", "higher"] = "lower") -> Capture
+```
+
+`two_sided` keeps the rows of `first` and `second` that a pass-order line of their run names
+both sides for, each as a `ViewRow` with its `row` and its `order`, `"first, second"` or
+`"second, first"`, and counts the rows it leaves out in `left_out_no_order` and
+`left_out_other_sides`. `capture` gives the view as one capture for `analyse`, with `second`
+as the baseline. `analyse` refuses it with `E_USAGE` when a case id ends like the mark a run
+adds to a name whose cut dropped words (` +` and eight hex digits, as in `t +1a2b3c4d`), which
+the pool checks of the read do not refuse.
 
 ## Sides
 
@@ -164,6 +204,34 @@ footer says so. A supplied floor too large to write as a percentage is no floor,
 one would be: the side has no floor and every case that uses it gets
 `NO VERDICT (too_far_apart)`. The command line does not expose supplied floors.
 
+## Checking a pool of a matching read
+
+```python
+def check_matching_pool(read: MatchingRead) -> list[Refusal]
+def refuse_matching_pool(read: MatchingRead) -> None
+```
+
+The matching mode of the text format is reachable from Python and from
+[`pairbench compare --matching`](commands.md#compare). `check_matching_pool(read)`
+runs the pool checks of one read in that mode and returns every refusal they find, in the order
+they run. It raises none of them and prints nothing, and an empty list says the runs pool.
+`refuse_matching_pool(read)` raises the first refusal of that list as a
+`pairbench.errors.Refusal`, and returns when there is none. Both refuse an argument that is not
+a `MatchingRead` with `E_USAGE`.
+
+The runs are compared only for copies. Each refusal's `detail` names its check under `check`:
+
+| `check` | Text code | Detail |
+|---|---|---|
+| `identical_written_rows` | `E_POOL_IDENTICAL_ROWS` | `runs` (earlier, then later) and `rows` |
+| `written_stretch` | `E_POOL_TRUNCATED_COPY` | `copy_run`, `original_run`, `copy_rows`, `original_rows`, `start_row`, `last_row`, `torn` and `rows_matched` |
+| `identical_rows` | `E_POOL_IDENTICAL_ROWS` | `runs` |
+| `truncated_copy` | `E_POOL_TRUNCATED_COPY` | `runs` |
+
+Every refusal carries exit code 6. What each check compares, and how rows are numbered, is on
+the reference page of the text format, under
+[pool checks of a matching read](text-format.md#pool-checks-of-a-matching-read).
+
 ## Rules
 
 <!-- example -->
@@ -194,14 +262,20 @@ every field of the rule used.
 
 <!-- example -->
 ```python
->>> from pairbench.stats import holm, min_rounds, sign_test
+>>> from fractions import Fraction
+>>> from pairbench.stats import holm, holm_exact, min_rounds, sign_test
 >>> sign_test(12, 0).p  # the exact two-sided p-value: 2/4096
 0.00048828125
 >>> holm([0.01, 0.04, 0.5])
 [0.03, 0.08, 0.5]
+>>> holm_exact([Fraction(1, 100), Fraction(1, 25), Fraction(1, 2)])
+[Fraction(3, 100), Fraction(2, 25), Fraction(1, 2)]
 >>> min_rounds(4, 0.05)
 8
 ```
+
+`holm` gives the floats the results write; `holm_exact` gives the exact fractions a verdict is
+decided on (see [exact arithmetic for the verdict](../method/multiple-comparisons.md#exact-arithmetic-for-the-verdict)).
 
 `paired(observations, a, b)` pairs the observations of two sides by capture and round.
 

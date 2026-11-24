@@ -6,6 +6,8 @@ JSON Schemas, and round trips through the model."""
 from __future__ import annotations
 
 import copy
+import dataclasses
+import hashlib
 import json
 from typing import Any
 
@@ -22,6 +24,7 @@ from pairbench.model import (
     Results,
     Side,
     Source,
+    capture_line,
 )
 from pairbench.results import SCHEMA_NAMES, load_schema, schema_text
 
@@ -53,6 +56,18 @@ def _contains(whole: Any, part: Any) -> bool:
             and all(_contains(w, p) for w, p in zip(whole, part, strict=True))
         )
     return bool(whole == part)
+
+
+def _end_hash(records: list[dict[str, Any]]) -> str:
+    """The SHA-256 of the records before the last, written as a run writes them."""
+    return hashlib.sha256(b"".join(capture_line(r) for r in records[:-1])).hexdigest()
+
+
+def _hashed(capture: Capture, records: list[dict[str, Any]]) -> Capture:
+    """The capture with the end hash of its written records, as it reads back from them."""
+    assert capture.end is not None
+    end = dataclasses.replace(capture.end, sha256_of_preceding=_end_hash(records))
+    return dataclasses.replace(capture, end=end)
 
 
 # ---------------------------------------------------------------------------
@@ -128,11 +143,14 @@ def test_the_example_capture_survives_a_round_trip(
     capture = Capture.from_records(example_capture_records)
     written = capture.to_records()
     assert len(written) == len(example_capture_records)
-    for out, given in zip(written, example_capture_records, strict=True):
+    # The end record carries the hash of the lines written before it.
+    expected = [*example_capture_records[:-1], example_capture_records[-1].copy()]
+    expected[-1]["sha256_of_preceding"] = _end_hash(written)
+    for out, given in zip(written, expected, strict=True):
         assert out["t"] == given["t"]
         assert _contains(out, given), given["t"]
         assert _errors("capture", out) == [], given["t"]
-    assert Capture.from_records(written) == capture
+    assert Capture.from_records(written) == _hashed(capture, written)
     assert Capture.from_records(written).to_records() == written
 
 
@@ -199,7 +217,8 @@ def test_records_with_every_key_are_read_into_the_model(
     ]
     for record in written:
         assert _errors("capture", record) == [], record["t"]
-    assert Capture.from_records(written) == capture
+    assert written[-1]["sha256_of_preceding"] == _end_hash(written)
+    assert Capture.from_records(written) == _hashed(capture, written)
 
 
 @pytest.mark.parametrize(
@@ -711,9 +730,11 @@ def test_a_twin_whose_side_is_absent_is_an_orphan() -> None:
 
 def test_a_capture_from_rows_writes_records_that_validate() -> None:
     capture = Capture.from_rows(ROWS, sides=["new", "old"], twins=None)
-    for record in capture.to_records():
+    written = capture.to_records()
+    for record in written:
         assert _errors("capture", record) == [], record["t"]
-    assert Capture.from_records(capture.to_records()) == capture
+    assert Capture.from_records(written) == _hashed(capture, written)
+    assert Capture.from_records(written).to_records() == written
 
 
 # ---------------------------------------------------------------------------

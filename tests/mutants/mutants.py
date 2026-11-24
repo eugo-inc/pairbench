@@ -48,8 +48,8 @@ MUTANTS: tuple[Mutant, ...] = (
         id="M03",
         title="turn < into <= in the significance check",
         file="src/pairbench/stats/rules.py",
-        old="    return p <= rule.alpha if rule.p_inclusive else p < rule.alpha",
-        new="    return p <= rule.alpha if rule.p_inclusive else p <= rule.alpha",
+        old="        return p <= alpha if rule.p_inclusive else p < alpha",
+        new="        return p <= alpha if rule.p_inclusive else p <= alpha",
         test=(
             "tests/unit/stats/test_rules.py::"
             "test_a_p_value_equal_to_alpha_is_significant_only_when_inclusive"
@@ -170,9 +170,9 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         id="M13",
         title="pool the same file twice",
-        file="src/pairbench/stats/analyse.py",
-        old="        if first.path is not None and first.path == second.path:",
-        new="        if False:",
+        file="src/pairbench/model.py",
+        old="    if first.path is not None and first.path == second.path:",
+        new="    if False:",
         test=(
             "tests/unit/stats/test_analyse.py::"
             "test_the_same_path_twice_is_the_same_file_whatever_its_hash"
@@ -190,11 +190,8 @@ MUTANTS: tuple[Mutant, ...] = (
         id="M15",
         title="pass the positive control whatever ratio it reads",
         file="src/pairbench/stats/analyse.py",
-        old=(
-            "    passed = control_within(ratio, expected, tolerance) and direction "
-            "and is_significant(p, rule)"
-        ),
-        new="    passed = direction and is_significant(p, rule)",
+        old="    passed = control_within(ratio, expected, tolerance) and direction and significant",
+        new="    passed = direction and significant",
         test="tests/unit/stats/test_selftest.py::test_each_control_passes[C15]",
     ),
     Mutant(
@@ -403,8 +400,8 @@ MUTANTS: tuple[Mutant, ...] = (
         id="M34",
         title="judge the twin note on the uncorrected p-value of a side",
         file="src/pairbench/stats/rules.py",
-        old="            if check.p_corrected is not None and check.p_corrected < TWIN_NOTE_ALPHA",
-        new="            if check.p_raw is not None and check.p_raw < TWIN_NOTE_ALPHA",
+        old="        return check.p_corrected_exact < exact_alpha(TWIN_NOTE_ALPHA)",
+        new="        return check.p_raw is not None and check.p_raw < TWIN_NOTE_ALPHA",
         test=(
             "tests/unit/stats/test_rules.py::"
             "test_rounds_whose_combined_score_is_zero_are_ties_and_dropped"

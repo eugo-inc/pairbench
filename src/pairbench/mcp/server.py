@@ -53,7 +53,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from pairbench.errors import EXIT_INTERRUPTED, Refusal, docs_address, unprintable
+from pairbench.errors import (
+    CODES,
+    EXIT_INTERRUPTED,
+    Refusal,
+    docs_address,
+    docs_line,
+    unprintable,
+)
 from pairbench.mcp import library
 
 if TYPE_CHECKING:
@@ -330,6 +337,16 @@ def _text(answer: Any) -> str:
     return json.dumps(answer, indent=2, ensure_ascii=False)
 
 
+# A surrogate code point, which UTF-8 cannot encode: a name read from a file system can hold one.
+_SURROGATE: Final = re.compile(r"[\ud800-\udfff]")
+
+
+def _encodable(text: str) -> str:
+    """An answer as text the protocol can send: each surrogate is written as the escape
+    ``\\uNNNN``, which in an answer of JSON is the escape of the same character."""
+    return _SURROGATE.sub(lambda found: f"\\u{ord(found.group()):04x}", text)
+
+
 def _document_path(path: str, name: str) -> Path:
     """A file of a run folder: the path itself, or the named file when it is a folder."""
     given = Path(path)
@@ -373,25 +390,39 @@ class RunHandle:
 
 def _message_of_line(shown: str) -> str:
     """A refusal's message as the refusal holds it, read back from its line on standard error,
-    which escapes it as ``errors.printable`` writes it; the line as printed when it holds no
-    such escapes."""
-    try:
-        return unprintable(shown)
-    except ValueError:
-        return shown
+    which escapes it as ``errors.printable`` writes it. A backslash that opens no escape
+    ``errors.unprintable`` reads is kept as printed."""
+    return unprintable(shown)
+
+
+def _refusal_pair(line: str, after: str) -> bool:
+    """Say whether ``line`` and the line ``after`` it are the two lines a refusal prints: its
+    ``CODE: message`` line, for a code of the table, and the ``pairbench: see ADDRESS`` line
+    of that code. A line of the report, such as a row whose case name reads like a refusal,
+    is never followed by that second line."""
+    from pairbench.model import TOOL_VERSION
+
+    found = REFUSAL_LINE.match(line)
+    return (
+        found is not None
+        and found.group(1) in CODES
+        and after == docs_line(found.group(1), TOOL_VERSION)
+    )
 
 
 def _pump(run: RunHandle) -> None:
-    """Keep the output of a run and copy it to the server's standard error."""
+    """Keep the output of a run, the last refusal it printed, and copy it to the server's
+    standard error."""
     stream = run.process.stdout
     if stream is None:
         return
+    previous: str | None = None
     for raw in stream:
         line = raw.rstrip("\n")
         run.lines.append(line)
-        found = REFUSAL_LINE.match(line)
-        if found:
-            run.refusal = line
+        if previous is not None and _refusal_pair(previous, line):
+            run.refusal = previous
+        previous = line
         with contextlib.suppress(OSError, ValueError):
             print(line, file=sys.stderr, flush=True)
 
@@ -634,7 +665,8 @@ class ToolServer:
         Calls that read or analyse are made one at a time, with standard
         output sent to standard error, so that nothing printed can reach
         the protocol stream. A refusal is an answer; any other error is
-        answered as ``E_INTERNAL``.
+        answered as ``E_INTERNAL``. A surrogate in the answer, which UTF-8
+        cannot encode, is written as the escape ``\\uNNNN``.
         """
         if tool not in self.names():
             message = (
@@ -642,7 +674,7 @@ class ToolServer:
                 if tool in RUN_TOOLS
                 else f"no tool named {tool!r}"
             )
-            return _text(refusal_answer(Refusal("E_USAGE", message)))
+            return _encodable(_text(refusal_answer(Refusal("E_USAGE", message))))
         method: Callable[..., Any] = getattr(self, tool)
         quiet = tool in ("run_status", "run_cancel")
         try:
@@ -655,7 +687,7 @@ class ToolServer:
             answer = refusal_answer(refusal)
         except Exception as error:
             answer = refusal_answer(Refusal("E_INTERNAL", f"{type(error).__name__}: {error}"))
-        return answer if isinstance(answer, str) else _text(answer)
+        return _encodable(answer if isinstance(answer, str) else _text(answer))
 
     # -- helpers ----------------------------------------------------------
 
@@ -818,10 +850,11 @@ class ToolServer:
             "refusal": None,
             "last_lines": list(run.lines)[-20:],
         }
-        if run.refusal is not None:
-            found = REFUSAL_LINE.match(run.refusal)
-            if found:
-                code_text = found.group(1)
+        # A refusal ends the run with an exit code its text code may carry.
+        found = REFUSAL_LINE.match(run.refusal) if run.refusal is not None else None
+        if found is not None and code is not None:
+            code_text = found.group(1)
+            if code in CODES[code_text].exit_codes:
                 answer["refusal"] = {
                     "code": code_text,
                     "message": _message_of_line(found.group(2)),

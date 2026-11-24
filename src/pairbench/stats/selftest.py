@@ -22,6 +22,7 @@ import dataclasses
 import random
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any
 
 from pairbench.errors import Refusal
@@ -58,7 +59,8 @@ from pairbench.model import (
     trapezoid,
 )
 from pairbench.stats.analyse import analyse_captures
-from pairbench.stats.holm import holm
+from pairbench.stats.holm import holm, holm_exact
+from pairbench.stats.rules import is_significant
 from pairbench.stats.signtest import sign_test
 
 ValueFn = Callable[[str, str, int, float], float]
@@ -276,8 +278,9 @@ def _k1() -> tuple[bool, str]:
         (f"sign test {k}", v, sign_test(*k).fraction) for k, v in known.items()
     ]
     checks.append(("18 against 6 to four places", 0.0227, round(sign_test(18, 6).p, 4)))
-    five = sign_test(5, 0).p
-    checks += [("5 against 0", 0.0625, five), ("5 against 0 gives a verdict", False, five < 0.05)]
+    five = sign_test(5, 0)
+    verdict = is_significant(Fraction(*five.fraction), STRICT)
+    checks += [("5 against 0", 0.0625, five.p), ("5 against 0 gives a verdict", False, verdict)]
     return _expect(*checks)
 
 
@@ -288,11 +291,14 @@ def _k2() -> tuple[bool, str]:
         ([0.01, 0.04, 0.03], [0.03, 0.06, 0.06]),
         ([0.03125, 0.03125, 0.21875], [0.09375, 0.09375, 0.21875]),
     ]
-    checks = []
+    checks: list[tuple[str, Any, Any]] = []
     for raw, adjusted in known:
         got = holm(raw)
         close = all(abs(a - b) <= 1e-15 for a, b in zip(got, adjusted, strict=True))
         checks.append((f"holm {raw}", True, close))
+        # The exact correction of the same values, read as their decimal text.
+        exact = holm_exact([Fraction(repr(p)) for p in raw])
+        checks.append((f"exact holm {raw}", [Fraction(repr(a)) for a in adjusted], exact))
     return _expect(*checks)
 
 

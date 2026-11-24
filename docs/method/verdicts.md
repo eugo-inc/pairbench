@@ -22,6 +22,9 @@ For case `c`, subject `S` and baseline `B`, over the pairs `i`:
 | `bar` | the subject's floor plus the baseline's floor (see [noise floor](noise-floor.md)) |
 | `p` | the exact [sign test](sign-test.md), [corrected](multiple-comparisons.md) for the family |
 
+`p` is compared with 0.05 in exact arithmetic: Holm's correction runs on the exact fractions
+of the sign tests, and 0.05 is exactly 1/20, so rounding never turns whether `p` passes (see [exact arithmetic for the verdict](multiple-comparisons.md#exact-arithmetic-for-the-verdict)).
+
 Every value must be positive. A value of zero or less recorded for a case on a side, in any
 round, gives that case `NO VERDICT (nonpositive_value)`.
 

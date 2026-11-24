@@ -59,6 +59,7 @@ from pairbench.model import (
     Rule,
     count_balance,
     direction_outcome,
+    exact_alpha,
     min_rounds,
 )
 from pairbench.stats.floor import (
@@ -74,14 +75,15 @@ from pairbench.stats.floor import (
     usable_ratio,
     writable_floor,
 )
-from pairbench.stats.holm import holm
+from pairbench.stats.holm import holm, holm_exact
 from pairbench.stats.signtest import sign_test
 
 # The outcomes the table gives that are verdicts. The downgrades act on these.
 VERDICT_OUTCOMES: frozenset[str] = frozenset({"better", "worse", "higher", "lower", "tie"})
 # A side whose combined check against its own twin has a p-value below
 # this, once corrected with Holm's method across the sides of the run that
-# have one, gets a loud note.
+# have one, gets a loud note. The check compares the exact corrected
+# fraction with exactly 1/20.
 TWIN_NOTE_ALPHA = 0.05
 # One side running first more than this many times as often as the other
 # downgrades a verdict.
@@ -102,8 +104,16 @@ def group_key(case: Case) -> tuple[str, ...]:
     return ("metric", case.metric, "primary" if case.primary else "secondary")
 
 
-def is_significant(p: float, rule: Rule) -> bool:
-    """Say whether a p-value is significant: ``p < alpha``, or ``p <= alpha`` when inclusive."""
+def is_significant(p: float | Fraction, rule: Rule) -> bool:
+    """Say whether a p-value is significant: ``p < alpha``, or ``p <= alpha`` when inclusive.
+
+    A ``Fraction`` is compared exactly with ``exact_alpha(rule.alpha)``, so
+    ``0.05`` means exactly ``1/20``; every p-value a verdict is decided on is
+    one. A float is compared as a float with the float alpha.
+    """
+    if isinstance(p, Fraction):
+        alpha = exact_alpha(rule.alpha)
+        return p <= alpha if rule.p_inclusive else p < alpha
     return p <= rule.alpha if rule.p_inclusive else p < rule.alpha
 
 
@@ -142,7 +152,7 @@ def form_bar(
 
 
 def table(
-    rule: Rule, statistic: float, gap: float, bar: float, p: float, better: str
+    rule: Rule, statistic: float, gap: float, bar: float, p: float | Fraction, better: str
 ) -> tuple[Outcome, Reason | None]:
     """Grade one comparison by the verdict table of the rule.
 
@@ -285,8 +295,11 @@ class TwinSideCheck:
     turns that round's score the other way and leaves the others, and
     swapping them in every round swaps ``n_better`` and ``n_worse``.
     ``p_raw`` is the exact sign test of those rounds, ``None`` when at most
-    one round was scored; ``p_corrected`` is ``p_raw`` corrected with Holm's
-    method across the sides that have one.
+    one round was scored, and ``p_fraction`` the same value as an exact
+    fraction ``(numerator, denominator)``; ``p_corrected`` is ``p_raw``
+    corrected with Holm's method across the sides that have one, and
+    ``p_corrected_exact`` the same correction of the exact fractions, which
+    the note is decided on.
     """
 
     side: str
@@ -295,6 +308,8 @@ class TwinSideCheck:
     n_worse: int
     p_raw: float | None
     p_corrected: float | None = None
+    p_fraction: tuple[int, int] | None = None
+    p_corrected_exact: Fraction | None = None
 
 
 @dataclass(frozen=True)
@@ -323,12 +338,12 @@ class Grading:
         return sum(1 for check in self.twin_checks if check.p_raw is not None)
 
     def twin_differs(self) -> tuple[TwinSideCheck, ...]:
-        """Return the sides whose combined check has a corrected p-value below 0.05."""
-        return tuple(
-            check
-            for check in self.twin_checks
-            if check.p_corrected is not None and check.p_corrected < TWIN_NOTE_ALPHA
-        )
+        """Return the sides whose combined check has a corrected p-value below 0.05.
+
+        The exact corrected fraction is compared with exactly 1/20; a check
+        built without one compares its float.
+        """
+        return tuple(check for check in self.twin_checks if _twin_note_due(check))
 
     def provisional(self) -> bool:
         """Say whether a comparison used a floor computed from fewer than eight rounds."""
@@ -362,7 +377,12 @@ class _Measured:
     order_missing: bool
     nonpositive: bool
     p_corrected: float | None = None
+    p_corrected_exact: Fraction | None = None
     far_apart: bool = False
+
+    def p_exact(self) -> Fraction | None:
+        """Return the raw p-value as an exact fraction, or ``None`` without one."""
+        return None if self.p_fraction is None else Fraction(*self.p_fraction)
 
 
 class _Floors:
@@ -441,6 +461,13 @@ class _Floors:
                     f for f in self.by_case.values() if not f.nonpositive
                 )
         return self._experiment
+
+
+def _twin_note_due(check: TwinSideCheck) -> bool:
+    """Say whether a side's corrected check against its twin lies below 0.05."""
+    if check.p_corrected_exact is not None:
+        return check.p_corrected_exact < exact_alpha(TWIN_NOTE_ALPHA)
+    return check.p_corrected is not None and check.p_corrected < TWIN_NOTE_ALPHA
 
 
 def _present(stat: FloorStat | None) -> bool:
@@ -602,7 +629,10 @@ def _grade_one(
         if bar is not None and not writable_floor(bar, rule.scale):
             bar = None
             reasons.add("too_far_apart")
-    p_used = m.p_corrected if case.primary and rule.p_source == "corrected" else m.p_raw
+    # The verdict is decided on the exact fraction: the Holm-corrected one, or
+    # the raw one. The floats written to the results are not compared.
+    corrected = case.primary and rule.p_source == "corrected"
+    p_used = m.p_corrected_exact if corrected else m.p_exact()
     outcome: Outcome
     reason: Reason | None
     listed: tuple[Reason, ...]
@@ -692,8 +722,10 @@ def grade(
     ]
     family = [m for m in measured if m.case.primary and m.p_raw is not None]
     adjusted = holm([m.p_raw for m in family if m.p_raw is not None])
-    for m, p in zip(family, adjusted, strict=True):
+    exact = holm_exact([p for p in (m.p_exact() for m in family) if p is not None])
+    for m, p, p_exact in zip(family, adjusted, exact, strict=True):
         m.p_corrected = p
+        m.p_corrected_exact = p_exact
     floor_set = _Floors(grid, rule, floors)
     graded = [
         _grade_one(
@@ -856,14 +888,26 @@ def _twin_checks(grid: Grid) -> tuple[TwinSideCheck, ...]:
             elif sign < 0:
                 worse += 1
         # One round gives no p-value, as for a comparison.
-        p = sign_test(worse, better).p if scored > 1 else None
+        test = sign_test(worse, better) if scored > 1 else None
         checks.append(
-            TwinSideCheck(side=side, n_rounds=scored, n_better=better, n_worse=worse, p_raw=p)
+            TwinSideCheck(
+                side=side,
+                n_rounds=scored,
+                n_better=better,
+                n_worse=worse,
+                p_raw=None if test is None else test.p,
+                p_fraction=None if test is None else test.fraction,
+            )
         )
-    tested = [i for i, check in enumerate(checks) if check.p_raw is not None]
+    tested = [i for i, check in enumerate(checks) if check.p_fraction is not None]
     adjusted = holm([p for p in (checks[i].p_raw for i in tested) if p is not None])
-    for i, p_corrected in zip(tested, adjusted, strict=True):
-        checks[i] = dataclasses.replace(checks[i], p_corrected=p_corrected)
+    exact = holm_exact(
+        [Fraction(*f) for f in (checks[i].p_fraction for i in tested) if f is not None]
+    )
+    for i, p_corrected, p_exact in zip(tested, adjusted, exact, strict=True):
+        checks[i] = dataclasses.replace(
+            checks[i], p_corrected=p_corrected, p_corrected_exact=p_exact
+        )
     return tuple(checks)
 
 

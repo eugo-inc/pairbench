@@ -114,7 +114,33 @@ class StrictRule:
 
 
 class PluginError(Exception):
-    """A plug-in handed to ``register`` does not meet the contract of its group."""
+    """A plug-in handed to ``register`` does not meet the contract of its group.
+
+    Its message is the line printed on standard error, escaped as ``errors.printable`` writes
+    it; ``text`` holds the failure as it is. A subclass that does not call this constructor
+    is read by its message.
+    """
+
+    def __init__(self, message: str = "", text: str | None = None) -> None:
+        super().__init__(message)
+        self.text: str = message if text is None else text
+
+
+def _text_of(error: PluginError) -> str:
+    """The failure a ``PluginError`` holds, or its message when it holds no text."""
+    text = getattr(error, "text", None)
+    return text if isinstance(text, str) else str(error)
+
+
+def _reason(error: Exception) -> str:
+    """Why loading a plug-in failed, from the error it raised, as the error holds it: a failed
+    registration or a refusal raised inside the loading is not escaped here, since the line
+    of the failure escapes it once."""
+    if isinstance(error, PluginError):
+        return f"{type(error).__name__}: {_text_of(error)}"
+    if isinstance(error, Refusal):
+        return f"{type(error).__name__}: {error.code}: {error.message}"
+    return f"{type(error).__name__}: {error}"
 
 
 @dataclass(frozen=True)
@@ -231,11 +257,11 @@ def register(group: str, name: str, obj: Any) -> None:
         if problem is not None:
             raise PluginError(problem)
     except PluginError as exc:
-        failure = _fail(group, name, "register", str(exc))
-        raise PluginError(failure.line) from None
+        failure = _fail(group, name, "register", _text_of(exc))
+        raise PluginError(failure.line, failure.text) from None
     except Exception as exc:
-        failure = _fail(group, name, "register", f"{type(exc).__name__}: {exc}")
-        raise PluginError(failure.line) from exc
+        failure = _fail(group, name, "register", _reason(exc))
+        raise PluginError(failure.line, failure.text) from exc
     _state.plugins[key] = made
 
 
@@ -270,7 +296,7 @@ def load_plugins() -> None:
                 made = _instance(entry.load())
                 problem = _problem(group, entry.name, made)
             except Exception as exc:
-                problem = f"{type(exc).__name__}: {exc}"
+                problem = _reason(exc)
             if problem is not None:
                 _fail(group, entry.name, "entry_point", problem)
             else:
@@ -287,7 +313,7 @@ def _builtin(group: str, name: str) -> Any:
         made = _load_ref(BUILTINS[group][name])
         problem = _problem(group, name, made)
     except Exception as exc:
-        problem = f"{type(exc).__name__}: {exc}"
+        problem = _reason(exc)
     if problem is not None:
         failure = _fail(group, name, "builtin", problem)
         raise Refusal("E_INTERNAL", f"a built-in plug-in failed to load: {failure.reason}")

@@ -5,8 +5,9 @@
 A relative path that stays inside its folder (``x/../y``) is kept as typed to the end of its
 word, so a path after it in the same word keeps its folders; in the query of an address it ends
 with its query parameter, where a climbing path after it is read with it as one path, and after
-a ``;``, a comma, a bracket or a quote in the query and in the query of an address with two
-hosts or more the words are read as any others. A case id keeps such a path as typed with an
+a ``;``, a comma, a bracket or a quote in the query, in the query of an address with a bracket
+in its path and in the query of an address with two hosts or more the words are read as any
+others. A case id keeps such a path as typed with an
 absolute path right after it and a ``:``, ``=`` or ``@``, so that path keeps its folders, with
 no host before them, after an empty port and after an earlier path in the query, and after a
 single host, with no path and no such mark before it in the query, shows the query parameter
@@ -39,11 +40,20 @@ LIMIT = (
     "`tool --path=lib/../lib:/made/up/lib` shows whole. In the query of an address such a path "
     "ends with its query parameter, and a path that starts at one `/` or at `~`, or a local "
     "address, after it is cut: `psql 'postgresql://db.example/db?k=a/../b:/made/up/ca.pem'` shows "
-    "`psql 'postgresql://<hidden>/db?k=a/../b:/ca.pem'`. After a host name, a port number or an "
-    "empty host, the words after a blank in such a query parameter that no path runs on over are "
-    "kept as typed to its end, so a path there shows its folders, and a path in a later "
-    "parameter is cut, though not after a host in brackets with no port or a host and an empty "
-    "port: "
+    "`psql 'postgresql://<hidden>/db?k=a/../b:/ca.pem'`. After a host name or a port number, "
+    "with a path after it or none, and after an empty host, an empty port, a user, a host and an "
+    "empty port or a host in brackets with no path after it, right before the query or the "
+    "fragment, as in `postgresql://?k=x`, `postgresql://:?k=x`, `postgresql://@:?k=x`, "
+    "`postgresql://db.example:?k=x` and `postgresql://[::1]?k=x`, the words after a blank in "
+    "such a query parameter that no path runs on over are kept as typed to its end, so a path "
+    "there shows its folders, and a path in a later parameter is cut. They are cut with a path "
+    "after anything else, as in `postgresql:///db?k=x`, which has no host, "
+    "`postgresql://[::1]/db?k=x` and `postgresql://db.example:/db?k=x`, with a path in a "
+    "`file://` address, or one whose scheme ends in `file`, in a `unix://` address, or one whose "
+    "scheme ends in `+unix`, with no user, host in brackets or socket path written with `%2F` "
+    "before the query or the fragment, as in `unix://?k=x`, and in the shown command after a "
+    "scheme of one letter, as in `x://?k=x`. After a host in brackets in such a `unix://` "
+    "address, as in `unix://[::1]?k=x`, a path in a later parameter shows too: "
     "`psql 'postgresql://db.example/db?k=a/../b x/c:/made/up/ca.pem&j=/made/up/ca.pem'` shows "
     "`psql 'postgresql://<hidden>/db?k=a/../b x/c:/made/up/ca.pem&j=/ca.pem'`. A word and two `/` "
     "after it are read as an address with a host, whose path shows: "
@@ -56,17 +66,19 @@ LIMIT = (
     "`psql 'postgresql:///db?k=a/../b:./../made/up/ca.pem'` shows whole, while "
     "`psql 'postgresql://db.example/db?k=a/../b:../../../made/up/ca.pem'` shows "
     "`psql 'postgresql://<hidden>/db?k=ca.pem'`. After a `;`, a comma, a bracket or a "
-    "quote in the query, and in the query of an address with two hosts or more, the words are "
-    "read as any others, so a path that follows such a path there shows its folders, a local "
-    "address and a climbing path too: "
-    "`psql 'postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem'` shows whole, and "
+    "quote in the query, in the query of an address with a bracket in its path, and in the query "
+    "of an address with two hosts or more, the words are read as any others, so a path that "
+    "follows such a path there shows its folders, a local address and a climbing path too: "
+    "`psql 'postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem'` shows whole, "
+    "`psql 'postgresql:///a[b]?k=a/../b&j=/made/up/ca.pem'` shows whole, and "
     "`psql 'postgresql://db1.example,db2.example/db?a=b/../c&sslrootcert=../../made/up/ca.pem'` "
     "shows `psql 'postgresql://<hidden>/db?a=b/../c&sslrootcert=../../made/up/ca.pem'`. With no "
     "such path before it, a path there is cut: "
     "`psql 'postgresql:///db?a=b;sslrootcert=file:///made/up/ca.pem'` shows "
-    "`psql 'postgresql:///db?a=b;sslrootcert=file://ca.pem'`. After a host name, a port number "
-    "or an empty host, a query parameter of such a path that holds an address with a host shows "
-    "whole, with a `/` put before it: "
+    "`psql 'postgresql:///db?a=b;sslrootcert=file://ca.pem'`. After the same hosts, and cut "
+    "where those words are cut except after a scheme of one letter, a query parameter of such a "
+    "path that holds an address with a host shows whole, with a `/` put before it, or with none "
+    "after a host in brackets in a `unix://` address: "
     "`psql 'postgresql://db.example/db?k=a/../b:/made/up/x/s3://db2.example/y'` shows "
     "`psql 'postgresql://<hidden>/db?k=/a/../b:/made/up/x/s3://<hidden>/y'`. A case id keeps "
     "such a path as typed with an absolute path right after it and a `:`, `=` or `@`, so that "
@@ -136,8 +148,12 @@ POINTER = (
     "those of a climbing path read with it as one path in its query parameter "
     "(`postgresql:///db?k=a/../b:../../made/up/ca.pem` shows whole), those of a query parameter "
     "that holds an address with a host, and those of a path after a blank in such a query "
-    "parameter that no path runs on over, after a host name, a port number or an empty host, and "
-    "those of any path "
+    "parameter that no path runs on over, after a host name or a port number, or after an empty "
+    "host, an empty port, a user, a host and an empty port or a host in brackets with no path "
+    "after it, right before the query or the fragment (`postgresql://?k=x` or "
+    "`postgresql://[::1]?k=x`, not `postgresql:///db?k=x`, which has no host, nor "
+    "`postgresql://[::1]/db?k=x`), but for the forms the known limits name as cut, and those of "
+    "any path "
     "after a `;`, a comma, a bracket or a quote, or with two hosts or more "
     "(`postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem` shows whole), as the known "
     "limits say too.",
@@ -200,6 +216,11 @@ EXAMPLES = (
         LIMIT,
         "psql 'postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem'",
         "psql 'postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem'",
+    ),
+    (
+        LIMIT,
+        "psql 'postgresql:///a[b]?k=a/../b&j=/made/up/ca.pem'",
+        "psql 'postgresql:///a[b]?k=a/../b&j=/made/up/ca.pem'",
     ),
     (
         LIMIT,
@@ -287,7 +308,9 @@ POINTER_EXAMPLES = (
     "postgresql:///db?k=a/../b:../../made/up/ca.pem",
     "postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem",
 )
-# Each form the first entry names as one whose folders show: a path after a relative path that
+# Each form the first entry names as one whose folders show: in the query of an address with a
+# bracket in its path, a climbing path, a local address and an absolute path after such a path,
+# with no host and after a host; then a path after a relative path that
 # stays inside its folder in one word, outside an address, after a ';', a comma or a bracket in
 # a query, with or without a host, and in the query of an address with two hosts; bare, in
 # 'sh -c', after '--opt=' and after 'NAME='. A climbing path read with such a path as one path
@@ -298,6 +321,22 @@ POINTER_EXAMPLES = (
 # and a host in brackets after the first, with a port or none.
 KEPT = (
     ("tool x/../y:/made/up/lib", "tool x/../y:/made/up/lib"),
+    (
+        "psql 'postgresql:///a[b]?k=a/../b&j=../../made/up/ca.pem'",
+        "psql 'postgresql:///a[b]?k=a/../b&j=../../made/up/ca.pem'",
+    ),
+    (
+        "psql 'postgresql:///a[b]?k=a/../b&j=file:///made/up/ca.pem'",
+        "psql 'postgresql:///a[b]?k=a/../b&j=file:///made/up/ca.pem'",
+    ),
+    (
+        "psql 'postgresql://db.example/a]b?k=a/../b&j=/made/up/ca.pem'",
+        "psql 'postgresql://<hidden>/a]b?k=a/../b&j=/made/up/ca.pem'",
+    ),
+    (
+        "psql 'postgresql:///a[b]?k=a/../b:/made/up/ca.pem'",
+        "psql 'postgresql:///a[b]?k=a/../b:/made/up/ca.pem'",
+    ),
     (
         "psql 'postgresql://[fd00::1]/db?k=a/../b x/../&j=/made/up/ca.pem'",
         "psql 'postgresql://<hidden>/db?k=a/../b x/../&j=/made/up/ca.pem'",
@@ -564,13 +603,23 @@ CASE_CUT = (
         "test_conn[postgresql://db.example/db?k=ca.pem]",
     ),
 )
-# The nearest forms the entries name or imply as cut: a path in the query of an address with no
-# host or one host, after a relative path that stays inside its folder or after any other
-# path, after a ';' with no such path before it, with each outer form before the query; and a
-# credential in the query of an address with two hosts and a port on the last only, and three
-# hosts with a port on the last only. Then a path after such a path that the code reads as a
-# path of its own, and a climb read with it as one path that climbs out of its folder.
+# The nearest forms the entries name or imply as cut: in the query of an address with a bracket
+# in its path, a local address and a climbing path with no such path before them; a path in the
+# query of an address with no host or one host, after a relative path that stays inside its
+# folder or after any other path, after a ';' with no such path before it, with each outer
+# form before the query; and a credential in the query of an address with two hosts and a port
+# on the last only, and three hosts with a port on the last only. Then a path after such a
+# path that the code reads as a path of its own, and a climb read with it as one path that
+# climbs out of its folder.
 CUT = (
+    (
+        "psql 'postgresql:///a[b]?j=file:///made/up/ca.pem'",
+        "psql 'postgresql:///a[b]?j=file://ca.pem'",
+    ),
+    (
+        "psql 'postgresql:///a[b]?j=../../made/up/ca.pem'",
+        "psql 'postgresql:///a[b]?j=ca.pem'",
+    ),
     (
         "psql 'postgresql:///db?k=a/../b:/made/up/ca.pem'",
         "psql 'postgresql:///db?k=a/../b:/ca.pem'",

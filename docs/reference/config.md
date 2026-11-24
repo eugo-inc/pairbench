@@ -218,8 +218,12 @@ path that follows a relative path that stays inside its folder in the same word,
 read with it as one path in its query parameter
 (`postgresql:///db?k=a/../b:../../made/up/ca.pem` shows whole), those of a query parameter that
 holds an address with a host, and those of a path after a blank in such a query parameter that no
-path runs on over, after a host name, a port number or an empty host, and those of any
-path after a
+path runs on over, after a host name or a port number, or after an empty host, an empty port, a
+user, a host and an empty port or a host in brackets with no path after it, right before the query
+or the fragment (`postgresql://?k=x` or `postgresql://[::1]?k=x`, not `postgresql:///db?k=x`, which
+has no host, nor `postgresql://[::1]/db?k=x`), but for the forms the known limits name as cut, and
+those of
+any path after a
 `;`, a comma, a bracket or a quote, or with two hosts or more
 (`postgresql:///db?a=b;k=x/../y&j=file:///made/up/ca.pem` shows whole), as the known limits
 say too. A case id cuts a local address and a climbing path there when no relative path that
@@ -1161,7 +1165,14 @@ own, since a key is often written in it (`openssl rand -hex 16` prints 32 charac
   `snapshots` or `tree` (`COMMIT_ID_FOLDERS`), as a code host or a model hub writes a path pinned
   to a commit (`org/repo/commit/<id>`, `org/Model-3B/resolve/<id>/config.json`); anywhere else
   between two `/`, as a token in the path of a hook's address is written, it is hidden as other
-  hexadecimal is (`http://localhost:8000/v1/hooks/<hidden>/notify`);
+  hexadecimal is (`http://localhost:8000/v1/hooks/<hidden>/notify`). The shown command and its
+  hashes hide it so too as a part of a path in the query or the fragment of an address, read
+  from the first `?`, `&` or `#` after its `://`, when it follows a `?`, `&`, `#` or `=` there
+  and a `.` joins it to a path after it:
+  `http://localhost:8000/v1?k=<id>./../b` shows `http://localhost:8000/v1?k=<hidden>./../b`,
+  while `?ref=<id>` and `?<id>.json` show it, and a free text shows it there, as does a case
+  id in an address whose host is empty (`test_conn[postgresql:///db?k=<id>./../b]` shows as
+  typed);
 - right after the name of a digest and a `:`, `=`, `/` or `-` it is shown at any length:
   `md5`, `sha1`, `sha224`, `sha256`, `sha384`, `sha512`, `blake2b`, `blake2s` or `blake3`
   (`DIGEST_NAMES`), as in `sha256:` and 64 characters;

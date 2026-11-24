@@ -3,7 +3,8 @@
 """The writer of ``capture.jsonl``: append-only JSON Lines, flushed and synced after every record.
 
 Each record is one line of compact JSON, written in the order of its fields
-by ``record.to_json()``. After every line the file is synced to disk, so a run
+by ``record.to_json()`` and ``pairbench.model.capture_line``, which
+``Capture.to_records`` hashes in the same way. After every line the file is synced to disk, so a run
 that stops at any moment leaves every record written before it. A running
 SHA-256 of every byte written is kept, and the ``end`` record carries the hash
 of everything before it: a copy that lost its tail is detectable. Nothing is
@@ -13,13 +14,12 @@ written after the ``end`` record.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from pairbench.model import PRIVATE_FILE_MODE, End, EndStatus, Record
+from pairbench.model import PRIVATE_FILE_MODE, End, EndStatus, Record, capture_line
 
 
 class CaptureWriter:
@@ -104,7 +104,7 @@ class CaptureWriter:
     def _append(self, data: dict[str, Any]) -> None:
         if self._ended or self._fd is None:
             raise ValueError("the capture is closed: nothing is written after its end record")
-        line = (json.dumps(data, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+        line = capture_line(data)
         view = memoryview(line)
         while view:
             written = os.write(self._fd, view)

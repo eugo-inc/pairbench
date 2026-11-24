@@ -487,3 +487,75 @@ def test_a_variable_that_gives_a_config_side_another_kind_runs_the_side_as_that_
     assert "file" not in first.spec
     assert ran.baseline == "first"
     assert ran.launch.overrides["first"] == {"timeout_s": 45.0}
+
+
+# A refusal nested in the note of a failed step: an escape character, a character that changes
+# the order of the text, and a typed escape.
+NESTED = Refusal("E_USAGE", "case a\x1bb‮c\\x1b")
+# The refusal in the note as the results keep it, and as its printed line shows it: escaped
+# once, as the refusal's own line is.
+NESTED_KEPT = "E_USAGE: case a\x1bb‮c\\x1b"
+NESTED_SHOWN = "E_USAGE: case a\\x1bb\\u202ec\\\\x1b"
+
+
+def _raise_nested(*args: Any, **kwargs: Any) -> Any:
+    raise NESTED
+
+
+def _failed_step(
+    step: str, document: Any, monkeypatch: pytest.MonkeyPatch
+) -> tuple[tuple[str, ...], str]:
+    """Make one step fail with the nested refusal; the settings of the run and the note."""
+    if step == "explain":
+        monkeypatch.setattr(pairbench, "explain", _raise_nested)
+        words = "the explain step failed ({}); the verdicts are unchanged"
+        return ("explain.mode=always", "plots.mode=off"), f"{NOTE_EXPLAIN_FAILED}:{words}"
+    if step == "findings":
+        named = api.delegate
+        monkeypatch.setattr(pairbench, "explain", lambda experiment, analysed, *, out: document)
+        monkeypatch.setattr(
+            api, "delegate", lambda name: _raise_nested if name == "findings" else named(name)
+        )
+        words = "the findings could not be printed ({})"
+        return ("explain.mode=always", "plots.mode=off"), f"{NOTE_EXPLAIN_FAILED}:{words}"
+    if step == "charts":
+        monkeypatch.setattr(pairbench, "draw", _raise_nested)
+        words = "the charts could not be drawn ({}); the verdicts are unchanged"
+        return ("explain.mode=off", "plots.mode=auto"), f"{NOTE_CHARTS_FAILED}:{words}"
+    real_render = pairbench.render
+
+    def render(results: Results, fmt: str, **kwargs: Any) -> str:
+        if fmt == "html":
+            raise NESTED
+        return real_render(results, fmt, **kwargs)
+
+    monkeypatch.setattr(pairbench, "render", render)
+    words = "the report page could not be made ({}); the results are written"
+    return ("explain.mode=off", "plots.mode=off"), f"{NOTE_PAGE_FAILED}:{words}"
+
+
+@pytest.mark.parametrize("step", ["explain", "findings", "charts", "page"])
+def test_a_refusal_in_the_note_of_a_failed_step_is_escaped_once_and_kept_as_it_is(
+    step: str,
+    fakes: Calls,
+    writes: Writes,
+    run_folder: Path,
+    document: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    settings, note = _failed_step(step, document, monkeypatch)
+    code_of_note, words = note.split(":", 1)
+
+    code = run_command.run_to_end(experiment(run_folder, *settings))
+
+    assert code == EXIT_OK
+    kept = [n.message for n in writes.documents[-1].notes if n.code == code_of_note]
+    assert kept == [words.format(NESTED_KEPT)]
+    on_file = [n["message"] for n in on_disk(run_folder)["notes"] if n["code"] == code_of_note]
+    assert on_file == [words.format(NESTED_KEPT)]
+    captured = capsys.readouterr()
+    shown = f"pairbench: note: {code_of_note}: {words.format(NESTED_SHOWN)}"
+    assert shown in captured.err.splitlines()
+    assert NESTED_KEPT not in captured.err
+    assert NESTED_SHOWN not in captured.out

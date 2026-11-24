@@ -5,7 +5,8 @@
 ``load_captures`` reads every file of a list, each with the reader named or
 the one that recognises it, and keeps where each capture came from.
 ``shared_source`` says what makes two captures one and the same: the same
-capture id, the same file path or the same file hash. The analysis decides
+capture id, or the same file path or file hash and, for runs a reader split
+a file into, the same run. The analysis decides
 what that means for a pool and refuses it; nothing here refuses a pool.
 """
 
@@ -15,7 +16,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-from pairbench.model import Capture
+from pairbench.model import Capture, shared_file
 
 Shared = Literal["capture id", "file path", "file hash"]
 
@@ -40,15 +41,10 @@ def shared_source(a: Capture, b: Capture) -> Shared | None:
     """Say what two captures share that makes them one capture given twice, or ``None``.
 
     The capture id is compared first, then the file path and then the hash
-    of the file's bytes, as the captures' sources record them.
+    of the file's bytes, as the captures' sources record them. Two different
+    runs of one file, as the reader that split it names them, share no file
+    (``pairbench.model.shared_file``).
     """
     if a.capture_id == b.capture_id:
         return "capture id"
-    first, second = a.source, b.source
-    if first is None or second is None:
-        return None
-    if first.path is not None and first.path == second.path:
-        return "file path"
-    if first.sha256 is not None and first.sha256 == second.sha256:
-        return "file hash"
-    return None
+    return shared_file(a.source, b.source)

@@ -1,16 +1,20 @@
 name: checks
 
-# Runs on pull requests and when started by hand. It needs no secret and only
-# reads the repository.
+# Runs on pull requests, on each push to main and when started by hand. It needs
+# no secret and only reads the repository.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # A newer run replaces an older one of the same pull request. Any other run
+  # is grouped by its commit, so each commit pushed to main keeps its own run.
+  group: checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 env:
@@ -43,12 +47,8 @@ jobs:
         run: mypy
       - name: README figures are current
         run: |
-          if [ -f docs/figures/launch-cost/results.json ]; then
-            pairbench fill docs/readme/README.in.md \
-              --results docs/figures/launch-cost/results.json -o README.md --check
-          else
-            pairbench fill docs/readme/README.in.md -o README.md --check
-          fi
+          pairbench fill docs/readme/README.in.md \
+            --results docs/figures/launch-cost/results.json -o README.md --check
 
   unit:
     name: lint, types and unit tests, Python ${{ matrix.python }} on ${{ matrix.os }}
@@ -64,7 +64,8 @@ jobs:
           - { os: ubuntu-24.04, python: "3.14" }
           - { os: macos-15, python: "3.12" }
     env:
-      # The plot extra is installed, so a chart test that skips is a failure.
+      # The plot extra is installed, so a chart test that skips is a failure. The
+      # mcp extra is installed too, so the tool-server tests run.
       PAIRBENCH_REQUIRE_PLOT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,7 +77,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install "pip==${PIP_VERSION}"
-          python -m pip install -e ".[plot]" --group dev
+          python -m pip install -e ".[plot,mcp]" --group dev
       - name: ruff
         run: ruff check .
       - name: mypy
@@ -156,7 +157,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "22.23.5"
       - name: Build and check the site
         run: python3 tools/docs_site.py build
       - name: llms.txt is current

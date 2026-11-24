@@ -287,6 +287,10 @@ def test_the_most_primary_cases_a_count_can_judge(rounds: int, most: int) -> Non
     assert most_primary_cases(rounds, 1, STRICT) == most
 
 
+# The strict rule's alpha of 0.05, read as its decimal text: exactly one twentieth.
+STRICT_ALPHA = Fraction(1, 20)
+
+
 def _counting_comb(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, int]]:
     """Count the binomial coefficients the planner works out."""
     plan_module = sys.modules["pairbench.plan"]
@@ -303,7 +307,7 @@ def _counting_comb(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, int]]:
 
 def _least_agreeing(rounds: int, tests: int) -> int | None:
     """The fewest of ``rounds`` rounds that must agree, by bisection over exact tail sums."""
-    alpha = Fraction(STRICT.alpha) / tests
+    alpha = STRICT_ALPHA / tests
 
     def passes(agree: int) -> bool:
         tail = sum(math.comb(rounds, i) for i in range(rounds - agree + 1))
@@ -323,13 +327,13 @@ def test_the_most_primary_cases_need_no_search_over_sign_test_sums(
 ) -> None:
     calls = _counting_comb(monkeypatch)
     # All 200 rounds agreeing passes for n tests while n * 2 / 2**200 stays below alpha.
-    limit = Fraction(STRICT.alpha) * 2**199
+    limit = STRICT_ALPHA * 2**199
     assert most_primary_cases(200, 3, STRICT) == (math.ceil(limit) - 1) // 3
     assert calls == []
 
 
 def test_the_most_primary_cases_of_a_round_count_past_float_range_are_exact() -> None:
-    limit = Fraction(STRICT.alpha) * 2**1999
+    limit = STRICT_ALPHA * 2**1999
     assert most_primary_cases(2000, 1, STRICT) == math.ceil(limit) - 1
 
 
@@ -341,6 +345,43 @@ def test_how_many_rounds_must_agree_takes_one_pass_over_the_tail(
     calls = _counting_comb(monkeypatch)
     assert rounds_to_agree(rounds, tests, STRICT) == expected
     assert len(calls) <= rounds
+
+
+def _counting_fractions(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count the fractions built while the patch holds."""
+    built: list[int] = []
+    real = Fraction.__new__
+
+    def counted(cls: type[Fraction], *args: Any, **kwargs: Any) -> Fraction:
+        built.append(1)
+        return real(cls, *args, **kwargs)
+
+    monkeypatch.setattr(Fraction, "__new__", staticmethod(counted))
+    return built
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        STRICT,
+        dataclasses.replace(STRICT, name="made-up-inclusive", p_inclusive=True, alpha=0.1),
+        dataclasses.replace(STRICT, name="made-up-raw", p_source="raw", alpha=0.01),
+    ],
+)
+def test_how_many_rounds_must_agree_builds_no_fraction_per_round(
+    monkeypatch: pytest.MonkeyPatch, rule: Rule
+) -> None:
+    # Each step of the walk compares in whole numbers. A fraction built per step
+    # divides out the common factor of two numbers as long as the round count,
+    # which makes a walk over many rounds slow. The one fraction allowed is the
+    # exact alpha, which is kept once worked out.
+    built = _counting_fractions(monkeypatch)
+    counts = []
+    for rounds in (400, 4000):
+        built.clear()
+        rounds_to_agree(rounds, 3, rule)
+        counts.append(len(built))
+    assert counts in ([1, 0], [0, 0])
 
 
 RAW = dataclasses.replace(STRICT, name="made-up-raw", p_source="raw")
@@ -730,6 +771,29 @@ def test_the_plan_text_escapes_every_name_from_the_input(tmp_path: Path) -> None
         f"{ODD_NAMES[1]}~same",
     )
     assert ESCAPED_CLASS.search(plan.to_tsv()) is not None
+
+
+REPO = Path(__file__).resolve().parents[3]
+# What the pages say of how the plan text is escaped: the lines and the cells, not the tabs.
+PLAN_TEXT_WORDS = {
+    "docs/reference/exit-codes.md": (
+        "each line of the header and each cell of the table that `pairbench plan` prints are "
+        "escaped the same way; the tab between two cells is written as it is."
+    ),
+}
+
+
+def test_the_pages_say_the_plan_text_writes_the_tabs_between_its_cells_as_they_are() -> None:
+    for page, words in PLAN_TEXT_WORDS.items():
+        text = " ".join((REPO / page).read_text(encoding="utf-8").split())
+        assert words in text, page
+        assert "escape every line in the same way" not in text, page
+    doc = " ".join((format_plan.__doc__ or "").split())
+    assert "the tab between two cells is written as it is." in doc
+    experiment = _experiment()
+    table = format_plan(build_plan(experiment), experiment).split("\nround\t", 1)[1]
+    assert table.startswith("pos\tname\tside\ttwin_of\n1\t1\t")
+    assert "\\t" not in table
 
 
 def test_the_plan_text_of_plain_names_is_the_plan_table() -> None:

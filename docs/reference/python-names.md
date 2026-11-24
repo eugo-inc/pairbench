@@ -4,10 +4,10 @@ description: "Every public name of pairbench and pairbench.stats, and the plug-i
 
 # Every public Python name
 
-Each public name of `pairbench` and `pairbench.stats`, the `Refusal` they raise and the plug-in
-contract of `pairbench.api` is listed below with its signature and its docstring, read from the
-source. [Use pairbench from Python](python-api.md) and [add a plug-in](plugin-api.md) show how
-the names fit together.
+Each public name of `pairbench`, `pairbench.stats` and `pairbench.capture.matching`, the
+`Refusal` they raise and the plug-in contract of `pairbench.api` is listed below with its
+signature and its docstring, read from the source. [Use pairbench from Python](python-api.md)
+and [add a plug-in](plugin-api.md) show how the names fit together.
 
 This page is written by `tools/api_reference.py`; do not edit it by hand.
 
@@ -45,6 +45,63 @@ A refused analysis raises `Refusal`, which carries as `results` the
 results document of the refused analysis: no comparisons and the refusal
 listed. Every note the analysis adds is also printed on standard error.
 
+### <span id="pairbench.check_matching_pool"></span>`pairbench.check_matching_pool`
+
+```python
+def check_matching_pool(read: MatchingRead) -> list[Refusal]
+```
+
+Run the pool checks of a read in the matching mode, and return every refusal they find.
+
+The runs of `read` pool unless one is a copy of another; no other
+difference between them is refused. The checks run in this order, and
+each refusal names its check under `check` in its `detail`:
+
+- `identical_written_rows` (`E_POOL_IDENTICAL_ROWS`): a run whose
+  five-field lines, as written, repeat an earlier run's, paired with the
+  earliest run that holds them; `runs` gives the two run indices,
+  earlier first, and `rows` their row count.
+- `written_stretch` (`E_POOL_TRUNCATED_COPY`): a run whose lines are a
+  stretch of another run's, its last line whole or torn; `copy_run`,
+  `original_run`, `copy_rows`, `original_rows`, `start_row`,
+  `last_row`, `torn` and `rows_matched` say where.
+- `identical_rows` (`E_POOL_IDENTICAL_ROWS`) and `truncated_copy`
+  (`E_POOL_TRUNCATED_COPY`): the copy checks of `analyse` over the
+  kept rows of two runs, compared by side, case, value and where each
+  round begins, two NaN values equal however each is written; `runs`
+  gives the two run indices. Each pair of runs, in index order, is
+  compared in two to four orders of its rows before the next pair: the
+  order of the text; the order the rows ran, as the run's pass-order and
+  `sides=` lines in this mode give it, where a line with a tab at
+  either end, which this mode reads as metadata, counts as the same line
+  without the tab; and, where they differ for a run of the pair, that
+  order as the lines without a tab give it, and the order a text capture
+  of each run holds them, from the lines a text capture of the run reads,
+  or of the one part of the run that holds every kept row of it, where
+  there is one (below). Then the rows whose value is not finite are left
+  out, in those orders and as a strict and a lenient text capture leave
+  them out. A pair is
+  listed once, at the first order that finds a copy. Then the parts of
+  one run that text captures read as runs of their own are compared in
+  the same orders, with each other and with the runs of one part, a pair
+  of two runs refused before left out: the rows of a run in each input
+  it stands in, and, in the input that holds its banner, above and below
+  the banner, as for a first input without a banner and the input after
+  it, or a file that begins with a byte-order mark, which this mode reads
+  as part of its first line. `runs` then gives the run of each part and
+  `lines` the line on which each begins. So a copy refused when its
+  runs are read as text captures is refused here too, but for one that
+  text captures find only with the rows whose value is zero or less,
+  which this mode reads as malformed, two runs without a row a text
+  capture keeps, which text captures find identical, and a text capture
+  that a line this mode alone takes for a banner splits into two runs.
+
+The first two compare `MatchingRun.pool_rows` and number rows from 0
+in that list. The first refusal is the one `refuse_matching_pool`
+raises; an empty list says the runs pool. A pair of runs can be listed by
+more than one check. Nothing is raised for a copy and nothing is printed;
+an argument that is not a `MatchingRead` is refused with `E_USAGE`.
+
 ### <span id="pairbench.check_pool"></span>`pairbench.check_pool`
 
 ```python
@@ -58,10 +115,11 @@ def check_pool(
 Run the checks that pooling `captures` in one analysis makes, and return what they refuse.
 
 The checks and their refusals are those of `analyse`, which runs the
-same code: the same capture, file or bytes given twice
-(`E_POOL_SAME`), identical rows (`E_POOL_IDENTICAL_ROWS`), a truncated
-copy (`E_POOL_TRUNCATED_COPY`), a capture of one side against its twins
-pooled with a comparison (`E_POOL_MIXED_PURPOSE`), a side, workload,
+same code: the same capture, file or bytes given twice, or of a file a
+reader splits into runs the same run (`E_POOL_SAME`), identical rows
+(`E_POOL_IDENTICAL_ROWS`), a truncated copy (`E_POOL_TRUNCATED_COPY`),
+a capture of one side against its twins pooled with a comparison
+(`E_POOL_MIXED_PURPOSE`), a side, workload,
 setup or working folder that changed (`E_POOL_SIDE_DRIFT`), other cases
 or units (`E_POOL_CASES`), another machine (`E_POOL_MACHINE`, not
 listed with `allow_mixed_machines`) and names a run marked that cannot
@@ -176,6 +234,46 @@ Lay out the order of every launch of an experiment.
 
 Nothing is started, pulled, locked or written. The number of primary
 cases is not known before a warm-up, so the plan is made for one.
+
+### <span id="pairbench.read_text_matching"></span>`pairbench.read_text_matching`
+
+```python
+def read_text_matching(
+    inputs: str | Path | Sequence[str | Path],
+    *,
+    default_order: str,
+) -> MatchingRead
+```
+
+Read inputs of the text format in the matching mode and return every row it keeps.
+
+Each input is a `Path`, read as a UTF-8 file, or a `str`, the text
+itself; the inputs are read as one text, joined in the order given with
+one newline between them. Runs are numbered from 0 across that text. A
+line whose text, with the white space around it removed, starts with
+`## host` opens a run; the lines above the first one belong to run 0,
+with that banner's lines. `default_order` is the pass-order text of the
+rows that no pass-order line orders: those from a banner to the first
+`pass_order=` line of its run, and those after a `pass_order=` line
+with nothing after it.
+
+No row and no metadata refuses the read, and nothing is printed: a row
+that does not read, or whose value is zero or less, is counted as
+malformed and skipped. Sides, cases and suites are kept exactly as
+written, and a cell given twice keeps both rows. The returned
+`MatchingRead` gives a two-sided view of two sides with `two_sided`.
+A file that cannot be read or is not UTF-8 is refused with `E_USAGE`.
+
+### <span id="pairbench.refuse_matching_pool"></span>`pairbench.refuse_matching_pool`
+
+```python
+def refuse_matching_pool(read: MatchingRead) -> None
+```
+
+Raise the first refusal `check_matching_pool` finds; return when the runs of `read` pool.
+
+The checks run in the order `check_matching_pool` gives and stop at
+the first refusal. Nothing is printed.
 
 ### <span id="pairbench.render"></span>`pairbench.render`
 
@@ -469,6 +567,27 @@ The order is: header, machine, sides, gates, lineup, later cases, the
 key for the marks of case names and the names that carry one, each
 launch followed by its observations, notes, end. The cost of a launch, when one was
 measured, follows the warm-up launches.
+
+The end record carries, in `sha256_of_preceding`, the SHA-256 of the
+records before it written as a run writes them: each as
+`json.dumps(record, separators=(",", ":"))` and a newline, in UTF-8,
+which `pairbench.model.capture_line` returns and `to_jsonl` joins.
+A file of those bytes reads back with its end record. A file whose
+bytes differ, as with other separators, reads back without one, as a
+file whose lines were changed does, and so incomplete. A capture with
+no end record gets none.
+
+#### <span id="pairbench.Capture.to_jsonl"></span>`Capture.to_jsonl`
+
+```python
+def to_jsonl(self) -> bytes
+```
+
+Return the bytes of `capture.jsonl` for the capture: each record of `to_records` on
+one line, written as a run writes it (`pairbench.model.capture_line`).
+
+A file of these bytes reads back with its end record, and so with the
+status that record gives: complete when the capture is.
 
 #### <span id="pairbench.Capture.from_records"></span>`Capture.from_records`
 
@@ -1298,6 +1417,7 @@ class Results:
     figures: Mapping[str, Figure] = field(default_factory=dict)
     artifacts: Artifacts = field(default_factory=Artifacts)
     energy: EnergyInfo | None = None
+    matching: MatchingInfo | None = None
     schema: Literal['pairbench/results/v1'] = SCHEMA_RESULTS
 ```
 
@@ -1314,7 +1434,8 @@ document, the files under `profiles/` and the report page alone.
 `launch_cost` is `None`, and its key absent from the written
 document, when no cost of a launch was measured. `twin_checks` holds
 one combined check per side that has a twin; a document written without
-it reads as holding none.
+it reads as holding none. `matching` is `None`, and its key absent,
+unless `pairbench compare --matching` read the captures.
 
 #### <span id="pairbench.Results.to_json"></span>`Results.to_json`
 
@@ -1324,9 +1445,10 @@ def to_json(self) -> dict[str, Any]
 
 Return the results document as a plain dict, `schema` first.
 
-`energy` is present only when power was sampled, and
-`launch_cost` only when the cost of a launch was measured. In a
-results document the cost carries no record type.
+`energy` is present only when power was sampled, `launch_cost`
+only when the cost of a launch was measured, and `matching` only
+when `pairbench compare --matching` read the captures. In a results
+document the cost carries no record type.
 
 #### <span id="pairbench.Results.has_difference"></span>`Results.has_difference`
 
@@ -1748,6 +1870,20 @@ The values are sorted ascending, ties kept in the order given, and
 with `adj[-1] = 0`. The running maximum keeps the adjusted values in
 the order of the raw ones. `[0.01, 0.04, 0.5]` gives `[0.03, 0.08, 0.5]`.
 
+### <span id="pairbench.stats.holm_exact"></span>`pairbench.stats.holm_exact`
+
+```python
+def holm_exact(pvalues: Sequence[Fraction]) -> list[Fraction]
+```
+
+Return the Holm-adjusted p-values of exact fractions, in the order given.
+
+The same steps as `holm`, each exact: the values are sorted ascending
+by their exact value, ties kept in the order given, and
+`adj[i] = max(adj[i - 1], min(1, (m - i) * p[i]))`. No step rounds, so
+comparing an adjusted value with alpha gives the same answer at any
+number of rounds. `[1/100, 1/25, 1/2]` gives `[3/100, 2/25, 1/2]`.
+
 ### <span id="pairbench.stats.min_rounds"></span>`pairbench.stats.min_rounds`
 
 ```python
@@ -1756,7 +1892,8 @@ def min_rounds(n_cases: int, alpha: float = 0.05) -> int
 
 Return the fewest rounds that can give a verdict for `n_cases` tested at once.
 
-It is the smallest `n` with `n_cases * 2 ** (1 - n) < alpha`.
+It is the smallest `n` with `n_cases * 2 ** (1 - n) < alpha`, worked
+out in whole numbers with alpha taken exactly (`exact_alpha`).
 
 ### <span id="pairbench.stats.paired"></span>`pairbench.stats.paired`
 
@@ -1828,6 +1965,221 @@ their sum. `p` is the two-sided p-value and `fraction` the same value
 as an exact fraction `(numerator, denominator)`, with the denominator
 `2 ** n`.
 
+## <span id="pairbench.capture.matching"></span>Module `pairbench.capture.matching`
+
+### <span id="pairbench.capture.matching.MatchingRead"></span>`pairbench.capture.matching.MatchingRead`
+
+```python
+@dataclass(frozen=True)
+class MatchingRead:
+    rows: tuple[MatchingRow, ...]
+    runs: tuple[MatchingRun, ...]
+    default_order: str
+    sha256: str
+    input_lines: tuple[int, ...] = ()
+```
+
+What a read in the matching mode returns.
+
+`rows` holds the kept rows in the order of the text. `runs` holds one
+record per run, in index order, a run without rows included; a text
+without a banner, an empty one included, is one run.
+`default_order` is the pass-order text the caller gave for rows that no
+pass-order line orders. `sha256` is the hash of the text the inputs make
+together, encoded as UTF-8. `input_lines` gives, for each input in the
+order given, the number of the line of that text on which it begins: one
+past the last line for an input that adds no line, as an empty last input
+does. A read built without it is read as one input.
+
+#### <span id="pairbench.capture.matching.MatchingRead.run_count"></span>`MatchingRead.run_count`
+
+```python
+@property
+def run_count(self) -> int
+```
+
+The number of runs.
+
+#### <span id="pairbench.capture.matching.MatchingRead.kept_rows"></span>`MatchingRead.kept_rows`
+
+```python
+@property
+def kept_rows(self) -> int
+```
+
+The number of kept rows.
+
+#### <span id="pairbench.capture.matching.MatchingRead.malformed_rows"></span>`MatchingRead.malformed_rows`
+
+```python
+@property
+def malformed_rows(self) -> int
+```
+
+The number of malformed rows over every run.
+
+#### <span id="pairbench.capture.matching.MatchingRead.two_sided"></span>`MatchingRead.two_sided`
+
+```python
+def two_sided(self, first: str, second: str) -> MatchingView
+```
+
+Return the two-sided view of the sides `first` and `second`.
+
+A row of either side is kept when the pass-order line in force for it
+names both sides, the names split on white space; the row's order is
+`"first, second"` when that line names `first` before `second`,
+and `"second, first"` otherwise. A row whose order is the default
+order, or whose line does not name both sides, is left out and
+counted. The rows of every other side are left out. Naming one side
+twice, or a name that is not a text, is refused with `E_USAGE`.
+
+### <span id="pairbench.capture.matching.MatchingRow"></span>`pairbench.capture.matching.MatchingRow`
+
+```python
+@dataclass(frozen=True)
+class MatchingRow:
+    run: int
+    round: int
+    side: str
+    case: str
+    value: float
+    suite: str
+    pass_order: str
+    order_from_line: bool
+    line: int
+```
+
+One row the matching mode kept.
+
+`run` is the index of its run, from 0 across the whole text. `round` is
+the round label as the integer written. `side`, `case` and `suite`
+are the fields exactly as written. `value` is the value as it parsed: a
+number above zero, infinity or NaN. `pass_order` is the text of the
+pass-order line in force for the row, or the default order the caller
+gave; `order_from_line` says which. `line` is the number of the row's
+line in the text the inputs make together, counted from 1.
+
+### <span id="pairbench.capture.matching.MatchingRun"></span>`pairbench.capture.matching.MatchingRun`
+
+```python
+@dataclass(frozen=True)
+class MatchingRun:
+    index: int
+    banner_line: int | None
+    metadata: tuple[tuple[str, str], ...]
+    metadata_lines: tuple[int, ...]
+    malformed_rows: int
+    kept_rows: int
+    pool_rows: tuple[PoolRow, ...]
+    pool_row_lines: tuple[int, ...]
+```
+
+One run of a read in the matching mode.
+
+`index` counts the runs from 0: there are as many runs as banners, or
+one when the text holds no banner. `banner_line` is the number of the
+line that opened the run, or `None` for a run 0 of a text without a
+banner.
+`metadata` holds the run's metadata lines in order, each split at its
+first `=` into the text before it and the text after it, so that the two
+joined by `=` give the line as written, and `metadata_lines` gives the
+line number of each. `malformed_rows` and
+`kept_rows` count the run's malformed and kept rows.
+
+`pool_rows` lists every line of the run that splits on tabs into exactly
+five fields, the banner line left out, in the order of the text: kept
+rows, malformed rows, comments and lines of blanks alike. Each field has
+the white space around it removed. The rows are numbered from 0 by their
+place in the list, and `pool_row_lines` gives the line number of each.
+
+#### <span id="pairbench.capture.matching.MatchingRun.has_pool_rows"></span>`MatchingRun.has_pool_rows`
+
+```python
+@property
+def has_pool_rows(self) -> bool
+```
+
+Whether the run holds a line that splits on tabs into five fields.
+
+### <span id="pairbench.capture.matching.MatchingView"></span>`pairbench.capture.matching.MatchingView`
+
+```python
+@dataclass(frozen=True)
+class MatchingView:
+    read: MatchingRead
+    first: str
+    second: str
+    rows: tuple[ViewRow, ...]
+    left_out_no_order: int
+    left_out_other_sides: int
+```
+
+A two-sided view of a read in the matching mode.
+
+`rows` holds the kept rows of the sides `first` and `second` in the
+order of the text. `left_out_no_order` counts the rows of the two sides
+left out because no pass-order line of their run named both sides before
+them; `left_out_other_sides` counts the rows of every other side.
+
+#### <span id="pairbench.capture.matching.MatchingView.capture"></span>`MatchingView.capture`
+
+```python
+def capture(
+    self,
+    *,
+    unit: str = 'ns',
+    better: Literal['lower', 'higher'] = 'lower',
+) -> Capture
+```
+
+Return the view as one capture, for `pairbench.analyse`.
+
+A round of the capture is a run index and a round label together: the
+same label in two runs makes two rounds. The capture numbers its
+rounds 1, 2, 3 and on in the order of run index, then label. A cell,
+one side in one round on one case, given more than once takes the
+value of its last row, whatever pass order each row carries. A round
+that holds kept rows of one side only gives no pair and is left out.
+The order of a round is the order of the rows that give its cells: the
+side their lines name first ran first. A round whose cells come from
+rows of both orders, as when a reversed pass stops inside a round or
+gives only some of its cells, has no recorded order, and
+`pairbench.analyse` reads it as it reads any round whose order was
+not recorded. `second` is the baseline. Every case is measured in
+`unit`, and `better` says which direction is better; the metadata
+of the runs is not consulted.
+
+A cell whose value is not finite is a missing cell: its side keeps its
+place in the round, the cell has no value, and the capture holds one
+`value_not_finite` note for it, which names the side, the round by
+its label and the index of its run, the capture's number of the round
+when it is not the label, and the case; this call prints nothing. A view with no
+round that holds both sides, a side name that a capture cannot hold
+(one with `~` or `=`, say), and a unit or a direction that is not
+one, a unit that is not UTF-8 text included, are refused with
+`E_USAGE`. A case id that ends like the mark a
+run adds to a name whose cut dropped words (` +` and eight hex
+digits) is kept, and `pairbench.analyse` refuses the capture that
+holds it with `E_USAGE`.
+
+### <span id="pairbench.capture.matching.ViewRow"></span>`pairbench.capture.matching.ViewRow`
+
+```python
+@dataclass(frozen=True)
+class ViewRow:
+    row: MatchingRow
+    order: ViewOrder
+```
+
+One row a two-sided view keeps, with the order its pass-order line gives the two sides.
+
+### <span id="pairbench.capture.matching.PoolRow"></span>`pairbench.capture.matching.PoolRow`
+
+```python
+PoolRow = tuple[str, str, str, str, str]
+```
+
 ## <span id="pairbench.errors"></span>Module `pairbench.errors`
 
 ### <span id="pairbench.errors.Refusal"></span>`pairbench.errors.Refusal`
@@ -1849,8 +2201,13 @@ class Refusal(Exception):
 A refusal: a stable text code, an exit code, a one-line message and a scope.
 
 `detail` carries machine-readable extras for the caller, for example
-every missing figure key or every bad grid cell. It is never written to a
-results document. `results` is the results document that describes the
+every missing figure key or every bad grid cell. It is not written to a
+results document, but for one case: `pairbench compare --matching`
+writes the detail of a refusal of the matching mode, which holds only the
+name of a check, counts, run indices and, for a written stretch, row
+indices and whether its last row is torn, and, for two parts of runs, the
+line on which each begins, under `matching.refusal`.
+`results` is the results document that describes the
 refused run, when one could be built: no comparisons and this refusal
 listed in `refusals`.
 
@@ -2392,7 +2749,11 @@ Reads captures from a file in some format.
 
 `sniff` says whether the file looks like this reader's format, from its
 path and its first bytes, without reading further. `read` returns one
-capture per run in the file and sets each capture's `source`.
+capture per run in the file and sets each capture's `source`. A reader
+of a file that holds several runs names each in `source.reader`
+(`ReaderInfo` with its `run_index`): the different runs of one file
+then pool, and one run given twice is refused with `E_POOL_SAME`. A
+capture whose source names no run is one with its file.
 
 A reader of a format that has no end record gives each capture a lineup
 record and an end record that says `complete`, as `Capture.from_rows`

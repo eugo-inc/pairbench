@@ -175,7 +175,43 @@ Analyses one capture, pools several, or compares result files of another tool.
 | `--levels LIST` | the load level result files of a serving load tool were made at; such a driver reads each file as one level |
 | `--reader NAME` | the reader of the capture files, for the [text input format](text-format.md) or a plug-in |
 | `--lenient` | read text capture files in the [lenient mode](text-format.md#lenient-reading) of the text reader: a value that is not a finite number is a missing cell, with one `value_not_finite` note per cell, and a round that gives a side two positions has its order read as not recorded; another reader is refused with `E_USAGE` |
+| `--matching` | read the text capture files together in the [matching mode](text-format.md#from-the-command-line) and compare the side `--subject` names against the side `--baseline` names; both are required |
+| `--subject NAME` | with `--matching`, the side compared against the baseline; refused without `--matching` |
+| `--unit UNIT` | with `--matching`, the unit of the values, over `unit=` lines that agree or are absent; refused without `--matching` |
+| `--better lower\|higher` | with `--matching`, the better direction of the values, over `better=` lines that agree or are absent; another value is refused with `E_USAGE`; refused without `--matching` |
 | `--no-plugins` | load no plug-in outside the package |
+
+With `--matching`, compare reads every file as one text of the
+[text input format](text-format.md#matching-reading), runs the
+[pool checks of that mode](text-format.md#pool-checks-of-a-matching-read) in their order, and
+analyses the two-sided view of `--subject` against `--baseline` as one capture. Only the runs
+that give that capture a paired round, a round label of the run that holds both sides, state
+its unit and its direction. When their `unit=` lines state more than one unit, or their
+`better=` lines more than one direction, compare is refused with `E_USAGE`, naming each value
+with its runs, and so is a `better=` value other than `lower` and `higher`, in any spelling
+(`better=Higher` included), or empty. Otherwise the values are in the unit those lines state, or in `ns`
+when they state none, and better is the direction they state, or lower when they state none.
+`--unit` and `--better` name the unit and the direction over lines that agree or state
+nothing; they do not lift a refusal ([details](text-format.md#from-the-command-line)). A pool
+check that refuses, and a view without a round that holds both sides (`E_GRID`), end compare
+with exit code 6, and `results.json` holds the refusal's detail under `matching.refusal`. A
+view whose two sides ran in one order in every paired round is refused by the analysis with
+`E_ORDER_NOT_VARIED`, exit code 6 too, and, as for every refusal of the analysis,
+`matching.refusal` stays `null`.
+`--lenient`, a reader other than `text`, `file` sides, `--driver`, `--levels`,
+`--allow-incomplete`, `--allow-mixed-machines`, `--assume-interleaved`, and a name a capture
+cannot hold are refused with `E_USAGE`.
+
+`compare --matching` gives each case its medians, its ratio and its corrected p-value, but no
+verdict under the default rule `strict`: the view has no twins, so no case has a noise floor.
+Each comparison is `NO VERDICT`, with the reason `single_measurement` from one paired round,
+`too_few_rounds` from too few paired rounds, and `no_floor` from enough of them; `no_floor` is
+in its `reasons` in every case. Each case also gets the loud note `view_without_twins`, printed
+on standard error and kept in the results' `notes`, which says so. The command line has no
+option that supplies noise floors, and no rule gives a verdict without one, so `--rule` does
+not change this. For a verdict, read the files with `pairbench.read_text_matching` in Python,
+take the view's capture, and give `pairbench.analyse` noise floors measured elsewhere, as
+[rows produced elsewhere](python-api.md#rows-produced-elsewhere) shows for a capture without twins.
 
 With `file` sides, compare reads the files into a run folder, as `run` does: `capture.jsonl`,
 `results.json`, `results.md` and `artifacts/`, in `--out DIR` or else in a new folder under

@@ -449,3 +449,129 @@ def test_a_load_failure_line_escapes_its_name_and_reason() -> None:
         "pairbench: plug-in failed to load: pairbench.drivers made\\x1b[2Jup: "
         "ValueError: a\\\\b\\u202ec"
     )
+
+
+# A plug-in name with an escape character, registered from inside the loading of another.
+INNER = "in\x1bner"
+INNER_TEXT = (
+    "pairbench: plug-in failed to load: pairbench.rules in\x1bner: "
+    "it declares api_version None; this pairbench speaks 1"
+)
+INNER_LINE = (
+    "pairbench: plug-in failed to load: pairbench.rules in\\x1bner: "
+    "it declares api_version None; this pairbench speaks 1"
+)
+
+
+class RegisteringEntry(FakeEntry):
+    """An entry point whose module registers a plug-in that fails when it is loaded."""
+
+    def load(self) -> Any:
+        registry.register("pairbench.rules", INNER, object())
+        return MadeUpRule
+
+
+def test_a_registration_that_fails_inside_an_entry_point_is_escaped_once(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _entry_points(monkeypatch, {"pairbench.rules": [RegisteringEntry("outer", None)]})
+
+    registry.load_plugins()
+
+    outer = "pairbench: plug-in failed to load: pairbench.rules outer: PluginError: "
+    outer_text = outer + INNER_TEXT
+    outer_line = outer + INNER_LINE
+    streams = capsys.readouterr()
+    assert (streams.out, streams.err) == ("", f"{INNER_LINE}\n{outer_line}\n")
+    assert [failure.text for failure in registry.failures()] == [INNER_TEXT, outer_text]
+    assert [failure.line for failure in registry.failures()] == [INNER_LINE, outer_line]
+
+
+def test_a_refusal_raised_inside_an_entry_point_is_escaped_once(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    refused = Refusal("E_USAGE", "made\x1bup")
+    _entry_points(monkeypatch, {"pairbench.rules": [FakeEntry("outer", refused)]})
+
+    registry.load_plugins()
+
+    streams = capsys.readouterr()
+    assert (streams.out, streams.err) == (
+        "",
+        "pairbench: plug-in failed to load: pairbench.rules outer: Refusal: E_USAGE: made\\x1bup\n",
+    )
+    assert [failure.text for failure in registry.failures()] == [
+        "pairbench: plug-in failed to load: pairbench.rules outer: Refusal: E_USAGE: made\x1bup"
+    ]
+
+
+def test_a_registration_that_fails_inside_a_registration_is_escaped_once(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _entry_points(monkeypatch, {})
+
+    class Outer(MadeUpRule):
+        name = "outer"
+
+        def __init__(self) -> None:
+            registry.register("pairbench.rules", INNER, object())
+
+    with pytest.raises(registry.PluginError) as caught:
+        registry.register("pairbench.rules", "outer", Outer)
+
+    outer_text = f"pairbench: plug-in failed to load: pairbench.rules outer: {INNER_TEXT}"
+    outer_line = f"pairbench: plug-in failed to load: pairbench.rules outer: {INNER_LINE}"
+    assert str(caught.value) == outer_line
+    assert caught.value.text == outer_text
+    streams = capsys.readouterr()
+    assert (streams.out, streams.err) == ("", f"{INNER_LINE}\n{outer_line}\n")
+    assert [failure.text for failure in registry.failures()] == [INNER_TEXT, outer_text]
+
+
+class _OwnPluginError(registry.PluginError):
+    """A plug-in's own error that skips the constructor of ``PluginError``."""
+
+    def __init__(self, what: str) -> None:
+        Exception.__init__(self, "mine: " + what)
+
+
+def test_a_plug_in_error_needs_no_message() -> None:
+    error = registry.PluginError()
+    assert str(error) == ""
+    assert error.text == ""
+
+
+def test_a_plug_in_error_that_skips_its_constructor_is_read_by_its_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _entry_points(monkeypatch, {})
+
+    class Own(MadeUpRule):
+        name = "own"
+
+        def __init__(self) -> None:
+            raise _OwnPluginError("in\x1bit")
+
+    with pytest.raises(registry.PluginError) as caught:
+        registry.register("pairbench.rules", "own", Own)
+
+    text = "pairbench: plug-in failed to load: pairbench.rules own: mine: in\x1bit"
+    line = "pairbench: plug-in failed to load: pairbench.rules own: mine: in\\x1bit"
+    assert str(caught.value) == line
+    assert caught.value.text == text
+    streams = capsys.readouterr()
+    assert (streams.out, streams.err) == ("", f"{line}\n")
+    assert [failure.text for failure in registry.failures()] == [text]
+
+
+def test_an_entry_point_that_raises_a_plug_in_error_without_its_constructor_is_one_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _entry_points(monkeypatch, {"pairbench.rules": [FakeEntry("own", _OwnPluginError("load"))]})
+
+    registry.load_plugins()
+
+    text = "pairbench: plug-in failed to load: pairbench.rules own: _OwnPluginError: mine: load"
+    streams = capsys.readouterr()
+    assert (streams.out, streams.err) == ("", f"{text}\n")
+    assert [failure.text for failure in registry.failures()] == [text]

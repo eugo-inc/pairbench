@@ -8,6 +8,8 @@
   missing or broken end record are detected;
 * ``text``: the built-in reader ``text`` of the simple text input format, and
   ``project``, a two-sided view of a run of several sides;
+* ``matching``: the matching reading mode of the text input format and its
+  two-sided view;
 * ``pool``: what reading several capture files needs at the level of files.
 
 Importing this package imports none of its modules.

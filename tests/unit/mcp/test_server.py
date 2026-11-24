@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 import pairbench
+from pairbench import api
 from pairbench.errors import Refusal
 from pairbench.mcp import library, server
 from pairbench.mcp.server import ToolServer
@@ -44,10 +45,10 @@ EXIT_USAGE = 2
 EXIT_INTERNAL = 8
 MADE_UP_RELEASE = "2.3.0"
 DOCS_LINE_USAGE = (
-    "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage\n"
+    "pairbench: see https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_usage\n"
 )
 DOCS_LINE_INTERNAL = (
-    "pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_internal\n"
+    "pairbench: see https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_internal\n"
 )
 NOT_INSTALLED = "the tool server is not available here (mcp): install pairbench[mcp]"
 REINSTALL = "reinstall it with pip install 'pairbench[mcp]'"
@@ -495,7 +496,7 @@ def test_a_refusal_is_an_answer_with_code_exit_code_scope_and_message() -> None:
     assert refused["refusal"]["docs"] == DOCS_E_USAGE
 
 
-DOCS_E_USAGE = "https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage"
+DOCS_E_USAGE = "https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_usage"
 
 
 def test_an_unexpected_error_is_answered_as_an_internal_refusal(
@@ -1141,3 +1142,71 @@ def test_every_outcome_and_reason_has_plain_words() -> None:
 
     assert set(server.OUTCOME_TEXT) == set(OUTCOMES)
     assert set(server.REASON_TEXT) == {*REASONS_NO_VERDICT, *REASONS_UNRESOLVED, *REASONS_RESERVED}
+
+
+def test_a_name_with_a_surrogate_is_answered_as_text_utf_8_encodes(tmp_path: Path) -> None:
+    # A name read from a file system can hold a surrogate, which UTF-8 cannot encode.
+    missing = tmp_path / "made-up\udcff.json"
+
+    text = ToolServer(allow_run=False).call("results", path=str(missing))
+
+    assert '"message": "results file not found: made-up\\udcff.json"' in text
+    assert text.isascii()
+    assert json.loads(text)["refusal"] == {
+        "code": "E_USAGE",
+        "exit_code": 2,
+        "scope": "experiment",
+        "message": "results file not found: made-up\udcff.json",
+        "docs": DOCS_E_USAGE,
+    }
+
+
+def test_a_text_answer_writes_a_surrogate_as_an_escape() -> None:
+    assert server._encodable("a\ud800b\U0001f680c") == "a\\ud800b\U0001f680c"
+
+
+# A result file of the lines driver whose case holds a lone surrogate, written as JSON writes it.
+LINES_CASE_HELD = '::pairbench:: {"case": "a\\udfff", "value": 1}\n'
+CASE_HELD_UNWRITTEN = (
+    "the results cannot be written: cases[0].id: a\\udfff holds a lone surrogate, which is not "
+    "UTF-8 text"
+)
+CASE_HELD_REFUSED = "side 'new': the case a\\udfff holds a lone surrogate, which is not UTF-8 text"
+
+
+@pytest.mark.parametrize("shown", [True, False], ids=["command-line", "python"])
+def test_compare_of_result_files_with_a_case_holding_a_lone_surrogate(
+    tmp_path: Path, shown: bool
+) -> None:
+    for name in ("new1.txt", "old1.txt"):
+        (tmp_path / name).write_text(LINES_CASE_HELD, encoding="utf-8")
+    out = tmp_path / "out"
+    arguments: dict[str, Any] = {
+        "sides": [f"new=file:{tmp_path}/new*.txt", f"old=file:{tmp_path}/old*.txt"],
+        "driver": "lines",
+        "out": str(out),
+    }
+    tools = ToolServer(allow_run=False)
+
+    if shown:
+        with api.command_line(["pairbench", "mcp"]):
+            text = tools.call("compare", **arguments)
+    else:
+        text = tools.call("compare", **arguments)
+
+    assert text.isascii()
+    got = json.loads(text)
+    written = sorted(p.name for p in out.iterdir())
+    if shown:
+        assert got["refusal"]["code"] == "E_LAUNCH_FAILED"
+        assert got["refusal"]["exit_code"] == 5
+        assert got["refusal"]["message"] == CASE_HELD_REFUSED
+        assert written == ["artifacts", "capture.jsonl", "results.json", "results.md"]
+        assert got["results"] == json.loads((out / "results.json").read_text(encoding="utf-8"))
+    else:
+        assert got["refusal"]["code"] == "E_USAGE"
+        assert got["refusal"]["exit_code"] == 2
+        assert got["refusal"]["message"] == CASE_HELD_UNWRITTEN
+        assert "capture.jsonl" in written
+        assert "results.json" not in written
+        assert "results.md" not in written

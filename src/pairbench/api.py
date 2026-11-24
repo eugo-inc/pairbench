@@ -263,6 +263,10 @@ def command_line(argv: Sequence[str]) -> Iterator[None]:
     run started by a call of the Python API records no command line. What is
     recorded is ``pairbench.model.redact_argv(argv)``: the value of a
     ``--set`` that sets a credential-like environment variable is replaced.
+    A run started inside the block, from Python too, also makes the early
+    refusals of a text that is not UTF-8 where its results would show it,
+    as the command line does; outside it such a text is kept in the capture
+    as an escape.
     """
     token = _COMMAND_LINE.set(redact_argv(argv))
     try:
@@ -1772,7 +1776,11 @@ class CaptureReader(Protocol):
 
     ``sniff`` says whether the file looks like this reader's format, from its
     path and its first bytes, without reading further. ``read`` returns one
-    capture per run in the file and sets each capture's ``source``.
+    capture per run in the file and sets each capture's ``source``. A reader
+    of a file that holds several runs names each in ``source.reader``
+    (``ReaderInfo`` with its ``run_index``): the different runs of one file
+    then pool, and one run given twice is refused with ``E_POOL_SAME``. A
+    capture whose source names no run is one with its file.
 
     A reader of a format that has no end record gives each capture a lineup
     record and an end record that says ``complete``, as ``Capture.from_rows``

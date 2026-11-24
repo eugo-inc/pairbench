@@ -18,12 +18,14 @@ shows alike, so the check needs no renderer:
 2. That first ``## `` line is the newest release heading: ``## `` and a version of three
    numbers of at most six ASCII digits each, with no leading zero, and nothing else.
 3. The newest entry runs from that heading to the next line that starts with ``## ``. It
-   holds no ``<``, no ``&``, no control character but tab and newline, no footnote ``[^``, no
-   table row, no link reference definition ``]:``, no heading of level 1 or 2 and no line of
-   ``-`` or ``=`` only, which could make one. It holds no directive either, which a renderer
-   with directives on drops when it does not know its name, with all it holds: no line that
-   starts with ``::`` after spaces and list or quote markers (a leaf or container directive),
-   and no ``:`` before a letter on a line that holds a backtick (a text directive).
+   holds no ``<``, no ``&`` before a letter, a digit or ``#``, which could start a character
+   reference, no control character but tab and newline, no footnote ``[^``, no table row, no
+   link reference definition ``]:``, no heading of level 1 or 2 and no line of ``-`` or ``=``
+   only, which could make one; a ``&`` before anything else, such as a space, is prose. It
+   holds no directive either, which a renderer with directives on drops when it does not know
+   its name, with all it holds: no line that starts with ``::`` after spaces and list or quote
+   markers (a leaf or container directive), and no ``:`` before a letter on a line that holds
+   a backtick (a text directive).
 4. A code is named only as the whole content of a code span, `` `E_X` ``, on a plain line of
    that entry: at most three spaces in, after an optional list marker, the line holds outside
    its code spans only ASCII letters, digits, spaces and ``,.;:/-``, holds no address, no
@@ -102,7 +104,7 @@ _FRONT_LINES = re.compile(
 _PREAMBLE_LINES = re.compile(
     r"(?:(?:[ \t]*|# [A-Za-z][A-Za-z0-9 ,.]*|[A-Za-z][A-Za-z0-9 ,.]*)(?:\n|\Z))*"
 )
-_FORBIDDEN = re.compile(r"[<&\x00-\x08\x0b-\x1f\x7f-\x9f]|\[\^|\]:")
+_FORBIDDEN = re.compile(r"[<\x00-\x08\x0b-\x1f\x7f-\x9f]|&(?=[A-Za-z0-9#])|\[\^|\]:")
 _TABLE_ROW = re.compile(r"^[ \t]*\|", re.MULTILINE)
 _DIRECTIVE_LINE = re.compile(r"^[ \t>]*(?:(?:[-*+]|[0-9]{1,9}[.)])[ \t>]+)*::", re.MULTILINE)
 _TEXT_DIRECTIVE = re.compile(r"^(?=[^\n]*`)[^\n]*?:[A-Za-z]", re.MULTILINE)
@@ -117,9 +119,10 @@ _STARTS_BLOCK = re.compile(r" {0,3}(?:[-*+]|1[.)])[ \t]+\S")
 _SPAN = re.compile(r"`([^`]+)`")
 
 _ENTRY_RULE = (
-    "the newest entry holds no `<`, no `&`, no control character but tab and newline, no "
-    "footnote, no table, no link reference definition, no heading of level 1 or 2 and no "
-    "directive, so that every renderer shows it alike; take it out"
+    "the newest entry holds no `<`, no `&` before a letter, a digit or `#`, no control "
+    "character but tab and newline, no footnote, no table, no link reference definition, no "
+    "heading of level 1 or 2 and no directive, so that every renderer shows it alike; take it "
+    "out"
 )
 
 
@@ -351,12 +354,12 @@ def test_the_changelog_is_read_by_the_rule_and_its_newest_entry_is_this_release(
     entry = newest_entry(_real_changelog())
     assert entry is not None
     assert entry[0] == _version(pairbench.__version__)
-    assert "A backslash is written as" in entry[1]
+    assert "The new `pairbench.stats.holm_exact`" in entry[1]
     assert "## " not in entry[1]
 
 
 # The real changelog with one more line in its newest entry, after the line that ends it.
-REAL_LAST_LINE = "  with what it holds. The set of text codes is that of 0.2.0.\n"
+REAL_LAST_LINE = "  The set of text codes is that of 0.2.1.\n"
 
 
 def _real_with(line: str) -> str:
@@ -389,10 +392,7 @@ def test_every_change_against_the_real_changelog_is_caught() -> None:
 
 def test_a_code_named_as_the_message_says_in_the_real_changelog_is_named() -> None:
     log = _real_with("- Adds `E_MADE_UP`.")
-    assert code_problems(set(PINNED_CODES) | {"E_MADE_UP"}, PINNED_CODES, PINNED_RELEASE, log) == [
-        f"the text code E_MADE_UP was added in {pairbench.__version__}, a patch release: a text "
-        "code is added only in a minor or a major release"
-    ]
+    assert code_problems(set(PINNED_CODES) | {"E_MADE_UP"}, PINNED_CODES, PINNED_RELEASE, log) == []
     log = _real_with("- Removes `E_LOCK`.")
     assert code_problems(set(PINNED_CODES) - {"E_LOCK"}, PINNED_CODES, PINNED_RELEASE, log) == [
         f"the text code E_LOCK of {PINNED_RELEASE} was removed or renamed in "
@@ -427,9 +427,10 @@ def _added(code: str = "E_THREE", newest: str = "4.3.0") -> list[str]:
 def _entry_refused(what: str, line: int) -> list[str]:
     return [
         f"docs/changelog.md holds {what} on line {line}, in the newest release entry: the "
-        "newest entry holds no `<`, no `&`, no control character but tab and newline, no "
-        "footnote, no table, no link reference definition, no heading of level 1 or 2 and no "
-        "directive, so that every renderer shows it alike; take it out"
+        "newest entry holds no `<`, no `&` before a letter, a digit or `#`, no control "
+        "character but tab and newline, no footnote, no table, no link reference definition, "
+        "no heading of level 1 or 2 and no directive, so that every renderer shows it alike; "
+        "take it out"
     ]
 
 
@@ -537,6 +538,52 @@ def test_the_newest_entry_ends_at_the_next_heading() -> None:
 )
 def test_a_code_in_a_code_span_on_a_plain_line_is_named(entry: str) -> None:
     assert _check(entry) == []
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        pytest.param("reads A & B files.", id="ampersand-and-a-space"),
+        pytest.param("reads A &\n  B files.", id="ampersand-at-the-end-of-a-line"),
+        pytest.param("reads A &", id="ampersand-at-the-end-of-the-entry"),
+        pytest.param("reads A &\tB files.", id="ampersand-and-a-tab"),
+        pytest.param("reads `a && b` and a && b.", id="two-ampersands"),
+        pytest.param("reads A & `E_ONE`.", id="ampersand-on-a-line-with-a-span"),
+        pytest.param("one line  \n  next line.", id="hard-break-of-two-spaces"),
+        pytest.param("one line\\\n  next line.", id="hard-break-of-a-backslash"),
+        pytest.param("**Bold**: *it* _is_ __so__.", id="emphasis"),
+        pytest.param("see [the page](reference/exit-codes.md#text-codes).", id="inline-link"),
+        pytest.param("see [the page](https://example.invalid/a).", id="inline-link-address"),
+        pytest.param("see [`pairbench plan`](reference/commands.md#plan).", id="link-of-a-span"),
+        pytest.param("![a chart](figures/a.svg)", id="image"),
+        pytest.param("~~gone~~.", id="strikethrough"),
+        pytest.param("at 10:30 the `x` runs.", id="colon-before-a-digit"),
+    ],
+)
+def test_a_harmless_form_is_read_and_the_code_beside_it_is_named(form: str) -> None:
+    assert _check(f"- adds `E_THREE`.\n\n- {form}") == []
+    assert _check(f"- {form}\n\n- adds `E_THREE`.") == []
+
+
+@pytest.mark.parametrize(
+    ("entry", "line"),
+    [
+        pytest.param("- adds `E_THREE` &amp; more.", 9, id="named-reference"),
+        pytest.param("- adds `E_THREE` &lt;b>.", 9, id="less-than-reference"),
+        pytest.param("- adds `E_THREE` &#69;.", 9, id="decimal-reference"),
+        pytest.param("- adds `E_THREE` &#x45;.", 9, id="hex-reference"),
+        pytest.param("- adds `E_THREE` &#X45;.", 9, id="upper-case-hex-reference"),
+        pytest.param("- adds `E_THREE`.\n\n- a & b &amp; c.", 11, id="reference-after-prose"),
+        pytest.param("- adds `E_THREE`.\n\n- a &&lt; b.", 11, id="reference-after-an-ampersand"),
+        pytest.param("- adds `E_THREE`, AT&T.", 9, id="ampersand-before-a-letter"),
+        pytest.param("- adds `E_THREE`, &1.", 9, id="ampersand-before-a-digit"),
+        pytest.param("- adds `E_THREE`, `&#69;`.", 9, id="reference-in-a-span"),
+    ],
+)
+def test_an_ampersand_that_could_start_a_character_reference_is_refused(
+    entry: str, line: int
+) -> None:
+    assert _check(entry) == _entry_refused("a `&`", line)
 
 
 @pytest.mark.parametrize(
@@ -789,6 +836,8 @@ LISTS = "".join("  " * depth + "- a\n" for depth in range(31))
         pytest.param(HEAD + "[a](b" * (MEGABYTE // 5), id="open-targets"),
         pytest.param(HEAD + "E_THREEX " * (MEGABYTE // 9), id="near-names"),
         pytest.param(HEAD + "&amp;" * (MEGABYTE // 5), id="entities"),
+        pytest.param(HEAD + "& " * (MEGABYTE // 2), id="ampersands-and-spaces"),
+        pytest.param(HEAD + "&" * MEGABYTE + "#", id="ampersands-then-a-mark"),
         pytest.param(HEAD + "<a:" * (MEGABYTE // 3), id="open-autolinks"),
         pytest.param(HEAD + "- a\n" * (MEGABYTE // 4), id="list-items"),
         pytest.param(HEAD + "a\n-\n" * (MEGABYTE // 4), id="setext-lines"),

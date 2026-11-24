@@ -67,6 +67,9 @@ correction is `m * 2 ** (1 - n)`. The fewest rounds that can give a verdict is t
 min_rounds(m, alpha = 0.05) = smallest n with m * 2 ** (1 - n) < alpha
 ```
 
+The comparison is made in whole numbers, with alpha read as its shortest decimal text, so 0.05
+is exactly 1/20.
+
 | Tests `m` | `min_rounds` |
 |---|---|
 | 1 | 6 |

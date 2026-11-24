@@ -21,6 +21,7 @@ import re
 import shlex
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
+from fractions import Fraction
 from functools import partial
 from typing import Any, TypeVar, cast
 
@@ -105,6 +106,7 @@ from pairbench.model import (
     public_command,
     recorded_workload,
     sha256_hex,
+    shared_file,
     side_setup,
     undecided,
     verdict_word,
@@ -234,20 +236,14 @@ def _pair_identity(
             f"the capture {a.capture_id} is given twice",
             capture_id=a.capture_id,
         )
-    first, second = a.source, b.source
-    if first is not None and second is not None:
-        if first.path is not None and first.path == second.path:
-            return _refuse(
-                "E_POOL_SAME",
-                f"the captures {pair} were read from the same file",
-                captures=[a.capture_id, b.capture_id],
-            )
-        if first.sha256 is not None and first.sha256 == second.sha256:
-            return _refuse(
-                "E_POOL_SAME",
-                f"the captures {pair} were read from files with the same bytes",
-                captures=[a.capture_id, b.capture_id],
-            )
+    shared = shared_file(a.source, b.source)
+    if shared is not None:
+        where = "the same file" if shared == "file path" else "files with the same bytes"
+        return _refuse(
+            "E_POOL_SAME",
+            f"the captures {pair} were read from {where}",
+            captures=[a.capture_id, b.capture_id],
+        )
     if len(one) == len(two) and _same_run(one, two, 0, len(one)):
         return _refuse(
             "E_POOL_IDENTICAL_ROWS",
@@ -1312,9 +1308,12 @@ def _control_row(
         )
     n_higher = sum(1 for x, y in zip(xs, ys, strict=True) if x > y)
     n_lower = sum(1 for x, y in zip(xs, ys, strict=True) if x < y)
-    p = sign_test(n_lower, n_higher).p
+    test = sign_test(n_lower, n_higher)
+    p = test.p
     direction = n_higher > n_lower if expected > 1.0 else n_lower > n_higher
-    passed = control_within(ratio, expected, tolerance) and direction and is_significant(p, rule)
+    # Significance is decided on the exact fraction; the float is what is written.
+    significant = is_significant(Fraction(*test.fraction), rule)
+    passed = control_within(ratio, expected, tolerance) and direction and significant
     return ControlCase(
         case=case.id, expected=expected, ratio=ratio, p_raw=p, n_rounds=n, passed=passed
     )

@@ -394,6 +394,11 @@ SHOWN_EXAMPLES = (
         ("tool", "http://localhost:8000/v1/hooks/" + "0badc0de" * 5 + "/notify"),
         "http://localhost:8000/v1/hooks/<hidden>/notify",
     ),
+    # The same, joined by a `.` to a path after it at the start of a query value.
+    (
+        ("tool", "http://localhost:8000/v1?k=" + "0badc0de" * 5 + "./../b"),
+        "http://localhost:8000/v1?k=<hidden>./../b",
+    ),
     (("client", "EXAMPLE7q/Q7xK2mP9vL4nR8tW3yZ6bC1dF5gH0jS2kEAw"), "client <hidden>"),
     (
         (

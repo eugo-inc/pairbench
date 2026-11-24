@@ -4,9 +4,12 @@
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+
 import pytest
 
-from pairbench.model import Capture
+from pairbench.model import Capture, capture_line
 from pairbench.stats import selftest
 from pairbench.stats.selftest import ControlResult, run_control, run_selftest, synthetic_capture
 from pairbench.stats.signtest import SignTest, sign_test
@@ -110,5 +113,9 @@ def test_the_generator_writes_a_capture_like_a_run_does() -> None:
     assert len(rounds) == 20
     assert {x.pos for x in rounds if x.name == "old~twice"} == {5}
     assert got.machine is not None and got.machine.cpu.model == "cpu-model-a"
-    again = Capture.from_records(got.to_records(), source=got.source)
-    assert again == got
+    written = got.to_records()
+    again = Capture.from_records(written, source=got.source)
+    preceding = b"".join(capture_line(record) for record in written[:-1])
+    assert got.end is not None
+    end = dataclasses.replace(got.end, sha256_of_preceding=hashlib.sha256(preceding).hexdigest())
+    assert again == dataclasses.replace(got, end=end)

@@ -44,6 +44,7 @@ import types
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from fractions import Fraction
 from typing import (
     Any,
     ClassVar,
@@ -65,7 +66,7 @@ from pairbench.errors import Refusal
 # ---------------------------------------------------------------------------
 
 TOOL_NAME: Final = "pairbench"
-TOOL_VERSION: Final = "0.2.1"
+TOOL_VERSION: Final = "0.3.0"
 
 SCHEMA_CAPTURE: Final = "pairbench/capture/v1"
 SCHEMA_RESULTS: Final = "pairbench/results/v1"
@@ -849,6 +850,8 @@ NOTE_TORN_ROUND: Final = "torn_round_left_out"
 NOTE_MALFORMED_ROWS: Final = "malformed_rows"
 NOTE_VALUE_NOT_FINITE: Final = "value_not_finite"
 NOTE_ORDER_CONTRADICTED: Final = "order_contradicted"
+# A case of the two-sided view of a matching read that has no noise floor, the view having no twins.
+NOTE_VIEW_WITHOUT_TWINS: Final = "view_without_twins"
 # Pooled captures that read one case from ids differing only in folders, or only in a secret.
 NOTE_POOL_FOLDERS_MERGED: Final = "pool_folders_merged"
 NOTE_POOL_SECRETS_MERGED: Final = "pool_secrets_merged"
@@ -1280,17 +1283,31 @@ def parse_duration(value: str | float | int) -> float:
     return seconds
 
 
+@functools.lru_cache(maxsize=64)
+def exact_alpha(alpha: float) -> Fraction:
+    """Return alpha as the exact fraction of its shortest decimal text.
+
+    ``0.05`` is exactly ``1/20`` and ``0.01`` exactly ``1/100``, not the
+    binary value of the float that holds them. Every decision against alpha
+    compares with this fraction.
+    """
+    return Fraction(repr(float(alpha)))
+
+
 def min_rounds(n_cases: int, alpha: float = 0.05) -> int:
     """Return the fewest rounds that can give a verdict for ``n_cases`` tested at once.
 
-    It is the smallest ``n`` with ``n_cases * 2 ** (1 - n) < alpha``.
+    It is the smallest ``n`` with ``n_cases * 2 ** (1 - n) < alpha``, worked
+    out in whole numbers with alpha taken exactly (``exact_alpha``).
     """
     if n_cases < 1:
         raise ValueError("n_cases must be at least 1")
     if not 0.0 < alpha < 1.0:
         raise ValueError("alpha must lie between 0 and 1")
+    exact = exact_alpha(alpha)
     n = 1
-    while n_cases * 2.0 ** (1 - n) >= alpha:
+    # n_cases / 2 ** (n - 1) >= a / b  <=>  n_cases * b >= a * 2 ** (n - 1)
+    while n_cases * exact.denominator >= exact.numerator << (n - 1):
         n += 1
     return n
 
@@ -5582,7 +5599,7 @@ def _public_case(case: str) -> tuple[str, bool]:
         left: list[tuple[int, int]] = []
         cutter = _case_path_cutter(read, left)
         cut = _paths_cut(_CASE_PATH, read, cutter, None)
-        shown = _hidden_random(_case_secrets_hidden(cut), paths=False)
+        shown = _hidden_random(_case_secrets_hidden(cut), paths=False, query_paths=False)
         dropped = _drops_words(read, left) or (
             (shown != cut or any(_SPACE.search(read, start, end) for start, end in left))
             and not _words_kept(_case_tell_words(_case_folders_out(read, left)), shown)
@@ -5784,7 +5801,7 @@ def case_secrets_hidden(case: str) -> str:
     token = _HOME_NAMES_KEPT.set(True)
     try:
         case = _address_sub(_ADDRESS_USER, lambda found: f"{found.group(1)}{HIDDEN}@", case)
-        return _hidden_random(_case_secrets_hidden(case), paths=False)
+        return _hidden_random(_case_secrets_hidden(case), paths=False, query_paths=False)
     finally:
         _HOME_NAMES_KEPT.reset(token)
 
@@ -5816,7 +5833,7 @@ def case_tell_words(case: str) -> list[str]:
 
 def _case_tell_words(read: str) -> list[str]:
     """Return ``case_tell_words`` of an id read as ``_case_folders_out`` reads it."""
-    hidden = _hidden_random(_case_secrets_hidden(read), paths=False)
+    hidden = _hidden_random(_case_secrets_hidden(read), paths=False, query_paths=False)
     return [word for word in hidden.split() if not case_folder_word(word)]
 
 
@@ -11688,7 +11705,30 @@ def _cut_as_path(run: str, at: int, text: str) -> bool:
     return run.startswith("/") or (run.startswith("-") and "/" in run) or "+/" in run
 
 
-def _hidden_random(text: str, *, paths: bool) -> str:
+# What glues a token run to a path after it in the same query parameter of an address: a ``.``
+# and the characters of a part of a path up to its ``/``, as in ``?<id>./../b``.
+_GLUED_TO_PATH = re.compile(r"\.[A-Za-z0-9_.-]*/")
+# The marks a query parameter, its value and the fragment of an address start after.
+_QUERY_MARKS: Final = frozenset("?&#=")
+# Hexadecimal digits, and the letter of the ``0x`` or ``0X`` that may stand before them.
+_HEX_OR_ITS_PREFIX: Final = _HEX_CHARACTERS | frozenset("xX")
+
+
+def _query_spans(text: str) -> list[tuple[int, int]]:
+    """Return where the query and fragment of each address in ``text`` lie.
+
+    Each starts at the first ``?``, ``&`` or ``#`` after the address's
+    ``://`` and ends where the address ends.
+    """
+    spans: list[tuple[int, int]] = []
+    for found in _address_matches(_ADDRESS_SPAN, text):
+        mark = _ADDRESS_PART_END.search(text, text.find("://", found.start()) + 3, found.end())
+        if mark is not None:
+            spans.append((mark.start(), found.end()))
+    return spans
+
+
+def _hidden_random(text: str, *, paths: bool, query_paths: bool = True) -> str:
     """Hide the random-looking values in a text, as ``looks_random`` says.
 
     With ``paths`` only the runs that ``public_text`` may cut as a path are
@@ -11697,8 +11737,31 @@ def _hidden_random(text: str, *, paths: bool) -> str:
     every run is read and only its random-looking parts are hidden: a path
     segment, a query value of an address, or the value itself. A run that
     holds percent escapes is judged as the text they stand for, and is
-    hidden whole when any part of that text looks random.
+    hidden whole when any part of that text looks random. With
+    ``query_paths``, a run with no ``/`` in the query or the fragment of an
+    address (``_query_spans``) that follows a ``?``, ``&``, ``#`` or ``=``
+    and that a ``.`` glues to a path after it (``_GLUED_TO_PATH``) is hidden
+    whole, past its leading dashes or an option of one letter, when it is
+    hexadecimal of ``COMMIT_ID_LENGTH`` with no digest name before it, as
+    such a value between two ``/`` is: ``?<id>./../b`` shows
+    ``?<hidden>./../b``. Every other run there is read as it is without
+    ``query_paths``, so a UUID in it stays shown. The case readers read
+    without it.
     """
+    queries: list[tuple[int, int]] = []
+    starts: list[int] | None = None
+
+    def glued_to_path(run: str, at: int) -> bool:
+        nonlocal starts
+        if "/" in run or text[at - 1 : at] not in _QUERY_MARKS:
+            return False
+        if _GLUED_TO_PATH.match(text, at + len(run)) is None:
+            return False
+        if starts is None:
+            queries.extend(_query_spans(text))
+            starts = [one for one, _two in queries]
+        k = bisect.bisect_right(starts, at - 1) - 1
+        return k >= 0 and at + len(run) <= queries[k][1]
 
     def shown(found: re.Match[str]) -> str:
         run = found.group(0)
@@ -11719,6 +11782,14 @@ def _hidden_random(text: str, *, paths: bool) -> str:
             if not spans:
                 return run
             return run[:kept] + HIDDEN
+        if query_paths and glued_to_path(run, found.start()):
+            value, before = run[kept:], _before(text, found.start() + kept)
+            if (
+                set(value.rstrip("=")) <= _HEX_OR_ITS_PREFIX
+                and _looks_random(value, before, commit_id=False)
+                and not _looks_random(value, before)
+            ):
+                return run[:kept] + HIDDEN
         out: list[str] = []
         end = 0
         for begin, finish in _random_spans(run, found.start(), text):
@@ -14225,8 +14296,10 @@ class Note(_Model):
 class End(_Model):
     """The last record of a capture. Without it the capture is incomplete.
 
-    ``sha256_of_preceding`` is the hash of every line before this record, and
-    ``None`` for a capture that was never a file. ``discard_sha256`` is the
+    ``sha256_of_preceding`` is the hash of every line before this record, as
+    a run writes the lines (``capture_line``). It is ``None`` for a capture
+    built in memory; ``Capture.to_records`` gives the end record it writes the
+    hash of the records it writes before it. ``discard_sha256`` is the
     hash of the decision on disturbed rounds.
     """
 
@@ -14337,6 +14410,45 @@ def record_from_json(data: Mapping[str, Any]) -> Record:
     if cls is None:
         raise Refusal("E_USAGE", f"not a capture record: record type {kind!r}")
     return cast("Record", cls.from_json(data))
+
+
+def capture_line(data: Mapping[str, Any]) -> bytes:
+    """Return one line of ``capture.jsonl``: a record's JSON form, compact, and a newline.
+
+    The keys keep their order, the separators are ``,`` and ``:`` with no
+    space, and the text is encoded in UTF-8. A run writes every record so, and
+    the ``end`` record carries the SHA-256 of these bytes for every line before it.
+    """
+    return (json.dumps(data, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+
+
+SharedFile = Literal["file path", "file hash"]
+
+
+def shared_file(first: Source | None, second: Source | None) -> SharedFile | None:
+    """Say what makes two captures one capture read twice from a file, or ``None``.
+
+    The file is named by its path, then by the hash of its bytes. A reader
+    that splits a file into runs names each run in ``ReaderInfo``: two runs
+    of one file at different run indexes, read by the same reader, are two
+    captures and share nothing here. A capture whose source names no run is
+    one with its file.
+    """
+    if first is None or second is None:
+        return None
+    one, two = first.reader, second.reader
+    if (
+        one is not None
+        and two is not None
+        and one.reader == two.reader
+        and one.run_index != two.run_index
+    ):
+        return None
+    if first.path is not None and first.path == second.path:
+        return "file path"
+    if first.sha256 is not None and first.sha256 == second.sha256:
+        return "file hash"
+    return None
 
 
 def _merge_cases(first: Sequence[Case], more: Sequence[Case]) -> tuple[Case, ...]:
@@ -14634,6 +14746,15 @@ class Capture(_Coerced):
         key for the marks of case names and the names that carry one, each
         launch followed by its observations, notes, end. The cost of a launch, when one was
         measured, follows the warm-up launches.
+
+        The end record carries, in ``sha256_of_preceding``, the SHA-256 of the
+        records before it written as a run writes them: each as
+        ``json.dumps(record, separators=(",", ":"))`` and a newline, in UTF-8,
+        which ``pairbench.model.capture_line`` returns and ``to_jsonl`` joins.
+        A file of those bytes reads back with its end record. A file whose
+        bytes differ, as with other separators, reads back without one, as a
+        file whose lines were changed does, and so incomplete. A capture with
+        no end record gets none.
         """
         out: list[dict[str, Any]] = [self.header.to_json()]
         if self.machine is not None:
@@ -14667,8 +14788,21 @@ class Capture(_Coerced):
             out.append(cost.to_json())
         out += [n.to_json() for n in self.notes]
         if self.end is not None:
-            out.append(self.end.to_json())
+            digest = hashlib.sha256()
+            for record in out:
+                digest.update(capture_line(record))
+            end = dataclasses.replace(self.end, sha256_of_preceding=digest.hexdigest())
+            out.append(end.to_json())
         return out
+
+    def to_jsonl(self) -> bytes:
+        """Return the bytes of ``capture.jsonl`` for the capture: each record of ``to_records`` on
+        one line, written as a run writes it (``pairbench.model.capture_line``).
+
+        A file of these bytes reads back with its end record, and so with the
+        status that record gives: complete when the capture is.
+        """
+        return b"".join(capture_line(record) for record in self.to_records())
 
     @classmethod
     def from_records(
@@ -15538,7 +15672,9 @@ class TwinCheck(_Model):
     rounds, ``None`` when at most one round was scored. ``p_corrected`` is
     ``p_raw`` corrected with Holm's method across the sides of the run that
     have one, and ``None`` where ``p_raw`` is; the note ``twin_differs`` is
-    given for a side whose ``p_corrected`` lies below 0.05.
+    given for a side whose corrected p-value lies below 1/20, compared as the
+    exact Holm correction of the sign test's fraction, not as the float
+    ``p_corrected``.
     """
 
     OPTIONAL: ClassVar[frozenset[str] | None] = frozenset()
@@ -15638,6 +15774,32 @@ class EnergyInfo(_Model):
 
     scope: str = ENERGY_SCOPE
     excludes: tuple[str, ...] = ENERGY_EXCLUDES
+
+
+@dataclass(frozen=True)
+class MatchingInfo(_Model):
+    """How ``pairbench compare --matching`` read its text capture files.
+
+    ``runs`` is the number of runs of the text the files make together: one
+    per banner, or one when it holds none. ``malformed_rows`` counts the rows
+    that did not read, over every run, and ``kept_rows`` the rows kept.
+    ``left_out_rows`` counts the kept rows of the two compared sides that the
+    two-sided view left out because no pass-order line of their run named
+    both sides before them; ``other_side_rows`` counts the kept rows of every
+    other side. ``refusal`` is ``None``, or, when the matching mode refused
+    the comparison, the machine-readable detail of that refusal: ``check``
+    names the check that refused, and the other keys are that check's counts,
+    run and row indices, and line numbers.
+    """
+
+    OPTIONAL: ClassVar[frozenset[str] | None] = frozenset({"refusal"})
+
+    runs: int
+    malformed_rows: int
+    kept_rows: int
+    left_out_rows: int
+    other_side_rows: int
+    refusal: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -15832,7 +15994,8 @@ class Results(_Model):
     ``launch_cost`` is ``None``, and its key absent from the written
     document, when no cost of a launch was measured. ``twin_checks`` holds
     one combined check per side that has a twin; a document written without
-    it reads as holding none.
+    it reads as holding none. ``matching`` is ``None``, and its key absent,
+    unless ``pairbench compare --matching`` read the captures.
     """
 
     OPTIONAL: ClassVar[frozenset[str] | None] = frozenset(
@@ -15845,6 +16008,7 @@ class Results(_Model):
             "plots",
             "diagnostics",
             "twin_checks",
+            "matching",
         }
     )
 
@@ -15871,17 +16035,19 @@ class Results(_Model):
     figures: Mapping[str, Figure] = field(default_factory=dict)
     artifacts: Artifacts = field(default_factory=Artifacts)
     energy: EnergyInfo | None = None
+    matching: MatchingInfo | None = None
     schema: Literal["pairbench/results/v1"] = SCHEMA_RESULTS
 
     def to_json(self) -> dict[str, Any]:
         """Return the results document as a plain dict, ``schema`` first.
 
-        ``energy`` is present only when power was sampled, and
-        ``launch_cost`` only when the cost of a launch was measured. In a
-        results document the cost carries no record type.
+        ``energy`` is present only when power was sampled, ``launch_cost``
+        only when the cost of a launch was measured, and ``matching`` only
+        when ``pairbench compare --matching`` read the captures. In a results
+        document the cost carries no record type.
         """
         body = super().to_json()
-        for key in ("energy", "launch_cost"):
+        for key in ("energy", "launch_cost", "matching"):
             if body[key] is None:
                 del body[key]
         return {"schema": body.pop("schema"), **body}
@@ -16382,6 +16548,7 @@ __all__ = [
     "MachineRecord",
     "MachineState",
     "MachineSummary",
+    "MatchingInfo",
     "Note",
     "ObjectDiff",
     "Observation",
@@ -16447,6 +16614,7 @@ __all__ = [
     "direction_outcome",
     "driver_text",
     "env_pad_length",
+    "exact_alpha",
     "exceeded",
     "family_words",
     "figure_key",

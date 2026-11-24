@@ -153,6 +153,26 @@ def test_a_line_that_is_no_object_is_refused(tmp_path: Path) -> None:
     assert "line 2 of capture.jsonl is not a capture record" in caught.value.message
 
 
+@pytest.mark.parametrize(
+    ("line", "said"),
+    [
+        pytest.param(b'{"t": []}\n', "not a capture record: record type []", id="list"),
+        pytest.param(b'{"t": {}}\n', "not a capture record: record type {}", id="object"),
+    ],
+)
+def test_a_record_type_that_is_no_text_is_refused(tmp_path: Path, line: bytes, said: str) -> None:
+    path = tmp_path / "capture.jsonl"
+    _write(path)
+    lines = path.read_bytes().splitlines(keepends=True)
+    lines.insert(1, line)
+    path.write_bytes(b"".join(lines))
+    with pytest.raises(Refusal) as caught:
+        JsonlReader().read(path)
+    assert caught.value.code == "E_USAGE"
+    assert caught.value.exit_code == 2
+    assert caught.value.message == said
+
+
 DEEP = b"[" * 100_000
 
 

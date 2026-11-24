@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from pairbench.api import Notify, ReportOptions
+    from pairbench.capture.matching import MatchingRead
+    from pairbench.capture.matching import MatchingView as MatchingView
     from pairbench.errors import Refusal
     from pairbench.model import (
         Capture,
@@ -120,6 +122,7 @@ __all__ = [
     "Side",
     "__version__",
     "analyse",
+    "check_matching_pool",
     "check_pool",
     "draw",
     "explain",
@@ -128,6 +131,8 @@ __all__ = [
     "load_diagnostics",
     "load_results",
     "plan",
+    "read_text_matching",
+    "refuse_matching_pool",
     "render",
     "run",
 ]
@@ -258,10 +263,11 @@ def check_pool(captures: Sequence[Capture], *, allow_mixed_machines: bool = Fals
     """Run the checks that pooling ``captures`` in one analysis makes, and return what they refuse.
 
     The checks and their refusals are those of ``analyse``, which runs the
-    same code: the same capture, file or bytes given twice
-    (``E_POOL_SAME``), identical rows (``E_POOL_IDENTICAL_ROWS``), a truncated
-    copy (``E_POOL_TRUNCATED_COPY``), a capture of one side against its twins
-    pooled with a comparison (``E_POOL_MIXED_PURPOSE``), a side, workload,
+    same code: the same capture, file or bytes given twice, or of a file a
+    reader splits into runs the same run (``E_POOL_SAME``), identical rows
+    (``E_POOL_IDENTICAL_ROWS``), a truncated copy (``E_POOL_TRUNCATED_COPY``),
+    a capture of one side against its twins pooled with a comparison
+    (``E_POOL_MIXED_PURPOSE``), a side, workload,
     setup or working folder that changed (``E_POOL_SIDE_DRIFT``), other cases
     or units (``E_POOL_CASES``), another machine (``E_POOL_MACHINE``, not
     listed with ``allow_mixed_machines``) and names a run marked that cannot
@@ -282,6 +288,76 @@ def check_pool(captures: Sequence[Capture], *, allow_mixed_machines: bool = Fals
         raise Refusal("E_USAGE", "check_pool takes a list of captures")
     pool_refusals: CheckPool = delegate("check_pool")
     return pool_refusals(tuple(captures), allow_mixed_machines=allow_mixed_machines)
+
+
+def check_matching_pool(read: MatchingRead) -> list[Refusal]:
+    """Run the pool checks of a read in the matching mode, and return every refusal they find.
+
+    The runs of ``read`` pool unless one is a copy of another; no other
+    difference between them is refused. The checks run in this order, and
+    each refusal names its check under ``check`` in its ``detail``:
+
+    - ``identical_written_rows`` (``E_POOL_IDENTICAL_ROWS``): a run whose
+      five-field lines, as written, repeat an earlier run's, paired with the
+      earliest run that holds them; ``runs`` gives the two run indices,
+      earlier first, and ``rows`` their row count.
+    - ``written_stretch`` (``E_POOL_TRUNCATED_COPY``): a run whose lines are a
+      stretch of another run's, its last line whole or torn; ``copy_run``,
+      ``original_run``, ``copy_rows``, ``original_rows``, ``start_row``,
+      ``last_row``, ``torn`` and ``rows_matched`` say where.
+    - ``identical_rows`` (``E_POOL_IDENTICAL_ROWS``) and ``truncated_copy``
+      (``E_POOL_TRUNCATED_COPY``): the copy checks of ``analyse`` over the
+      kept rows of two runs, compared by side, case, value and where each
+      round begins, two NaN values equal however each is written; ``runs``
+      gives the two run indices. Each pair of runs, in index order, is
+      compared in two to four orders of its rows before the next pair: the
+      order of the text; the order the rows ran, as the run's pass-order and
+      ``sides=`` lines in this mode give it, where a line with a tab at
+      either end, which this mode reads as metadata, counts as the same line
+      without the tab; and, where they differ for a run of the pair, that
+      order as the lines without a tab give it, and the order a text capture
+      of each run holds them, from the lines a text capture of the run reads,
+      or of the one part of the run that holds every kept row of it, where
+      there is one (below). Then the rows whose value is not finite are left
+      out, in those orders and as a strict and a lenient text capture leave
+      them out. A pair is
+      listed once, at the first order that finds a copy. Then the parts of
+      one run that text captures read as runs of their own are compared in
+      the same orders, with each other and with the runs of one part, a pair
+      of two runs refused before left out: the rows of a run in each input
+      it stands in, and, in the input that holds its banner, above and below
+      the banner, as for a first input without a banner and the input after
+      it, or a file that begins with a byte-order mark, which this mode reads
+      as part of its first line. ``runs`` then gives the run of each part and
+      ``lines`` the line on which each begins. So a copy refused when its
+      runs are read as text captures is refused here too, but for one that
+      text captures find only with the rows whose value is zero or less,
+      which this mode reads as malformed, two runs without a row a text
+      capture keeps, which text captures find identical, and a text capture
+      that a line this mode alone takes for a banner splits into two runs.
+
+    The first two compare ``MatchingRun.pool_rows`` and number rows from 0
+    in that list. The first refusal is the one ``refuse_matching_pool``
+    raises; an empty list says the runs pool. A pair of runs can be listed by
+    more than one check. Nothing is raised for a copy and nothing is printed;
+    an argument that is not a ``MatchingRead`` is refused with ``E_USAGE``.
+    """
+    from pairbench.capture.matching_pool import pool_refusals
+
+    return pool_refusals(read)
+
+
+def refuse_matching_pool(read: MatchingRead) -> None:
+    """Raise the first refusal ``check_matching_pool`` finds; return when the runs of ``read`` pool.
+
+    The checks run in the order ``check_matching_pool`` gives and stop at
+    the first refusal. Nothing is printed.
+    """
+    from pairbench.capture.matching_pool import first_refusal
+
+    found = first_refusal(read)
+    if found is not None:
+        raise found
 
 
 def load_capture(
@@ -323,6 +399,33 @@ def load_capture(
                 return _read_leniently(candidate, name, file)
             return candidate.read(file)
     raise Refusal("E_USAGE", f"no capture reader recognises {file.name}; name one with a reader")
+
+
+def read_text_matching(
+    inputs: str | Path | Sequence[str | Path], *, default_order: str
+) -> MatchingRead:
+    """Read inputs of the text format in the matching mode and return every row it keeps.
+
+    Each input is a ``Path``, read as a UTF-8 file, or a ``str``, the text
+    itself; the inputs are read as one text, joined in the order given with
+    one newline between them. Runs are numbered from 0 across that text. A
+    line whose text, with the white space around it removed, starts with
+    ``## host`` opens a run; the lines above the first one belong to run 0,
+    with that banner's lines. ``default_order`` is the pass-order text of the
+    rows that no pass-order line orders: those from a banner to the first
+    ``pass_order=`` line of its run, and those after a ``pass_order=`` line
+    with nothing after it.
+
+    No row and no metadata refuses the read, and nothing is printed: a row
+    that does not read, or whose value is zero or less, is counted as
+    malformed and skipped. Sides, cases and suites are kept exactly as
+    written, and a cell given twice keeps both rows. The returned
+    ``MatchingRead`` gives a two-sided view of two sides with ``two_sided``.
+    A file that cannot be read or is not UTF-8 is refused with ``E_USAGE``.
+    """
+    from pairbench.capture.matching import read
+
+    return read(inputs, default_order=default_order)
 
 
 def _read_leniently(chosen: Any, name: str, file: Path) -> list[Capture]:

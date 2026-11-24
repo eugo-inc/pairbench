@@ -8,6 +8,7 @@ to encode is written as an escape; every other character is printed as it is.
 
 from __future__ import annotations
 
+import json
 import random
 
 import pytest
@@ -15,7 +16,7 @@ import pytest
 from pairbench import api
 from pairbench.cli import common
 from pairbench.cli import run as run_command
-from pairbench.errors import Refusal, printable, unprintable
+from pairbench.errors import Refusal, lone_surrogate, printable, surrogate_place, unprintable
 from pairbench.model import GateRecord
 
 # The characters that end a line besides the control characters, and the Bidi_Control
@@ -126,9 +127,9 @@ def test_every_printed_line_escapes_the_class(capsys: pytest.CaptureFixture[str]
     assert (captured.out, captured.err) == ("", f"pairbench: {SHOWN}\n")
 
 
-def test_a_refusal_in_a_kept_note_escapes_only_its_control_characters() -> None:
+def test_a_refusal_in_a_kept_note_is_kept_as_the_refusal_holds_it() -> None:
     refusal = Refusal("E_USAGE", "case a\x1bb\u202ec\\x1b")
-    assert run_command._failure(refusal) == "E_USAGE: case a\\x1bb\u202ec\\x1b"
+    assert run_command._failure(refusal) == "E_USAGE: case a\x1bb\u202ec\\x1b"
     assert run_command._failure(ValueError("x\u202e")) == "ValueError"
 
 
@@ -257,21 +258,140 @@ def test_errors_reads_a_printed_text_back() -> None:
         assert unprintable(shown) == decode(shown) == text, ascii(text)
 
 
+def test_errors_reads_back_every_character_printable_writes() -> None:
+    wrong = []
+    for code in range(0x110000):
+        char = chr(code)
+        # The character alone, and after a typed backslash and before hex digits, where an
+        # escape that ran on, or one read from the typed backslash, would read wrong.
+        for text in (char, f"\\{char}0f"):
+            if unprintable(printable(text)) != text:
+                wrong.append(f"U+{code:04X}")
+                break
+    assert wrong == []
+
+
 @pytest.mark.parametrize(
-    "shown",
+    ("shown", "text"),
     [
-        pytest.param("\\", id="lone-backslash"),
-        pytest.param("a\\q", id="unknown-escape"),
-        pytest.param("\\x1", id="short-x"),
-        pytest.param("\\U0001f60", id="short-big-u"),
-        pytest.param("\\x1B", id="upper-case-digits"),
+        pytest.param("\\", "\\", id="lone-backslash"),
+        pytest.param("a\\", "a\\", id="backslash-at-the-end"),
+        pytest.param("a\\q", "a\\q", id="unknown-escape"),
+        pytest.param("\\x1", "\\x1", id="short-x"),
+        pytest.param("\\u00e", "\\u00e", id="short-u"),
+        pytest.param("\\U0001f60", "\\U0001f60", id="short-big-u"),
+        pytest.param("\\x1B", "\\x1B", id="upper-case-digits"),
+        pytest.param("\\x-1", "\\x-1", id="sign"),
+        pytest.param("\\U00110000", "\\U00110000", id="past-the-last-code-point"),
+        pytest.param("\\U7fffffff", "\\U7fffffff", id="largest-c-int"),
+        pytest.param("\\U80000000", "\\U80000000", id="past-a-c-int"),
+        pytest.param("\\Uffffffff", "\\Uffffffff", id="largest-of-eight-digits"),
+        pytest.param("a\\Uffffffff\\x41\\q\\n", "a\\UffffffffA\\q\n", id="mixed"),
+        pytest.param("\\\\Uffffffff", "\\Uffffffff", id="typed-backslash"),
     ],
 )
-def test_errors_refuses_a_text_printable_does_not_write(shown: str) -> None:
-    with pytest.raises(ValueError, match=r"^no escape that printable writes at "):
-        unprintable(shown)
+def test_errors_keeps_a_backslash_it_cannot_read_as_it_is(shown: str, text: str) -> None:
+    assert unprintable(shown) == text
+
+
+def test_errors_reads_a_surrogate_and_the_last_code_point() -> None:
+    assert unprintable("\\ud800\\udfff") == "\ud800\udfff"
+    assert unprintable("\\U0000d800\\U0010ffff") == "\ud800\U0010ffff"
+
+
+def test_errors_reads_any_text_without_raising() -> None:
+    rng = random.Random(15485863)
+    pieces = ["\\", "x", "u", "U", "0", "1", "7", "8", "f", "F", "d8", "110000", "ffffffff"]
+    for _ in range(20000):
+        shown = "".join(rng.choice(pieces) for _ in range(rng.randrange(12)))
+        assert isinstance(unprintable(shown), str), ascii(shown)
 
 
 def test_errors_reads_an_escape_printable_does_not_write_leniently() -> None:
     assert unprintable("\\x41\\u00e9\\U0001f680") == "A\u00e9\U0001f680"
-    assert "never writes" in " ".join((unprintable.__doc__ or "").split())
+    doc = " ".join((unprintable.__doc__ or "").split())
+    assert "never writes" in doc
+    assert "It never raises." in doc
+
+
+@pytest.mark.parametrize(
+    ("value", "said"),
+    [
+        pytest.param("a\ud800", "a\\ud800", id="a-text"),
+        pytest.param(["ok", {"b": "\udc00"}], "[1].b: \\udc00", id="nested"),
+        pytest.param({"a\ud800": 1}, "the key a\\ud800", id="a-key"),
+        pytest.param({"x": {"a\udfff": 1}}, "x: the key a\\udfff", id="a-key-inside"),
+        pytest.param({"a\x1b": ["\ud800"]}, "a\\x1b[0]: \\ud800", id="an-escaped-key-on-the-way"),
+        pytest.param({"a": "\ud800", "b": "\udbff"}, "a: \\ud800", id="the-first-in-order"),
+    ],
+)
+def test_errors_names_the_first_text_with_a_lone_surrogate(value: object, said: str) -> None:
+    assert lone_surrogate(value) == f"{said} holds a lone surrogate, which is not UTF-8 text"
+
+
+# A surrogate pair as JSON writes it, which reads as one character.
+PAIR_IN_JSON = '"\\ud83d' + '\\ude80"'
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param({"a": ["\U0001f680", json.loads(PAIR_IN_JSON)]}, id="a-pair"),
+        pytest.param({"a": [1, 2.5, None, True, chr(0xE9) + chr(0x10FFFF) + chr(0xFFFD)]}),
+        pytest.param("plain", id="a-plain-text"),
+    ],
+)
+def test_errors_finds_no_lone_surrogate_where_there_is_none(value: object) -> None:
+    assert lone_surrogate(value) is None
+
+
+def test_errors_reads_a_deep_document_for_lone_surrogates_without_recursing() -> None:
+    deep: object = "\ud800"
+    for _ in range(5000):
+        deep = [deep]
+    assert lone_surrogate(deep) == (
+        "[0]" * 5000 + ": \\ud800 holds a lone surrogate, which is not UTF-8 text"
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "said"),
+    [
+        pytest.param("x" * 100000 + "\ud800", "..." + "x" * 40 + "\\ud800", id="long-before"),
+        pytest.param("\ud800" + "y" * 100000, "\\ud800" + "y" * 40 + "...", id="long-after"),
+        pytest.param(
+            "x" * 41 + "\udcff" + "y" * 41,
+            "..." + "x" * 40 + "\\udcff" + "y" * 40 + "...",
+            id="long-both",
+        ),
+        pytest.param("x" * 40 + "\udcff" + "y" * 40, "x" * 40 + "\\udcff" + "y" * 40, id="whole"),
+        pytest.param(
+            "\x1b" * 41 + "\udcff\udcfe", "..." + "\\x1b" * 40 + "\\udcff\\udcfe", id="escaped"
+        ),
+    ],
+)
+def test_errors_shows_at_most_forty_characters_on_each_side_of_a_lone_surrogate(
+    value: str, said: str
+) -> None:
+    assert lone_surrogate({"p": value}) == (
+        f"p: {said} holds a lone surrogate, which is not UTF-8 text"
+    )
+    assert lone_surrogate({value: 1}) == (
+        f"the key {said} holds a lone surrogate, which is not UTF-8 text"
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "place"),
+    [
+        pytest.param("a\udcff", "", id="a-text"),
+        pytest.param({"sides": {"new": {"argv": ("x", "secret\udcff")}}}, "sides.new.argv[1]"),
+        pytest.param({"env": {"A\udcff": "b"}}, "a key of env", id="a-key"),
+        pytest.param({"A\udcff": "b"}, "a key", id="a-key-at-the-top"),
+        pytest.param({"a": ["ok", "\U0001f680"]}, None, id="none"),
+    ],
+)
+def test_errors_names_the_place_of_a_surrogate_without_its_text(
+    value: object, place: str | None
+) -> None:
+    assert surrogate_place(value) == place

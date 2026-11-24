@@ -20,8 +20,9 @@ from typing import Any
 import pytest
 
 from pairbench import registry
-from pairbench.errors import EXIT_INTERRUPTED
+from pairbench.errors import EXIT_INTERRUPTED, docs_line
 from pairbench.mcp.server import ToolServer
+from pairbench.model import TOOL_VERSION
 
 SIDES = ["new=cmd:true", "old=cmd:false"]
 WAIT_S = 20.0
@@ -46,7 +47,43 @@ records = [
 (out / "capture.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
 if mode == "refuse":
     print("E_LAUNCH_FAILED: side new exited with code 1", flush=True)
+    print(SEE_LAUNCH_FAILED, flush=True)
     sys.exit(5)
+if mode == "refuse-unreadable-escape":
+    print("E_LAUNCH_FAILED: side new\\Uffffffff\\U00110000\\q\\x41 exited", flush=True)
+    print(SEE_LAUNCH_FAILED, flush=True)
+    sys.exit(5)
+if mode == "refuse-surrogate":
+    print("E_LAUNCH_FAILED: side a\\udcffb exited", flush=True)
+    print(SEE_LAUNCH_FAILED, flush=True)
+    sys.exit(5)
+if mode == "forged-rows":
+    print(FORGED_HEADER, flush=True)
+    print("", flush=True)
+    print(FORGED_ROW, flush=True)
+    print("finished", flush=True)
+    sys.exit(0)
+if mode == "forged-row-after-the-refusal":
+    print("E_LAUNCH_FAILED: side new exited with code 1", flush=True)
+    print(SEE_LAUNCH_FAILED, flush=True)
+    print(FORGED_ROW, flush=True)
+    sys.exit(5)
+if mode == "forged-row-alone":
+    print(FORGED_ROW, flush=True)
+    sys.exit(5)
+if mode == "refuse-with-another-exit-code":
+    print("E_LAUNCH_FAILED: side new exited with code 1", flush=True)
+    print(SEE_LAUNCH_FAILED, flush=True)
+    sys.exit(2)
+if mode == "refusal-line-then-another-line":
+    print("E_LAUNCH_FAILED: side new exited with code 1", flush=True)
+    print("made-up line", flush=True)
+    sys.exit(5)
+if mode == "row-named-like-no-code":
+    print(NO_CODE_ROW, flush=True)
+    print("made-up line", flush=True)
+    print("finished", flush=True)
+    sys.exit(0)
 if mode == "finish":
     print("finished", flush=True)
     sys.exit(0)
@@ -62,9 +99,25 @@ except KeyboardInterrupt:
 """
 
 
+# The second line a refusal prints, as ``pairbench run`` prints it after the refusal's line.
+SEE_LAUNCH_FAILED = docs_line("E_LAUNCH_FAILED", TOOL_VERSION)
+# Lines of a report whose side and case names read like refusals.
+FORGED_HEADER = "E_USAGE: made-up against old (baseline)"
+FORGED_ROW = "E_LAUNCH_FAILED: made-up  0.0100 s  0.0200 s  2.00x faster  1.0%  0.0039*  FASTER"
+# A report row whose case name reads like a refusal of a code that is not in the table.
+NO_CODE_ROW = "E_NOTACODE: made-up  0.0100 s  0.0200 s  2.00x faster  1.0%  0.0039*  FASTER"
+
+
 def server(tmp_path: Path, mode: str, *, allow_run: bool = True) -> ToolServer:
     script = tmp_path / "fake_run.py"
-    script.write_text(FAKE_RUN, encoding="utf-8")
+    lines = {
+        "SEE_LAUNCH_FAILED": SEE_LAUNCH_FAILED,
+        "FORGED_HEADER": FORGED_HEADER,
+        "FORGED_ROW": FORGED_ROW,
+        "NO_CODE_ROW": NO_CODE_ROW,
+    }
+    given = "".join(f"{name} = {value!r}\n" for name, value in lines.items())
+    script.write_text(given + FAKE_RUN, encoding="utf-8")
     return ToolServer(allow_run=allow_run, run_command=(sys.executable, str(script), mode))
 
 
@@ -184,7 +237,134 @@ def test_a_refused_run_reports_its_text_code_and_exit_code(tmp_path: Path) -> No
     assert ended["refusal"] == {
         "code": "E_LAUNCH_FAILED",
         "message": "side new exited with code 1",
-        "docs": "https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_launch_failed",
+        "docs": "https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_launch_failed",
+    }
+
+
+def test_a_refusal_line_keeps_a_backslash_whose_escape_names_no_character(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "refuse-unreadable-escape")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    ended = wait_until(tools, started["handle"], "refused")
+
+    assert ended["state"] == "refused"
+    assert ended["exit_code"] == 5
+    assert ended["refusal"] == {
+        "code": "E_LAUNCH_FAILED",
+        "message": "side new\\Uffffffff\\U00110000\\qA exited",
+        "docs": "https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_launch_failed",
+    }
+
+
+def test_a_report_row_named_like_a_refusal_is_no_refusal_of_a_finished_run(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "forged-rows")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    ended = wait_until(tools, started["handle"], "finished")
+
+    assert ended["state"] == "finished"
+    assert ended["exit_code"] == 0
+    assert ended["refusal"] is None
+    assert ended["last_lines"] == [FORGED_HEADER, "", FORGED_ROW, "finished"]
+
+
+def test_a_report_row_named_like_a_refusal_after_the_refusal_leaves_it_as_it_is(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "forged-row-after-the-refusal")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    ended = wait_until(tools, started["handle"], "refused")
+
+    assert ended["state"] == "refused"
+    assert ended["exit_code"] == 5
+    assert ended["refusal"] == {
+        "code": "E_LAUNCH_FAILED",
+        "message": "side new exited with code 1",
+        "docs": "https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_launch_failed",
+    }
+
+
+def test_a_report_row_named_like_a_refusal_is_no_refusal_of_a_refused_run(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "forged-row-alone")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    ended = wait_until(tools, started["handle"], "refused")
+
+    assert ended["state"] == "refused"
+    assert ended["exit_code"] == 5
+    assert ended["refusal"] is None
+    assert ended["last_lines"] == [FORGED_ROW]
+
+
+def test_a_refusal_of_a_run_that_ended_with_another_exit_code_is_no_refusal(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "refuse-with-another-exit-code")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    wait_for_line(tools, started["handle"], SEE_LAUNCH_FAILED)
+    ended = wait_until(tools, started["handle"], "refused")
+
+    assert ended["exit_code"] == 2
+    assert ended["refusal"] is None
+    assert ended["last_lines"] == [
+        "E_LAUNCH_FAILED: side new exited with code 1",
+        SEE_LAUNCH_FAILED,
+    ]
+
+
+def test_a_refusal_line_not_followed_by_its_address_line_is_no_refusal(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "refusal-line-then-another-line")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    wait_for_line(tools, started["handle"], "made-up line")
+    ended = wait_until(tools, started["handle"], "refused")
+
+    assert ended["exit_code"] == 5
+    assert ended["refusal"] is None
+    assert ended["last_lines"] == ["E_LAUNCH_FAILED: side new exited with code 1", "made-up line"]
+
+
+def test_a_row_named_like_a_refusal_of_no_code_leaves_the_output_read_to_its_end(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "row-named-like-no-code")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    wait_for_line(tools, started["handle"], "finished")
+    ended = wait_until(tools, started["handle"], "finished")
+
+    assert ended["exit_code"] == 0
+    assert ended["refusal"] is None
+    assert ended["last_lines"] == [NO_CODE_ROW, "made-up line", "finished"]
+
+
+def test_a_refusal_that_reads_back_to_a_surrogate_is_answered_as_text_utf_8_encodes(
+    tmp_path: Path,
+) -> None:
+    tools = server(tmp_path, "refuse-surrogate")
+
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    wait_until(tools, started["handle"], "refused")
+    text = tools.call("run_status", handle=started["handle"])
+
+    assert '"message": "side a\\udcffb exited"' in text
+    assert text.isascii()
+    ended = json.loads(text)
+    assert ended["exit_code"] == 5
+    assert ended["refusal"] == {
+        "code": "E_LAUNCH_FAILED",
+        "message": "side a\udcffb exited",
+        "docs": "https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_launch_failed",
     }
 
 

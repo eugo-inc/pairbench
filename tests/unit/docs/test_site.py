@@ -395,6 +395,31 @@ def test_the_site_asks_for_the_node_version_the_pinned_astro_asks_for(repo_root:
         assert f"Node.js {floor} or newer" in text, name
 
 
+# The published advisories against astro: the address, the oldest and the newest version each
+# names as affected. npm audit lists them with these ranges.
+ASTRO_ADVISORIES = (
+    ("https://github.com/advisories/GHSA-mh32-jxcr-mh9f", (0, 0, 0), (7, 4, 4)),
+    ("https://github.com/advisories/GHSA-r3h5-4585-7x3w", (5, 14, 3), (7, 4, 6)),
+)
+
+
+def version_tuple(version: str) -> tuple[int, ...]:
+    """A version as numbers, so 7.4.13 sorts after 7.4.7."""
+    return tuple(int(part) for part in version.split("-")[0].split("."))
+
+
+def test_a_version_compares_by_its_numbers() -> None:
+    assert version_tuple("7.4.13") > version_tuple("7.4.7")
+    assert version_tuple("2.0.0-beta.2") == (2, 0, 0)
+
+
+def test_the_pinned_astro_is_outside_every_published_advisory(repo_root: Path) -> None:
+    packages = json.loads((repo_root / LOCK).read_text(encoding="utf-8"))["packages"]
+    locked = version_tuple(packages[ASTRO]["version"])
+
+    assert [url for url, low, high in ASTRO_ADVISORIES if low <= locked <= high] == []
+
+
 def test_the_python_package_needs_no_node(repo_root: Path) -> None:
     project = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
 

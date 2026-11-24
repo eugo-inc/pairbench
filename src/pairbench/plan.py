@@ -39,6 +39,7 @@ from pairbench.model import (
     Rule,
     compared_pairs,
     count_balance,
+    exact_alpha,
     min_rounds,
     plan_rows,
     planned_launches,
@@ -166,9 +167,21 @@ def _p_of_tail(tail: int, rounds: int) -> float:
     return min(1.0, (2 * tail) / (1 << rounds))
 
 
-def _significant(p: float, tests: int, rule: Rule) -> bool:
+def _significant(tail: int, rounds: int, tests: int, rule: Rule, alpha: Fraction) -> bool:
+    """Say whether the p-value of a one-sided ``tail`` of ``2**rounds`` outcomes passes alpha.
+
+    Under a rule that corrects the p-value it is weighted by ``tests``, the
+    first Holm multiplier. ``alpha`` is ``exact_alpha(rule.alpha)``. The
+    product and the compare are exact, as the analysis decides a verdict, and
+    run in whole numbers: ``weight * p < alpha`` with ``p = 2 * tail / 2**rounds``
+    (capped at 1) is ``weight * 2 * tail * b < a * 2**rounds`` for an alpha of
+    ``a / b``, so no step divides out a common factor.
+    """
     weight = tests if rule.p_source == "corrected" else 1
-    return weight * p <= rule.alpha if rule.p_inclusive else weight * p < rule.alpha
+    whole = 1 << rounds
+    left = weight * min(2 * tail, whole) * alpha.denominator
+    right = alpha.numerator * whole
+    return left <= right if rule.p_inclusive else left < right
 
 
 def rounds_to_agree(rounds: int, tests: int, rule: Rule) -> int | None:
@@ -187,10 +200,11 @@ def rounds_to_agree(rounds: int, tests: int, rule: Rule) -> int | None:
     # some count up to all of the rounds. Walk down from all of them, adding
     # one binomial term to the tail at each step, and stop at the first count
     # that fails: one pass, with no tail summed twice.
+    alpha = exact_alpha(rule.alpha)
     found = None
     term = tail = 1  # comb(rounds, 0): every round agrees
     for agree in range(rounds, rounds // 2, -1):
-        if not _significant(_p_of_tail(tail, rounds), tests, rule):
+        if not _significant(tail, rounds, tests, rule, alpha):
             break
         found = agree
         disagree = rounds - agree + 1
@@ -218,7 +232,7 @@ def most_primary_cases(rounds: int, subjects: int, rule: Rule) -> int | None:
     # n * 2 / 2**rounds stays below alpha, and a corrected p-value passes
     # while it stays below alpha, or reaches it under an inclusive rule.
     # Exact fractions keep the count right where a float would round it.
-    limit = Fraction(rule.alpha) * (1 << (rounds - 1))
+    limit = exact_alpha(rule.alpha) * (1 << (rounds - 1))
     bounds: list[int] = []
     if rule.min_rounds is None:
         bounds.append(math.ceil(limit) - 1)
@@ -631,7 +645,8 @@ def format_plan(
 
     Each line of the header and each cell of the table is escaped as ``errors.printable``
     writes it, so a name read from the config or the command line stays on its line, shows
-    in its own order and cannot drive a terminal. The plan itself keeps every name as it is.
+    in its own order and cannot drive a terminal; the tab between two cells is written as it
+    is. The plan itself keeps every name as it is.
 
     ``primary_cases`` is the number of primary cases once a warm-up has found
     them; the line on how often a serving experiment's round count catches a

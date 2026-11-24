@@ -62,6 +62,8 @@ SIGNATURES: dict[str, str] = {
     "check_pool": (
         "(captures: Sequence[Capture], *, allow_mixed_machines: bool = False) -> list[Refusal]"
     ),
+    "check_matching_pool": "(read: MatchingRead) -> list[Refusal]",
+    "refuse_matching_pool": "(read: MatchingRead) -> None",
     "load_capture": (
         "(path: Path | str, *, reader: str | None = None, strict: bool = True) -> list[Capture]"
     ),
@@ -78,6 +80,9 @@ SIGNATURES: dict[str, str] = {
         "max_round_charts: int = 12, note: Notify | None = None) -> list[Path]"
     ),
     "fill": "(template: str | Path, results: Results | Mapping[str, Results]) -> str",
+    "read_text_matching": (
+        "(inputs: str | Path | Sequence[str | Path], *, default_order: str) -> MatchingRead"
+    ),
 }
 
 SIDE_SIGNATURES: dict[str, str] = {
@@ -149,6 +154,7 @@ def test_the_names_the_package_exports() -> None:
         "Side",
         "__version__",
         "analyse",
+        "check_matching_pool",
         "check_pool",
         "draw",
         "explain",
@@ -157,6 +163,8 @@ def test_the_names_the_package_exports() -> None:
         "load_diagnostics",
         "load_results",
         "plan",
+        "read_text_matching",
+        "refuse_matching_pool",
         "render",
         "run",
     ]
@@ -166,8 +174,8 @@ def test_the_names_the_package_exports() -> None:
 
 def test_the_version_is_the_static_version_of_the_package() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project["version"] == "0.2.1"
-    assert pairbench.__version__ == "0.2.1"
+    assert project["version"] == "0.3.0"
+    assert pairbench.__version__ == "0.3.0"
     assert "dynamic" not in project
 
 

@@ -119,6 +119,16 @@
           "type": "null"
         }
       ]
+    },
+    "matching": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MatchingInfo"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
@@ -1136,6 +1146,41 @@
       ],
       "additionalProperties": false
     },
+    "MatchingInfo": {
+      "type": "object",
+      "description": "How pairbench compare --matching read its text capture files: the runs, the malformed and kept rows, the rows the two-sided view left out, and the detail of a refusal of the matching mode, whose check names the check that refused, or null when the matching mode did not refuse: a refusal of the analysis of the view, such as E_ORDER_NOT_VARIED, is listed under refusals only.",
+      "properties": {
+        "runs": {
+          "type": "integer"
+        },
+        "malformed_rows": {
+          "type": "integer"
+        },
+        "kept_rows": {
+          "type": "integer"
+        },
+        "left_out_rows": {
+          "type": "integer"
+        },
+        "other_side_rows": {
+          "type": "integer"
+        },
+        "refusal": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "runs",
+        "malformed_rows",
+        "kept_rows",
+        "left_out_rows",
+        "other_side_rows"
+      ],
+      "additionalProperties": false
+    },
     "Note": {
       "type": "object",
       "description": "A loud note: a stable code and a plain-language message.",
@@ -1852,7 +1897,7 @@
     },
     "TwinCheck": {
       "type": "object",
-      "description": "A side compared with its own twin over its primary cases combined. In each round the score is the median over the primary cases on which the side and its twin both have a finite value above zero: each gives the log of the side's value over its twin's, turned so that a positive score means the side looks better by the case's better direction; an odd number of such cases gives the log in the middle and an even number the mean of the two in the middle; a round with no such case is not scored, and a score of zero is a tie. The note twin_differs is given for a side whose p_corrected lies below 0.05. A difference on one case alone still shows in same_vs_same with its own p_raw; in a side with three or more primary cases it moves a round of the combined check only when other primary cases lean the same way.",
+      "description": "A side compared with its own twin over its primary cases combined. In each round the score is the median over the primary cases on which the side and its twin both have a finite value above zero: each gives the log of the side's value over its twin's, turned so that a positive score means the side looks better by the case's better direction; an odd number of such cases gives the log in the middle and an even number the mean of the two in the middle; a round with no such case is not scored, and a score of zero is a tie. The note twin_differs is given for a side whose corrected p-value lies below 1/20, compared as the exact Holm correction of the sign test's fraction, not as the float p_corrected. A difference on one case alone still shows in same_vs_same with its own p_raw; in a side with three or more primary cases it moves a round of the combined check only when other primary cases lean the same way.",
       "properties": {
         "side": {
           "type": "string"

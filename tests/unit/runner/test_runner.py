@@ -9,13 +9,14 @@ import itertools
 import json
 import os
 import sys
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 import pairbench
-from pairbench import registry
+from pairbench import api, registry
 from pairbench.api import (
     API_VERSION,
     DEFAULT_SEED,
@@ -52,6 +53,7 @@ from pairbench.model import (
     FILE_CAPTURE,
     FILE_PLAN,
     NOTE_CONTROL_CANNOT_REPEAT,
+    NOTE_CONTROL_CASE_MISSING,
     NOTE_CONTROL_NOT_JUDGED,
     NOTE_DRIVERS_DIFFER,
     NOTE_LAUNCH_COST_NOT_MEASURED,
@@ -899,6 +901,278 @@ def test_a_tool_version_the_driver_was_not_tested_with_is_noted_once(
     assert {x.tool_version for x in capture.launches} == {"9.0"}
 
 
+class _RewritingDriver:
+    """Reads like the made-up driver, then lets a test change what it read, and reports a
+    tool name and version."""
+
+    name: str = "rewriting"
+    api_version: int = API_VERSION
+    where: str = "in_side"
+    clock_cases: tuple[str, ...] = ("wall",)
+
+    def __init__(
+        self,
+        inner: Any,
+        change: Callable[[Sample], Sample] = lambda sample: sample,
+        tool: ToolVersion | None = None,
+    ) -> None:
+        self.inner = inner
+        self.change = change
+        self.tool = tool
+
+    def prepare(self, ctx: DriverContext, argv: list[str]) -> Invocation:
+        return Invocation.single(argv)
+
+    def read(self, ctx: DriverContext, artifacts: Path) -> list[Sample]:
+        return [self.change(sample) for sample in self.inner.read(ctx, artifacts)]
+
+    def default_primary(self, samples: list[Sample]) -> list[str]:
+        return list(self.inner.default_primary(samples))
+
+    def tool_version(self, ctx: DriverContext, artifacts: Path) -> ToolVersion | None:
+        return self.tool
+
+
+# The command line a run records: a run started under it writes its results.
+SHOWN_COMMAND = ["pairbench", "run"]
+
+
+def _rewriting(
+    world: World, tmp_path: Path, driver: _RewritingDriver, *, shown: bool = True
+) -> Refusal | Capture:
+    """Run with the rewriting driver, as the command line runs it or, without ``shown``, as a
+    call of the Python API does."""
+    registry.register(GROUP_DRIVERS, "rewriting", driver)
+    experiment = dataclasses.replace(_experiment(), driver="rewriting")
+    try:
+        if not shown:
+            return _run(world, tmp_path, experiment)
+        with api.command_line(SHOWN_COMMAND):
+            return _run(world, tmp_path, experiment)
+    except Refusal as refusal:
+        return refusal
+
+
+def test_a_metric_a_plug_in_driver_read_with_a_lone_surrogate_fails_the_launch_and_keeps_it(
+    world: World, tmp_path: Path
+) -> None:
+    def change(sample: Sample) -> Sample:
+        if sample.case != "work":
+            return sample
+        return dataclasses.replace(sample, metric="w\ud800rk")
+
+    refusal = _rewriting(world, tmp_path, _RewritingDriver(registry.driver("fakedriver"), change))
+    assert isinstance(refusal, Refusal)
+    assert refusal.code == "E_LAUNCH_FAILED"
+    assert refusal.exit_code == EXIT_LAUNCH
+    assert refusal.message == (
+        "side 'new': the metric of case 'work': w\\ud800rk holds a lone surrogate, which is "
+        "not UTF-8 text"
+    )
+    records = _records(tmp_path)
+    launches = [r for r in records if r["t"] == "launch"]
+    assert len(world.requests) == 1
+    assert [(r["name"], r["phase"], r["rc"]) for r in launches] == [("new", "warmup", 0)]
+    assert records[-1]["t"] == "end"
+    assert records[-1]["status"] == "failed"
+
+
+class _ControlAddingDriver(_RewritingDriver):
+    """Reads like the rewriting driver, and adds to what a launch of the positive control
+    read the samples ``added`` makes of it."""
+
+    def __init__(self, inner: Any, added: Callable[[list[Sample]], list[Sample]]) -> None:
+        super().__init__(inner)
+        self.added = added
+
+    def read(self, ctx: DriverContext, artifacts: Path) -> list[Sample]:
+        read = super().read(ctx, artifacts)
+        return read + self.added(read) if ctx.name.endswith("~twice") else read
+
+
+def _with_case(case: str, better: str = "lower") -> Callable[[list[Sample]], list[Sample]]:
+    """Add a copy of the case ``work`` named ``case``, with ``better`` as given."""
+
+    def added(read: list[Sample]) -> list[Sample]:
+        return [
+            dataclasses.replace(sample, case=case, better=better)
+            for sample in read
+            if sample.case == "work"
+        ]
+
+    return added
+
+
+def _one_run_only(case: str, seconds: float) -> Callable[[list[Sample]], list[Sample]]:
+    """Add a copy of the case ``work`` named ``case`` to the one run of the control whose
+    ``work`` reads ``seconds``."""
+
+    def added(read: list[Sample]) -> list[Sample]:
+        return [
+            dataclasses.replace(sample, case=case)
+            for sample in read
+            if sample.case == "work" and sample.value == seconds
+        ]
+
+    return added
+
+
+# What the first and the second run of the positive control read in the tests of a case one
+# of them alone gives: the first reads the baseline's time, the second the time set here.
+FIRST_RUN_SECONDS = 3.0
+SECOND_RUN_SECONDS = 7.25
+CASE_HELD = "w\ud800rk"
+NOTE_CASE_HELD_MISSING = (
+    "case 'w\\ud800rk' came from only one of the two runs of the positive control and has "
+    "no value for it"
+)
+CASE_HELD_REFUSED = (
+    "side 'old~twice': the case w\\ud800rk holds a lone surrogate, which is not UTF-8 text"
+)
+
+
+def _utf8_records(tmp_path: Path) -> list[dict[str, Any]]:
+    """The records of the capture, each of which UTF-8 text can hold."""
+    records = _records(tmp_path)
+    for record in records:
+        json.dumps(record, ensure_ascii=False).encode("utf-8")
+    return records
+
+
+@pytest.mark.parametrize(
+    "seconds", [FIRST_RUN_SECONDS, SECOND_RUN_SECONDS], ids=["first-run", "second-run"]
+)
+def test_a_case_with_a_lone_surrogate_the_control_does_not_record_is_noted_and_the_run_ends(
+    world: World, tmp_path: Path, seconds: float
+) -> None:
+    world.behaviour.second_seconds = SECOND_RUN_SECONDS
+    assert world.behaviour.seconds["old"] == FIRST_RUN_SECONDS
+    driver = _ControlAddingDriver(registry.driver("fakedriver"), _one_run_only(CASE_HELD, seconds))
+    ran = _rewriting(world, tmp_path, driver)
+    assert isinstance(ran, Capture)
+    noted = [n.message for n in ran.notes if n.code == NOTE_CONTROL_CASE_MISSING]
+    assert noted == [NOTE_CASE_HELD_MISSING]
+    records = _utf8_records(tmp_path)
+    assert records[-1]["t"] == "end"
+    assert records[-1]["status"] == "complete"
+    assert {o.case for o in ran.observations if o.name == "old~twice"} >= {"wall", "work"}
+    assert CASE_HELD not in {o.case for o in ran.observations} | {c.id for c in ran.cases}
+
+
+def test_a_case_with_a_lone_surrogate_in_both_runs_of_the_control_fails_the_launch(
+    world: World, tmp_path: Path
+) -> None:
+    driver = _ControlAddingDriver(registry.driver("fakedriver"), _with_case(CASE_HELD))
+    refusal = _rewriting(world, tmp_path, driver)
+    assert isinstance(refusal, Refusal)
+    assert refusal.code == "E_LAUNCH_FAILED"
+    assert refusal.exit_code == EXIT_LAUNCH
+    assert refusal.message == CASE_HELD_REFUSED
+    records = _records(tmp_path)
+    launches = [r for r in records if r["t"] == "launch"]
+    assert launches[-1]["name"] == "old~twice"
+    assert len(launches) == len(world.requests)
+    assert records[-1]["t"] == "end"
+    assert records[-1]["status"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("better", "refused"), [("none", None), ("lower", CASE_HELD_REFUSED)], ids=["none", "lower"]
+)
+def test_a_case_with_a_lone_surrogate_under_the_work_factor_is_refused_only_if_recorded(
+    world: World, tmp_path: Path, better: str, refused: str | None
+) -> None:
+    registry.register(
+        GROUP_DRIVERS,
+        "rewriting",
+        _ControlAddingDriver(registry.driver("fakedriver"), _with_case(CASE_HELD, better)),
+    )
+    experiment = dataclasses.replace(
+        _experiment(), driver="rewriting", controls=ControlSettings(positive_via="factor")
+    )
+    with api.command_line(SHOWN_COMMAND):
+        if refused is None:
+            ran = _run(world, tmp_path, experiment)
+            assert CASE_HELD not in {o.case for o in ran.observations} | {c.id for c in ran.cases}
+            assert _utf8_records(tmp_path)[-1]["status"] == "complete"
+            return
+        with pytest.raises(Refusal) as caught:
+            _run(world, tmp_path, experiment)
+    assert caught.value.code == "E_LAUNCH_FAILED"
+    assert caught.value.message == refused
+    assert _records(tmp_path)[-1]["status"] == "failed"
+
+
+@pytest.mark.parametrize("tested", [True, False], ids=["tested", "untested"])
+def test_a_tool_name_with_a_lone_surrogate_fails_the_launch_only_where_a_note_shows_it(
+    world: World, tmp_path: Path, tested: bool
+) -> None:
+    tool = ToolVersion(tool="made-up-\udcfftool", version="9.0", tested=tested)
+    ran = _rewriting(world, tmp_path, _RewritingDriver(registry.driver("fakedriver"), tool=tool))
+    if tested:
+        assert isinstance(ran, Capture)
+        assert {x.tool_version for x in ran.launches} == {"9.0"}
+        assert NOTE_TOOL_VERSION_UNTESTED not in _codes(ran)
+        return
+    assert isinstance(ran, Refusal)
+    assert ran.code == "E_LAUNCH_FAILED"
+    assert ran.message == (
+        "side 'new': the tool name made-up-\\udcfftool holds a lone surrogate, which is not "
+        "UTF-8 text"
+    )
+
+
+def _metric(sample: Sample) -> Sample:
+    return dataclasses.replace(sample, metric="w\ud800rk") if sample.case == "work" else sample
+
+
+def _case(sample: Sample) -> Sample:
+    return dataclasses.replace(sample, case="w\ud800rk") if sample.case == "work" else sample
+
+
+def _unit(sample: Sample) -> Sample:
+    return dataclasses.replace(sample, unit="s\udcff") if sample.case == "work" else sample
+
+
+@pytest.mark.parametrize(
+    ("change", "tool", "held", "escaped"),
+    [
+        pytest.param(_metric, None, "w\ud800rk", b"w\\ud800rk", id="metric"),
+        pytest.param(_case, None, "w\ud800rk", b"w\\ud800rk", id="case"),
+        pytest.param(_unit, None, "s\udcff", b"s\\udcff", id="unit"),
+        pytest.param(
+            None,
+            ToolVersion("made-up", "9.\udcff", tested=True),
+            "9.\udcff",
+            b"9.\\udcff",
+            id="tool-version",
+        ),
+        pytest.param(
+            None,
+            ToolVersion("made-up-\udcfftool", "9.0", tested=False),
+            "made-up-\udcfftool",
+            b"made-up-\\udcfftool",
+            id="tool-name",
+        ),
+    ],
+)
+def test_a_run_of_the_python_api_keeps_what_a_driver_read_with_a_lone_surrogate(
+    world: World,
+    tmp_path: Path,
+    change: Callable[[Sample], Sample] | None,
+    tool: ToolVersion | None,
+    held: str,
+    escaped: bytes,
+) -> None:
+    driver = _RewritingDriver(registry.driver("fakedriver"), change or (lambda s: s), tool=tool)
+    ran = _rewriting(world, tmp_path, driver, shown=False)
+    assert isinstance(ran, Capture)
+    kept = json.dumps([r for r in _records(tmp_path) if r["t"] != "header"], ensure_ascii=False)
+    assert held in kept
+    assert escaped in (tmp_path / "run" / FILE_CAPTURE).read_bytes()
+    assert _records(tmp_path)[-1]["status"] == "complete"
+
+
 def test_with_no_warm_up_the_cases_follow_round_one(world: World, tmp_path: Path) -> None:
     capture = _run(world, tmp_path, _experiment(run={"quick": True, "warmups": 0}))
     records = _records(tmp_path)
@@ -1062,6 +1336,90 @@ def test_a_twin_with_another_fingerprint_is_refused_as_the_run_starts(
     assert not (tmp_path / "run").exists()
     assert world.requests == []
     assert all(r.closed == 1 for r in world.resolved)
+
+
+def test_a_side_whose_shown_identity_is_not_utf_8_is_refused_before_the_run_folder(
+    world: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = Side.with_identity
+
+    def reported(self: Side, identity: Mapping[str, Any], fingerprint: str) -> Side:
+        if self.name == "old":
+            identity = {**identity, "python_version": "9.\udcff"}
+        return real(self, identity, fingerprint)
+
+    monkeypatch.setattr(Side, "with_identity", reported)
+    with api.command_line(SHOWN_COMMAND):
+        refusal = _refused(world, tmp_path)
+    assert refusal.code == "E_SIDE_UNIDENTIFIED"
+    assert refusal.exit_code == EXIT_SIDE
+    assert refusal.message == (
+        "side 'old': identity.python_version of what the results show of it is not UTF-8 "
+        "text, which the results are"
+    )
+    assert not (tmp_path / "run").exists()
+    assert world.requests == []
+
+
+def test_a_run_of_the_python_api_keeps_a_shown_identity_and_a_node_type_not_utf_8(
+    world: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = Side.with_identity
+
+    def reported(self: Side, identity: Mapping[str, Any], fingerprint: str) -> Side:
+        if self.name == "old":
+            identity = {**identity, "python_version": "9.\udcff"}
+        return real(self, identity, fingerprint)
+
+    monkeypatch.setattr(Side, "with_identity", reported)
+    capture = _run(world, tmp_path, _experiment(run={"quick": True, "node_type": "g\udcffb"}))
+    old = next(side for side in capture.sides if side.name == "old")
+    assert old.identity["python_version"] == "9.\udcff"
+    assert b'"python_version":"9.\\udcff"' in (tmp_path / "run" / FILE_CAPTURE).read_bytes()
+    assert _records(tmp_path)[-1]["status"] == "complete"
+
+
+def test_a_run_on_the_command_line_refuses_a_node_type_not_utf_8_before_the_run_folder(
+    world: World, tmp_path: Path
+) -> None:
+    with api.command_line(SHOWN_COMMAND):
+        refusal = _refused(
+            world, tmp_path, _experiment(run={"quick": True, "node_type": "g\udcffb"})
+        )
+    assert refusal.code == "E_USAGE"
+    assert refusal.exit_code == EXIT_USAGE
+    assert refusal.message == "the setting run.node_type is not UTF-8 text, which the results are"
+    assert not (tmp_path / "run").exists()
+    assert world.requests == []
+
+
+def test_a_side_whose_hidden_identity_is_not_utf_8_runs_and_reads_back(
+    world: World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = Side.with_identity
+
+    def reported(self: Side, identity: Mapping[str, Any], fingerprint: str) -> Side:
+        if self.name == "old":
+            identity = {**identity, "prefix": "/made-up/v\udcffw"}
+        return real(self, identity, fingerprint)
+
+    monkeypatch.setattr(Side, "with_identity", reported)
+    capture = _run(world, tmp_path)
+    old = next(side for side in capture.sides if side.name == "old")
+    assert old.identity["prefix"] == "/made-up/v\udcffw"
+    assert b'"prefix":"/made-up/v\\udcffw"' in (tmp_path / "run" / FILE_CAPTURE).read_bytes()
+    assert _read(tmp_path).sides == capture.sides
+
+
+def test_a_spec_that_is_not_utf_8_runs_and_reads_back(world: World, tmp_path: Path) -> None:
+    sides = (
+        Side(name="new", kind="fake", spec={"argv": ["./new", "v\udcffw"]}),
+        Side(name="old", kind="fake", spec={"argv": ["./old"]}),
+    )
+    capture = _run(world, tmp_path, _experiment(sides=sides))
+    new = next(side for side in capture.sides if side.name == "new")
+    assert new.spec["argv"] == ("./new", "v\udcffw")
+    assert _read(tmp_path).sides == capture.sides
 
 
 def test_too_few_rounds_are_refused_before_the_capture_opens(world: World, tmp_path: Path) -> None:

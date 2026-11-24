@@ -2,9 +2,10 @@
 # Copyright (c) 2026, Eugo, Inc.
 """Write the reference page of every public Python name from the source.
 
-The page lists each name in ``__all__`` of ``pairbench`` and of
-``pairbench.stats``, the ``Refusal`` they raise and the plug-in contract of
-``pairbench.api``, each with its signature and its docstring. The source is
+The page lists each name in ``__all__`` of ``pairbench``, of
+``pairbench.stats`` and of ``pairbench.capture.matching``, the ``Refusal``
+they raise and the plug-in contract of ``pairbench.api``, each with its
+signature and its docstring. The source is
 read, not imported, so the page is the same on every supported Python.
 
     python3 tools/api_reference.py            write docs/reference/python-names.md
@@ -33,6 +34,7 @@ WIDTH = 90
 MODULES: tuple[tuple[str, tuple[str, ...] | None], ...] = (
     ("pairbench", None),
     ("pairbench.stats", None),
+    ("pairbench.capture.matching", None),
     ("pairbench.errors", ("Refusal",)),
     (
         "pairbench.api",
@@ -75,7 +77,8 @@ DESCRIPTION = (
 )
 TITLE = "Every public Python name"
 OPENING = (
-    "Each public name of `pairbench` and `pairbench.stats`, the `Refusal` they raise and "
+    "Each public name of `pairbench`, `pairbench.stats` and `pairbench.capture.matching`, "
+    "the `Refusal` they raise and "
     "the plug-in contract of `pairbench.api` is listed below with its signature and its "
     "docstring, read from the source. [Use pairbench from Python](python-api.md) and "
     "[add a plug-in](plugin-api.md) show how the names fit together."

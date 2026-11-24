@@ -123,8 +123,10 @@ Numbers in this example are made up.
   cases: `n_rounds` rounds scored, `n_better` and `n_worse` the rounds whose median turned
   log of side over twin across those cases says the side looks better or worse, the sign
   test's `p_raw`, and `p_corrected`, corrected with Holm's method across the sides that have
-  a p-value. Both are null for a side scored in at most one round. A side whose
-  `p_corrected` is below 0.05 gives the loud note `twin_differs`. A document written without
+  a p-value. Both are null for a side scored in at most one round. A side whose corrected
+  p-value is below 0.05 gives the loud note `twin_differs`; the compare is made on the exact
+  Holm correction of the sign test's fraction against exactly 1/20, not on the float
+  `p_corrected`. A document written without
   `twin_checks` reads as holding none, and `pairbench report --format json` then gives an
   empty list. See the [noise floor](../method/noise-floor.md).
 - `run.command` is the command that was run, for the "how to reproduce" line of the reports.
@@ -226,6 +228,20 @@ Numbers in this example are made up.
   [shared machines](../method/shared-machines.md).
 - `energy`, present when power was sampled:
   `{"scope": "gpu", "excludes": ["cpu", "memory", "storage", "cooling", "power supply losses"]}`.
+- `matching`, present only when `pairbench compare --matching` read the captures:
+  `{"runs": 2, "malformed_rows": 1, "kept_rows": 40, "left_out_rows": 3, "other_side_rows": 0,
+  "refusal": null}`. `runs` counts the runs of the text the files make together, one per
+  banner or one when there is none; `malformed_rows` the rows that did not read and
+  `kept_rows` the rows kept; `left_out_rows` the kept rows of the two compared sides that the
+  two-sided view left out because no pass-order line of their run named both sides before
+  them; `other_side_rows` the kept rows of every other side. When the matching mode refused
+  the comparison, `refusal` holds the refusal's detail, and its `check` names the check:
+  `identical_written_rows`, `written_stretch`, `identical_rows` or `truncated_copy` for the
+  [pool checks](text-format.md#pool-checks-of-a-matching-read), or `paired_rounds` for a view
+  without a round that holds both sides. A refusal of the analysis of the view, such as
+  `E_ORDER_NOT_VARIED`, is listed under `refusals` only, and `refusal` stays `null`. The view
+  has no twins, so each case of it also gets
+  the note `view_without_twins` in `notes`. See [compare](commands.md#compare).
 - `plan.launches` counts warm-up and round launches, one per round for the positive control;
   `plan.explain_launches` counts the explain launches.
 - `diagnostics.status` is `pending`, `written`, `skipped`, `off`, `failed` or `interrupted`;

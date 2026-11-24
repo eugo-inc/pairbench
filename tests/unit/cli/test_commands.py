@@ -1248,6 +1248,58 @@ def test_doctor_keeps_a_failed_plug_in_as_it_is_in_json_and_escapes_its_line(
         ) in result.out
 
 
+class _RegisteringEntry:
+    """An installed entry point whose module registers a plug-in named with an escape
+    character that fails to load."""
+
+    name = "outer"
+    value = "made_up_module:thing"
+    dist = type("Dist", (), {"name": "made-up-dist"})()
+
+    def load(self) -> Any:
+        registry.register("pairbench.rules", "in\x1bner", object())
+        raise AssertionError("register refuses the plug-in")
+
+
+# The failure of the registration inside the entry point, as it is.
+NESTED_FAILURE = (
+    "pairbench: plug-in failed to load: pairbench.rules in\x1bner: "
+    "it declares api_version None; this pairbench speaks 1"
+)
+# The same failure as its line shows it, escaped once.
+NESTED_SHOWN = (
+    "pairbench: plug-in failed to load: pairbench.rules in\\x1bner: "
+    "it declares api_version None; this pairbench speaks 1"
+)
+
+
+@pytest.mark.parametrize("flags", [("--json",), ()])
+def test_doctor_keeps_a_nested_plug_in_failure_as_it_is_in_json_and_escapes_it_once(
+    flags: tuple[str, ...], cli: Cli, quiet_doctor: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib.metadata
+
+    def entry_points(*, group: str) -> list[Any]:
+        return [_RegisteringEntry()] if group == "pairbench.rules" else []
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", entry_points)
+    registry.load_plugins()
+
+    result = cli("doctor", *flags)
+
+    outer = "pairbench: plug-in failed to load: pairbench.rules outer: PluginError: "
+    assert result.code == EXIT_OK
+    shown = NESTED_SHOWN
+    if flags:
+        assert json.loads(result.out)["plugins"]["failed"] == [
+            NESTED_FAILURE,
+            outer + NESTED_FAILURE,
+        ]
+    else:
+        assert f"  {shown}\n" in result.out
+        assert f"  {outer}{shown}\n" in result.out
+
+
 ODD_DETAIL: dict[Any, Any] = {
     "where": Path("x"),
     "set": {9, 1},

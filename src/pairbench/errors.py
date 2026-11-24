@@ -164,7 +164,8 @@ CODES: Final[Mapping[str, Code]] = _table(
     Code(
         "E_POOL_SAME",
         EXIT_ANALYSIS,
-        "the same capture id, file path or file hash was given twice",
+        "the same capture was given twice: the same id, file path or file hash, or of a file a"
+        " reader splits into runs, the same run",
     ),
     Code(
         "E_POOL_IDENTICAL_ROWS",
@@ -253,7 +254,6 @@ def _escape(code: int) -> str:
 
 
 _SHORT_ESCAPES: Final = {0x09: "\\t", 0x0A: "\\n", 0x0D: "\\r"}
-_CONTROL_ESCAPES: Final = {**{c: _escape(c) for c in _CONTROLS}, **_SHORT_ESCAPES}
 _ESCAPES: Final = {
     **{c: _escape(c) for c in (*_CONTROLS, *_LINE_SEPARATORS, *_BIDI_CONTROLS, *_SURROGATES)},
     **_SHORT_ESCAPES,
@@ -280,6 +280,7 @@ def printable(text: str) -> str:
 _UNESCAPES: Final = {"t": "\t", "n": "\n", "r": "\r", "\\": "\\"}
 _ESCAPE_WIDTHS: Final = {"x": 2, "u": 4, "U": 8}
 _HEX_DIGITS: Final = frozenset("0123456789abcdef")
+_LAST_CODE_POINT: Final = 0x10FFFF
 
 
 def unprintable(shown: str) -> str:
@@ -287,8 +288,13 @@ def unprintable(shown: str) -> str:
     from its line on standard error.
 
     Every text ``printable`` writes is read back to the text it came from. Other escapes of
-    the same forms are read too, such as ``\\x41`` for ``A``, which ``printable`` never
-    writes. Raises ``ValueError`` when a backslash opens no escape of these forms.
+    the same forms are read too, such as ``\\x41`` for ``A`` or ``\\U0000d800`` for a lone
+    surrogate, which ``printable`` never writes: an escape of two, four or eight lower-case
+    hex digits reads as the character of that number, from U+0000 to U+10FFFF, lone
+    surrogates included. Every other backslash is kept as it is, and the text after it is
+    read on: a backslash that opens no escape, such as ``\\q``, that ends the text, whose
+    escape is cut short or holds a digit that is not lower-case hex, such as ``\\x1`` or
+    ``\\x1B``, or whose escape is past U+10FFFF, such as ``\\Uffffffff``. It never raises.
     """
     out: list[str] = []
     at = 0
@@ -305,19 +311,116 @@ def unprintable(shown: str) -> str:
             continue
         width = _ESCAPE_WIDTHS.get(kind, 0)
         digits = shown[found + 2 : found + 2 + width]
-        if not width or len(digits) != width or not set(digits) <= _HEX_DIGITS:
-            raise ValueError(
-                f"no escape that printable writes at {found}: {shown[found : found + 10]!r}"
-            )
-        out.append(chr(int(digits, 16)))
-        at = found + 2 + width
+        if width and len(digits) == width and set(digits) <= _HEX_DIGITS:
+            code = int(digits, 16)
+            if code <= _LAST_CODE_POINT:
+                out.append(chr(code))
+                at = found + 2 + width
+                continue
+        out.append("\\")
+        at = found + 1
 
 
-def control_escaped(text: str) -> str:
-    """``text`` with each control character, C0, DEL and C1, written as an escape such as
-    ``\\n`` or ``\\x1b``, and nothing else changed: the form of a refusal's message inside
-    a note that a results document keeps."""
-    return text.translate(_CONTROL_ESCAPES)
+def _holds_surrogate(text: str) -> bool:
+    if text.isascii():
+        return False
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return True
+    return False
+
+
+def _any_surrogate(value: object) -> bool:
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            if _holds_surrogate(item):
+                return True
+        elif isinstance(item, dict):
+            if any(isinstance(key, str) and _holds_surrogate(key) for key in item):
+                return True
+            stack.extend(item.values())
+        elif isinstance(item, list | tuple):
+            stack.extend(item)
+    return False
+
+
+def _first_surrogate(value: object) -> tuple[str, str, bool] | None:
+    """The place, the text and whether it is a key, of the first text of ``value`` that
+    holds a surrogate, or ``None``."""
+    if not _any_surrogate(value):
+        return None
+    stack: list[tuple[str, object]] = [("", value)]
+    while stack:
+        place, item = stack.pop()
+        if isinstance(item, str):
+            if _holds_surrogate(item):
+                return place, item, False
+        elif isinstance(item, dict):
+            key = next((k for k in item if isinstance(k, str) and _holds_surrogate(k)), None)
+            if key is not None:
+                return place, key, True
+            members = [(_member(place, str(k)), v) for k, v in item.items()]
+            stack.extend(reversed(members))
+        elif isinstance(item, list | tuple):
+            stack.extend(reversed([(f"{place}[{i}]", v) for i, v in enumerate(item)]))
+    return None
+
+
+# How many characters a lone-surrogate message shows on each side of the first surrogate.
+_SHOWN_AROUND: Final = 40
+
+
+def _around_surrogate(text: str) -> str:
+    at = next(i for i, c in enumerate(text) if "\ud800" <= c <= "\udfff")
+    start = max(0, at - _SHOWN_AROUND)
+    end = min(len(text), at + 1 + _SHOWN_AROUND)
+    before = "..." if start else ""
+    after = "..." if end < len(text) else ""
+    return f"{before}{printable(text[start:end])}{after}"
+
+
+def lone_surrogate(value: object) -> str | None:
+    """Say which text of ``value``, a document read from JSON, holds a lone surrogate, or
+    return ``None`` when none does.
+
+    A JSON text may write a surrogate that stands alone, such as ``"\\ud800"``, and such a
+    text is not UTF-8 text. The answer names the first such text, a value or a key, by its
+    place in the document and shows it escaped as ``printable`` writes it, such as
+    ``benchmarks[0].name: BM_\\ud800 holds a lone surrogate, which is not UTF-8 text``; it
+    names no place when the document is a text itself. It shows at most 40 characters on each
+    side of the first surrogate, with ``...`` where it leaves text out.
+    """
+    found = _first_surrogate(value)
+    if found is None:
+        return None
+    place, text, is_key = found
+    shown = _around_surrogate(text)
+    what = f"the key {shown}" if is_key else shown
+    where = f"{place}: " if place else ""
+    return f"{where}{what} holds a lone surrogate, which is not UTF-8 text"
+
+
+def surrogate_place(value: object) -> str | None:
+    """Say where ``value``, a text or a document of lists and mappings, holds a text with a
+    surrogate, without the text, or return ``None`` when it holds none.
+
+    The place is written as ``lone_surrogate`` writes it, such as ``sides.new.argv[2]``;
+    a key is named ``a key of`` its place, and the text itself is the empty place.
+    """
+    found = _first_surrogate(value)
+    if found is None:
+        return None
+    place, _, is_key = found
+    if is_key:
+        return f"a key of {place}" if place else "a key"
+    return place
+
+
+def _member(place: str, key: str) -> str:
+    return f"{place}.{printable(key)}" if place else printable(key)
 
 
 def docs_line(code: str, version: str) -> str:
@@ -329,8 +432,13 @@ class Refusal(Exception):
     """A refusal: a stable text code, an exit code, a one-line message and a scope.
 
     ``detail`` carries machine-readable extras for the caller, for example
-    every missing figure key or every bad grid cell. It is never written to a
-    results document. ``results`` is the results document that describes the
+    every missing figure key or every bad grid cell. It is not written to a
+    results document, but for one case: ``pairbench compare --matching``
+    writes the detail of a refusal of the matching mode, which holds only the
+    name of a check, counts, run indices and, for a written stretch, row
+    indices and whether its last row is torn, and, for two parts of runs, the
+    line on which each begins, under ``matching.refusal``.
+    ``results`` is the results document that describes the
     refused run, when one could be built: no comparisons and this refusal
     listed in ``refusals``.
 

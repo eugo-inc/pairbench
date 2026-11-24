@@ -41,8 +41,9 @@ separator, a Bidi_Control character or a lone surrogate as `\uNNNN`, and a backs
 so each printed message stands for one text only. A name that a message quotes keeps the
 escapes of its quoting, and their backslashes then show doubled: a side named `a\b` is quoted
 as `'a\\b'` and shows as `'a\\\\b'`, and an escape character in a quoted name shows as
-`\\x1b`. Notes, the lines of machine checks and the text of `pairbench plan` are escaped the
-same way. The terminal report shows a control character, a separator, a Bidi_Control
+`\\x1b`. Notes, the lines of machine checks, and each line of the header and each cell of the
+table that `pairbench plan` prints are escaped the same way; the tab between two cells is
+written as it is. The terminal report shows a control character, a separator, a Bidi_Control
 character or a lone surrogate as `?` and prints a backslash as it is. `refusals[]` in the
 results keeps the message as it is.
 
@@ -50,7 +51,7 @@ results keeps the message as it is.
 ```console
 $ pairbench compare
 E_USAGE: compare needs capture files or --side NAME=file:GLOB
-pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage
+pairbench: see https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_usage
 ```
 
 | Text code | Exit | Scope | When |
@@ -80,7 +81,7 @@ pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage
 | `E_GRID` | 6 | experiment | the observed grid of rounds and lineup entries does not match the lineup; every missing, duplicated and unexpected cell is listed |
 | `E_TWIN_ORPHAN` | 6 | experiment | a twin's side is absent |
 | `E_ORDER_NOT_VARIED` | 6 | experiment | a compared pair ran in the same order every round |
-| `E_POOL_SAME` | 6 | experiment | the same capture id, file path or file hash was given twice |
+| `E_POOL_SAME` | 6 | experiment | the same capture was given twice: the same id, file path or file hash, or of a file a reader splits into runs, the same run |
 | `E_POOL_IDENTICAL_ROWS` | 6 | experiment | two captures with different ids hold identical observation rows |
 | `E_POOL_TRUNCATED_COPY` | 6 | experiment | one capture's rows are a contiguous stretch of another's, a torn last row included |
 | `E_POOL_SIDE_DRIFT` | 6 | experiment | a side's fingerprint, its recorded setup in more than a credential's value, its working folder, or the shared workload in more than a credential's value differs between captures |
@@ -196,7 +197,7 @@ pairbench with `kill` sees 130, as after Ctrl-C.
 ## What each text code means
 
 Each entry's address is the one a refusal prints on its second line, for example
-`pairbench: see https://eugo.io/docs/pairbench/0.2/reference/exit-codes/#e_usage`.
+`pairbench: see https://eugo.io/docs/pairbench/0.3/reference/exit-codes/#e_usage`.
 
 ### E_USAGE
 
@@ -205,7 +206,27 @@ Exit code 2.
 **Cause.** The command line or a library call was given something invalid, or two flags
 conflict; the message names the flag or the value. `pairbench mcp` refuses with it as well
 when the tool-server library is not installed, is a broken install, or has a local module
-named `mcp` in its place; the message says which, and what to do.
+named `mcp` in its place; the message says which, and what to do. `pairbench run` refuses with it,
+before it makes the run folder, an argument that holds a byte that is not UTF-8 where the results
+would show it, such as an argument of the workload or the results folder, as the results are
+UTF-8 text; the message names the argument by its number and does not show the text. It refuses
+the setting `run.node_type` with such a byte, from `--set` or a variable, the same way, as the
+results show it. Such a byte where the results hide it or cut it away, in a `--side` spec, a
+`--set` value of another setting or a folder of an absolute path, is kept in the capture as an
+escape and runs. `pairbench compare` and `pairbench.load_capture` read a capture that holds a
+lone surrogate, and the terminal report shows it as `?`. A results document that would hold a
+lone surrogate, such as one formed from a capture that holds one in a case, a unit, a tool
+version or the command line where the results show it, is refused with it before either results
+file is written. The JSON that `pairbench compare --json` prints without `--out` is printed where
+standard output can write the surrogate: where Python writes it with the error handler
+`surrogateescape`, as it does under a C, POSIX or C.UTF-8 locale and in its UTF-8 mode, which
+writes one from U+DC80 to U+DCFF as the byte it stands for, and where standard output is a text
+buffer that holds any text. It is refused with it where standard output cannot write it, as
+where Python encodes it as UTF-8 with the error handler `strict`, its default under a locale
+such as `en_US.UTF-8`. A run of the Python API,
+`pairbench.run`, writes no results: it makes none of the early refusals of such a text on this
+page, keeps the text in the capture as an escape, and leaves the refusal to what then writes
+the results.
 
 **Fix.** Correct the flag or value the message names. `pairbench COMMAND --help` lists the
 flags of a command.
@@ -262,7 +283,10 @@ identical copy on purpose, pass `--allow-identical`: the results then carry the 
 Exit code 3.
 
 **Cause.** A side could not be identified: its identity could not be read, or its `identify`
-command gave no output or failed.
+command gave no output or failed. `pairbench run` refuses with it, before it makes the run
+folder, a side whose identity, as the results show it, holds a text that is not UTF-8; the
+message names the place in what the results show of the side. `pairbench.run` from Python keeps
+such an identity in the capture as an escape.
 
 **Fix.** Check that the side starts at all, and that the command in `launch.identify` runs
 inside it and prints something.
@@ -380,7 +404,24 @@ them. To accept the mix, pass `--allow-mixed-core-types`.
 
 Exit code 5.
 
-**Cause.** A launch exited non-zero, timed out, or gave output the driver cannot read.
+**Cause.** A launch exited non-zero, timed out, or gave output the driver cannot read. A case,
+a metric, a unit or a tool version that the driver read into what the launch records and that
+holds a lone surrogate, an escape from `\ud800` to `\udfff` with no partner, is refused as
+well, as the results show it and it is not UTF-8 text; so is a tool name that holds one where
+the note of an untested version would show it. The message names the side and shows the text
+as the results show a case, its secret forms hidden and the folders of a path cut away,
+escaped, at most 40 characters on each side of the surrogate, or no text where the cut leaves
+the surrogate out. It names no key of the tool's output, since a key may hold a path or a
+secret. A lone surrogate in a part of the output the driver does not
+read, in a folder of a path that the results cut away, or in a case the positive control does
+not record (a case only one of its two runs gave, which a note names escaped, or a case whose
+`better` is `none`), is no reason to refuse. The check is made where a command line is
+recorded: by `pairbench run`, `pairbench compare` and `pairbench selftest --live`, and by the
+tool server that `pairbench mcp` starts, whose runs are started as `pairbench run`. A call from
+Python, of `pairbench.run` or of the compare tool of a tool server built in Python, records
+none: it makes none of these early refusals and keeps such a text in the capture as an escape,
+and results that would hold it are refused with `E_USAGE` when they are written. A call from
+Python inside `pairbench.api.command_line` makes them as the command line does.
 
 **Fix.** Run the workload by hand on the side to see its error, check that `--driver` names the
 tool whose output the workload prints, and raise `--timeout` if the launch needs longer.
@@ -449,10 +490,15 @@ Exit code 6.
 Exit code 6.
 
 **Cause.** The observed rounds and lineup entries do not match the lineup: a cell is missing,
-duplicated or unexpected. Every such cell is listed.
+duplicated or unexpected. Every such cell is listed. With `pairbench compare --matching`, no
+round of the two-sided view holds both sides: no pass-order line names both sides before
+their rows, a name matches no row, or the two sides never share a round label within a run;
+the message gives the number of rows the view keeps and the number it left out.
 
 **Fix.** Give one value per case for every entry in every round. For rows produced elsewhere,
-check the round labels and side names of the listed cells.
+check the round labels and side names of the listed cells. For `--matching`, check the
+`pass_order=` lines of each run, the round labels of the two sides within each run, and the
+names given to `--subject` and `--baseline`.
 
 ### E_TWIN_ORPHAN
 
@@ -470,13 +516,18 @@ Exit code 6.
 apart from the sides.
 
 **Fix.** Run with the schedule pairbench plans, which varies the order every round. For rows
-produced elsewhere, give the positions each side ran in.
+produced elsewhere, give the positions each side ran in. For a text capture, let its
+`pass_order=` lines turn the order of the sides from round to round; with
+`compare --matching`, a reversed pass that reuses every round label of a forward pass gives
+every cell, so give it labels of its own.
 
 ### E_POOL_SAME
 
 Exit code 6.
 
-**Cause.** The same capture was given twice: the same id, file path or file content.
+**Cause.** The same capture was given twice: the same id, file path or file content. A
+reader that splits a file into runs, as the `text` reader does, gives one capture per run, and
+two different runs of one file are two captures; the same run given twice is refused.
 
 **Fix.** Give each capture once.
 
