@@ -433,6 +433,68 @@ def test_a_run_that_ends_with_exit_code_1_has_finished_and_is_no_refusal(
     assert ended["refusal"] is None
 
 
+class ReadsRunning(subprocess.Popen):  # type: ignore[type-arg]
+    """A child whose next readings of its exit code say it still runs, as a child that ends
+    between two readings is read."""
+
+    running_reads = 0
+
+    def poll(self) -> int | None:
+        if ReadsRunning.running_reads:
+            ReadsRunning.running_reads -= 1
+            return None
+        return super().poll()
+
+
+def ended_child(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ToolServer, str]:
+    """A tool server and the handle of its run that ended with exit code 1."""
+    children: list[ReadsRunning] = []
+
+    def starting(command: Any, *args: Any, **kwargs: Any) -> Any:
+        child = ReadsRunning(command, *args, **kwargs)
+        if any(str(word).endswith("fake_run.py") for word in command):
+            children.append(child)
+        return child
+
+    monkeypatch.setattr(subprocess, "Popen", starting)
+    tools = server(tmp_path, "fail-on")
+    started = answer(tools, "run_start", sides=SIDES, out=str(tmp_path / "out"))
+    (child,) = children
+    child.wait(timeout=WAIT_S)
+    return tools, started["handle"]
+
+
+@pytest.mark.parametrize("running_reads", [1, 2])
+def test_run_status_answers_the_state_and_the_exit_code_from_one_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, running_reads: int
+) -> None:
+    tools, handle = ended_child(tmp_path, monkeypatch)
+    monkeypatch.setattr(ReadsRunning, "running_reads", running_reads)
+
+    answers = [answer(tools, "run_status", handle=handle) for _ in range(running_reads + 1)]
+
+    assert [(a["state"], a["exit_code"]) for a in answers] == [
+        ("running", None)
+    ] * running_reads + [("finished", 1)]
+
+
+# The answers of run_cancel to a run that ended with exit code 1 whose state and exit code
+# come from one reading: still running when read, and cancelled, or ended.
+CANCEL_ANSWERS = {("cancelling", None), ("finished", 1)}
+
+
+@pytest.mark.parametrize("running_reads", [1, 2, 3])
+def test_run_cancel_answers_the_state_and_the_exit_code_from_one_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, running_reads: int
+) -> None:
+    tools, handle = ended_child(tmp_path, monkeypatch)
+    monkeypatch.setattr(ReadsRunning, "running_reads", running_reads)
+
+    cancelled = answer(tools, "run_cancel", handle=handle)
+
+    assert (cancelled["state"], cancelled["exit_code"]) in CANCEL_ANSWERS
+
+
 def test_the_run_reads_nothing_from_the_protocol_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

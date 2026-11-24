@@ -379,8 +379,12 @@ class RunHandle:
     cancelled: bool = False
     reader: threading.Thread | None = None
 
-    def state(self) -> str:
-        code = self.process.poll()
+    def state(self, code: int | None) -> str:
+        """The state of the run given one reading of its exit code, ``None`` while it runs.
+
+        An answer takes its state and its exit code from the same reading, so a run that
+        ends between two readings is never answered as ended without its exit code.
+        """
         if code is None:
             return "cancelling" if self.cancelled else "running"
         if code == EXIT_INTERRUPTED:
@@ -843,7 +847,7 @@ class ToolServer:
         answer: dict[str, Any] = {
             "handle": run.handle,
             "folder": str(run.folder),
-            "state": run.state(),
+            "state": run.state(code),
             "started_at": run.started_at,
             "exit_code": code,
             "progress": _progress(run.folder),
@@ -896,7 +900,8 @@ class ToolServer:
             run.cancelled = True
             with contextlib.suppress(ProcessLookupError):
                 run.process.send_signal(signal.SIGINT)
-        return {"handle": run.handle, "state": run.state(), "exit_code": run.process.poll()}
+        code = run.process.poll()
+        return {"handle": run.handle, "state": run.state(code), "exit_code": code}
 
     def results(
         self, path: str, case: str | None = None, subject: str | None = None
