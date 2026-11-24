@@ -95,6 +95,65 @@ A share image, in `site/public/` or in the built site, that differs from what
 `tools/share_image.py` draws fails the build; the message names how it differs, such as an
 extra chunk or another row filter.
 
+### The site of a release
+
+A build holds the pages of the version it documents, under `latest/` and under the folder of
+its major and minor version, such as `0.3/`. To build the site of a release with the pages of
+every version before it, give the build the site as it is published, and publish the whole
+of `site/dist/`:
+
+```
+python3 tools/docs_site.py build --published FOLDER
+```
+
+The build copies each version folder of `FOLDER`, such as `0.2/`, and the Markdown page
+beside it, `0.2.md`, into `site/dist/`, and checks them with the rest of the site. The folder
+of the version it documents, `latest/` and the pages at the base folder are the build's own,
+and a version folder or Markdown page left in `site/dist/` by an earlier run is removed.
+
+Each kept version keeps its own badges, icon, share image and search index in `_base/`
+inside its folder, such as `0.2/_base/`, so its pages show its own badge and its search finds
+its own pages. The build takes them once, the first time a version is kept, from the built
+site of that version: the base folder of `FOLDER` for the version its `latest/` pages
+document, which is how the folder of the release before this one gets them, or a saved built
+site given with `--saved SITE`, once per version. It points the kept pages at those copies.
+A link of a kept page to a latest page or file this build does not hold, its canonical link
+among them, is pointed at the same page or file in the kept version's folder, and back at the
+latest one when a later build holds it again; every other link stays as it is.
+
+The header of every page has a version picker beside the site's title. It lists the latest
+pages and each version folder of the built site, newest first, each a link to that version's
+home page. The build writes it into the pages of the kept versions too, in place of the one
+they have, so every page lists every version the built site holds.
+
+Before it removes, writes or installs anything, the build refuses a `FOLDER` that is
+`site/dist/` or inside it, which the build replaces, a `FOLDER` without `latest/index.html`,
+a version folder newer than the version it documents, a version folder without `index.html`,
+a link or anything but a file or a folder in a folder it keeps, a Markdown page beside a
+version folder that is not a file, and a kept folder without its own copy of a file its
+pages name when no built site of its version is given. It refuses a saved site that is not a
+built site of a version `FOLDER` keeps, two saved sites of one version, and a site to take
+own files from that lacks a file the pages name or holds a link or anything but a file or a
+folder among them. It refuses a saved site that is `site/dist/` or inside it, a site to take
+own files from of another release than the pages of the folder it gives them to, such as a
+built site of 0.2.0 for a `0.2/` that holds the pages of 0.2.1, one whose search index holds
+a page the folder lacks, and a kept page with a header but without the title the version
+picker goes beside.
+
+A version folder the published site lacks, or one without `_base/` of a version other than
+the one the `latest/` pages of `FOLDER` document, is put together once from the saved built
+site of its release, a copy, kept outside `site/dist/`, of the whole `site/dist/` of that
+release's build:
+
+1. Copy the published site to a folder outside `site/dist/`, such as `published/`.
+2. From each saved built site, copy its version folder and the Markdown page beside it,
+   such as `0.2/` and `0.2.md`, into `published/`.
+3. Build with `--published published/` and one `--saved` for each of those saved sites, such
+   as `--saved site-0.2/`.
+
+The built site then holds each version with its own files, and later releases need
+`--published` alone.
+
 ## What the repository may hold
 
 Everything here is public. A change is accepted only if it keeps it that way.

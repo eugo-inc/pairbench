@@ -40,17 +40,37 @@ Astro project with Starlight in ``site/``. One build runs three steps:
    tracks and the folders that hold them, so a link to a file a build leaves,
    such as one in ``site/dist/``, is refused; a checkout that holds ``.git``
    where git is missing, cannot start or refuses to read it is refused, and a
-   copy without ``.git`` is checked by the files it holds. A build these checks
+   copy without ``.git`` is checked by the files it holds. Given ``--published
+   FOLDER``, the site as it is published, it checks that ``FOLDER`` holds the
+   latest pages, that the folders of that site it keeps hold only files and
+   folders, and that each has its own copies of the files of the base folder its
+   pages name, or a built site to take them from: the published site for the
+   version its latest pages document, or a saved site, ``--saved SITE``, outside
+   ``site/dist/``, of the same release as the pages it keeps, and that each kept
+   page with a header has the place of the version picker. A build these checks
    refuse removes, writes and installs nothing.
 2. Astro builds the pages, the search index and the sitemap into ``site/dist/``.
    A warning or an error in its output fails the build.
 3. finish: write the Markdown copy of every page beside it, the llms files,
    ``robots.txt``, and the base folder's page with its Markdown page and its own
    ``llms.txt`` and ``llms-full.txt``; copy the latest pages to the folder of the
-   release; then check every link, anchor and asset of the built site, the
-   anchors Starlight adds and a link written in HTML among them, that the share
-   image it publishes holds what ``tools/share_image.py`` draws, and that
-   nothing is fetched from another host. A link to another host is not followed.
+   release; given the published site, copy each of its version folders, such as
+   ``0.1/``, and the Markdown page beside it, ``0.1.md``: every
+   version but the one the build documents, whose folder the build writes, so
+   the built site holds the pages of every version, and no other version's
+   folder stays in ``site/dist/``. A kept version keeps its own badges, icon,
+   share image and search index in ``_base/`` inside its folder, taken once from
+   the built site of its version, where its search finds its own pages; its
+   pages name those copies, and a link of a kept page to a latest page or file
+   the build does not hold names the version's own copy of it, its canonical
+   link among them, until a later build holds the latest one again. Every page
+   with a header, a kept page among them, gets a version picker beside the
+   site's title, in place of the one it has: the latest pages and each version
+   folder of the built site, newest first. Then check every link, anchor and
+   asset of the built site, the anchors Starlight adds and a link written in
+   HTML among them, that the share image it publishes holds what
+   ``tools/share_image.py`` draws, and that nothing is fetched from another
+   host. A link to another host is not followed.
 
 A refused share image is refused with its cause: an extra chunk, a bad checksum,
 another row filter, data after the end and the like.
@@ -58,6 +78,8 @@ another row filter, data after the end and the like.
 Usage::
 
     python3 tools/docs_site.py build     # prepare, install the packages if needed, Astro, finish
+    python3 tools/docs_site.py build --published FOLDER  # and keep FOLDER's earlier versions
+    python3 tools/docs_site.py build --published FOLDER --saved SITE  # with a version's own files
     python3 tools/docs_site.py llms      # write the repository's llms.txt
     python3 tools/docs_site.py llms --check
     python3 tools/docs_site.py check     # check a site already built in site/dist
@@ -71,6 +93,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import gzip
 import html.parser
 import json
 import os
@@ -78,6 +101,7 @@ import posixpath
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tomllib
@@ -1743,6 +1767,599 @@ def copy_release(build: Build) -> None:
     copy.write_text(home.replace(build.address.site + latest, build.address.site + own), "utf-8")
 
 
+VERSION_NAME = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+
+
+def _link_refusal(name: str) -> SiteError:
+    return SiteError(
+        f"{name} in the published site is a link: a kept folder holds files and folders"
+    )
+
+
+def earlier_versions(published: Path, folder: str, dist: Path) -> list[str]:
+    """The version folders of the published site the build keeps, by name: each folder named
+    MAJOR.MINOR other than ``folder``, the release this build documents, whose own folder
+    replaces it. The latest pages, the base pages and every other file of the published site
+    are the build's own and are not kept.
+
+    Refused: a published site that is not a folder, that is ``dist`` or inside it, which the
+    build replaces, or that holds no ``latest/index.html``; a version newer than ``folder``; a
+    version that is not a folder with ``index.html``; a link, or anything but a file or a
+    folder, in a kept folder; a link as the folder; a Markdown page beside it that is a link
+    or not a file.
+    """
+    if not published.is_dir():
+        raise SiteError(
+            f"the published site {published} is not a folder: give the folder of the site as it "
+            "is published"
+        )
+    where, built = published.resolve(), dist.resolve()
+    if where == built or built in where.parents:
+        raise SiteError(
+            f"the published site {published} is the built folder or inside it, which the build "
+            f"replaces: give a folder outside {SITE}/{DIST}"
+        )
+    if not (published / LATEST / "index.html").is_file():
+        raise SiteError(
+            f"the published site {published} holds no {LATEST}/index.html: give the folder of "
+            "the site as it is published"
+        )
+    current = tuple(int(part) for part in folder.split("."))
+    kept = []
+    for path in sorted(published.iterdir()):
+        name = path.name
+        if not VERSION_NAME.fullmatch(name) or name == folder:
+            continue
+        if tuple(int(part) for part in name.split(".")) > current:
+            raise SiteError(
+                f"the published site holds {name}/, a version newer than {folder}, the one this "
+                "build documents: build the documentation of the newest version"
+            )
+        if path.is_symlink():
+            raise _link_refusal(name)
+        if not (path / "index.html").is_file():
+            raise SiteError(
+                f"{name} in the published site is not a version folder: a folder with index.html"
+            )
+        for root, folders, names in os.walk(path):
+            for inner in sorted(folders + names):
+                mode = os.lstat(os.path.join(root, inner)).st_mode
+                inside = Path(root, inner).relative_to(published).as_posix()
+                if stat.S_ISLNK(mode):
+                    raise _link_refusal(inside)
+                if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                    raise SiteError(
+                        f"{inside} in the published site is not a file or a folder: a kept "
+                        "folder holds files and folders"
+                    )
+        page = published / f"{name}.md"
+        if page.is_symlink():
+            raise _link_refusal(page.name)
+        if page.exists() and not page.is_file():
+            raise SiteError(
+                f"{page.name} in the published site is not a file: the Markdown page beside a "
+                "version folder is a file"
+            )
+        kept.append(name)
+    return kept
+
+
+def keep_versions(build: Build, published: Path | None, names: Iterable[str]) -> None:
+    """Remove every version folder and Markdown page of the built site but the release's own,
+    then copy the kept version folders of the published site, and the Markdown page beside
+    each, into the built site as they are: the same bytes, every folder and file writable by
+    its owner, so a later build can replace them."""
+    for path in sorted(build.dist.iterdir()):
+        name = path.name.removesuffix(".md") if path.is_file() else path.name
+        if VERSION_NAME.fullmatch(name) and name != build.folder:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+    if published is None:
+        return
+    for name in names:
+        target = build.dist / name
+        shutil.copytree(published / name, target, copy_function=shutil.copyfile)
+        for root, _, _ in os.walk(target):
+            os.chmod(root, stat.S_IMODE(os.stat(root).st_mode) | stat.S_IRWXU)
+        page = published / f"{name}.md"
+        if page.is_file():
+            shutil.copyfile(page, build.dist / f"{name}.md")
+
+
+# A kept version's own copies of the files of the base folder that its pages name: its badges,
+# its icon, its share image and its search index, in a folder of its own inside its version
+# folder. Astro makes no page of a name that starts with an underscore, so no page has it.
+OWN = "_base"
+OWN_FILES = (BADGES, "favicon.svg", SHARE_IMAGE, "pagefind")
+SEARCH_INDEX = "pagefind"
+# A fragment of the search index: one page's address and text after a signature, gzipped.
+FRAGMENT_SIGNATURE = b"pagefind_dcd"
+FRAGMENT_START = FRAGMENT_SIGNATURE + b'{"url":"/'
+VERSION_META_TAG = re.compile(rf'<meta name="{VERSION_META}" content="([^"]*)"')
+
+
+def _addresses(address: Address) -> re.Pattern[str]:
+    """An address of the base folder in a page, full or from the root of the host, as an
+    attribute, a string of structured data or a style names it: its host and the path after
+    the base folder, without a query or an anchor."""
+    return re.compile(
+        rf"""(?<=["'(])({re.escape(address.site)})?{re.escape(address.base)}([^"'\s<>()#?]*)"""
+    )
+
+
+def _search_bundle(address: Address) -> re.Pattern[str]:
+    """Where a Starlight search script loads the search index from: the folder it names after
+    the base folder."""
+    return re.compile(rf"bundlePath:([`'\"]){re.escape(address.base)}([^`'\"]*)\1")
+
+
+def _without_dots(rest: str) -> str | None:
+    """A path after the base folder with its ``.`` and ``..`` segments resolved, or ``None``
+    when it climbs out of the base folder."""
+    parts = rest.split("/")
+    if "." not in parts and ".." not in parts:
+        return rest
+    kept: list[str] = []
+    for part in parts:
+        if part == "..":
+            if not kept:
+                return None
+            kept.pop()
+        elif part != ".":
+            kept.append(part)
+    if parts[-1] in (".", ".."):
+        kept.append("")
+    return "/".join(kept)
+
+
+def documented_version(site: Path, page: str = f"{LATEST}/index.html") -> str | None:
+    """The version a built page names, by default a built site's latest home page, or
+    ``None`` when it names none."""
+    home = site / page
+    if not home.is_file():
+        return None
+    found = VERSION_META_TAG.search(home.read_text(encoding="utf-8", errors="replace"))
+    return None if found is None else found.group(1)
+
+
+def documented_folder(site: Path) -> str | None:
+    """The folder of the version a built site's latest pages document, from the version its
+    latest home page names, or ``None`` when it names none."""
+    version = documented_version(site)
+    if version is None:
+        return None
+    try:
+        return version_folder(version)
+    except SiteError:
+        return None
+
+
+def own_needs(folder: Path, name: str, address: Address) -> list[str]:
+    """The own files a kept version folder's pages need, by their path under ``OWN``: each file
+    of ``OWN_FILES`` its pages name in the base folder or in its own folder, and the search
+    index when its search script names one.
+
+    Refused: a page with a search whose script names no index in the base folder or in its
+    own folder."""
+    needs: set[str] = set()
+    own = f"{name}/{OWN}/"
+    search = False
+    for path in sorted(folder.rglob("*.html")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        search = search or "<site-search" in text
+        for found in _addresses(address).finditer(text):
+            rest = _without_dots(found.group(2))
+            if rest is None:
+                continue
+            rest = rest.removeprefix(own)
+            if rest.split("/")[0] in OWN_FILES and not rest.endswith("/"):
+                needs.add(rest)
+    named = False
+    for path in sorted((folder / "_astro").glob("*.js")):
+        for found in _search_bundle(address).finditer(path.read_text(encoding="utf-8")):
+            named = named or found.group(2) in ("", own)
+    if named:
+        needs.add(f"{SEARCH_INDEX}/pagefind.js")
+    elif search:
+        raise SiteError(
+            f"{name}/ in the published site has a search, and no script of {name}/_astro/ names "
+            f"its index in the base folder or in {own}"
+        )
+    return sorted(needs)
+
+
+def _fragment(path: Path) -> tuple[bytes, bool]:
+    """A search fragment's text, and whether its file is gzipped."""
+    data = path.read_bytes()
+    if data.startswith(FRAGMENT_SIGNATURE):
+        return data, False
+    try:
+        return gzip.decompress(data), True
+    except (OSError, EOFError):
+        return b"", True
+
+
+def _fragments(site: Path) -> list[Path]:
+    return sorted((site / SEARCH_INDEX / "fragment").glob("*.pf_fragment"))
+
+
+FRAGMENT_PAGE = re.compile(rb'pagefind_dcd\{"url":"/' + re.escape(LATEST.encode()) + rb'/([^"]*)"')
+
+
+def check_fragment_pages(site: Path, folder: Path, name: str) -> None:
+    """Refuse a built site's search index with a fragment of a page that the kept version
+    folder does not hold."""
+    for path in _fragments(site):
+        found = FRAGMENT_PAGE.match(_fragment(path)[0])
+        tail = found.group(1).decode("utf-8", errors="replace") if found else ""
+        page = folder / tail / "index.html" if tail == "" or tail.endswith("/") else folder / tail
+        if not page.is_file():
+            raise SiteError(
+                f"{path} is the search fragment of {LATEST}/{tail}, a page that {name}/ in the "
+                f"published site does not hold: give the built site of {name} as it was built"
+            )
+
+
+def check_own_files(site: Path, kind: str) -> None:
+    """Refuse a link, or anything but a file or a folder, among the files of ``OWN_FILES`` of
+    a built site that a kept version takes its own files from."""
+    for entry in OWN_FILES:
+        top = site / entry
+        paths = [top]
+        if top.is_dir() and not top.is_symlink():
+            for root, folders, names in os.walk(top):
+                paths += [Path(root, inner) for inner in sorted(folders + names)]
+        for path in paths:
+            if not os.path.lexists(path):
+                continue
+            mode = os.lstat(path).st_mode
+            inside = path.relative_to(site).as_posix()
+            if stat.S_ISLNK(mode):
+                raise SiteError(
+                    f"{inside} in the {kind} site {site} is a link: a version's own files are "
+                    "files and folders"
+                )
+            if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                raise SiteError(
+                    f"{inside} in the {kind} site {site} is not a file or a folder: a version's "
+                    "own files are files and folders"
+                )
+
+
+def check_fragments(site: Path) -> None:
+    """Refuse a built site's search index with a fragment that is not one page's under
+    ``latest/``: the one form whose address the build can point at a version folder."""
+    for path in _fragments(site):
+        text, _ = _fragment(path)
+        if not text.startswith(FRAGMENT_START + f"{LATEST}/".encode()):
+            raise SiteError(
+                f"{path} is not the search fragment of one page under {LATEST}/: give the built "
+                "site as it was built"
+            )
+
+
+def own_sources(
+    published: Path,
+    kept: Iterable[str],
+    saved: Iterable[Path],
+    folder: str,
+    address: Address,
+    dist: Path,
+) -> dict[str, Path]:
+    """The built site each kept version folder that lacks its own files takes them from, by
+    the folder's name. A source is a built site whose latest pages document that version: a
+    saved site, ``--saved SITE``, or the published site itself, whose base folder holds the
+    files of the version its latest pages document. A kept folder whose own files are all
+    there takes nothing.
+
+    Refused: a saved site that is not a folder, that is ``dist`` or inside it, which the build
+    replaces, that names no version, or that documents the version built, a version the
+    published site does not keep or the version another saved site documents; a kept folder
+    that lacks an own file its pages need, with no source for it; a source of another release
+    than the kept folder's pages, that lacks a file the pages need, or whose search index has
+    a fragment of another form or of a page the kept folder does not hold.
+    """
+    kept = list(kept)
+    given: dict[str, Path] = {}
+    for site in saved:
+        if not site.is_dir():
+            raise SiteError(
+                f"the saved site {site} is not a folder: give the folder of an earlier release's "
+                "built site"
+            )
+        where, built = site.resolve(), dist.resolve()
+        if where == built or built in where.parents:
+            raise SiteError(
+                f"the saved site {site} is the built folder or inside it, which the build "
+                f"replaces: give a copy of it outside {SITE}/{DIST}"
+            )
+        documented = documented_folder(site)
+        if documented is None:
+            raise SiteError(
+                f"the saved site {site} holds no {LATEST}/index.html that names its version: give "
+                "the folder of an earlier release's built site"
+            )
+        if documented == folder:
+            raise SiteError(
+                f"the saved site {site} documents {documented}, the version this build documents: "
+                "give the built sites of earlier versions"
+            )
+        if documented not in kept:
+            raise SiteError(
+                f"the saved site {site} documents {documented}, which the published site does not "
+                f"keep: copy its {documented}/ and {documented}.md into the published site first"
+            )
+        if documented in given:
+            raise SiteError(
+                f"two saved sites document {documented}: {given[documented]} and {site}: give one"
+            )
+        given[documented] = site
+    documented = documented_folder(published)
+    if documented in kept and documented not in given:
+        given[documented] = published
+    sources: dict[str, Path] = {}
+    for name in kept:
+        needs = own_needs(published / name, name, address)
+        missing = [need for need in needs if not (published / name / OWN / need).is_file()]
+        if not missing:
+            continue
+        source = given.get(name)
+        if source is None:
+            raise SiteError(
+                f"{name}/ in the published site has no {OWN}/{missing[0]}, its own copy of a file "
+                f"its pages name: give the built site of {name} with --saved SITE"
+            )
+        kind = "published" if source == published else "saved"
+        release, pages = (
+            documented_version(source),
+            documented_version(published / name, "index.html"),
+        )
+        if pages is not None and release != pages:
+            raise SiteError(
+                f"the {kind} site {source} documents {release}, and {name}/ in the published site "
+                f"holds the pages of {pages}: give the built site of {pages}"
+            )
+        for need in needs:
+            if not (source / need).is_file():
+                raise SiteError(
+                    f"the {kind} site {source} has no {need}, which the pages of {name}/ name: "
+                    f"give the built site of {name} as it was built"
+                )
+        check_own_files(source, kind)
+        check_fragments(source)
+        check_fragment_pages(source, published / name, name)
+        sources[name] = source
+    return sources
+
+
+def _copy_writable(source: Path, target: Path) -> None:
+    """Copy a file or a folder, every folder and file of the copy writable by its owner."""
+    if source.is_dir():
+        shutil.copytree(source, target, copy_function=shutil.copyfile)
+        for root, _, _ in os.walk(target):
+            os.chmod(root, stat.S_IMODE(os.stat(root).st_mode) | stat.S_IRWXU)
+    else:
+        shutil.copyfile(source, target)
+
+
+def fill_own(build: Build, name: str, source: Path) -> None:
+    """Give a kept version folder its own files from the built site of its version: each of
+    ``OWN_FILES`` the site's base folder holds, into ``OWN``. Each search fragment's address
+    under ``latest/`` becomes the same address under the version's folder, so that its search
+    finds its own pages."""
+    target = build.dist / name / OWN
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir()
+    for entry in OWN_FILES:
+        if (source / entry).exists():
+            _copy_writable(source / entry, target / entry)
+    latest = FRAGMENT_START + f"{LATEST}/".encode()
+    base = build.address.base.encode()
+    image = re.compile(
+        rb'"image":"((?:'
+        + re.escape(build.address.site.encode())
+        + rb")?"
+        + re.escape(base)
+        + rb')([^"]*)"'
+    )
+
+    def own_image(found: re.Match[bytes]) -> bytes:
+        rest = found.group(2).decode("utf-8", errors="replace")
+        if rest.split("/")[0] in OWN_FILES and (target / rest).is_file():
+            return b'"image":"' + found.group(1) + f"{name}/{OWN}/".encode() + found.group(2) + b'"'
+        return found.group(0)
+
+    for path in _fragments(target):
+        text, zipped = _fragment(path)
+        text = FRAGMENT_START + f"{name}/".encode() + text[len(latest) :]
+        text = image.sub(own_image, text)
+        path.write_bytes(gzip.compress(text, mtime=0) if zipped else text)
+
+
+def adapt_version(build: Build, name: str) -> None:
+    """Point a kept version's pages at its own files and at pages the build holds. An address
+    of a file of ``OWN_FILES`` in the base folder becomes its own copy's, whether or not the
+    build has a file there; an address of a latest page or file the build does not hold
+    becomes the same address under the version's folder, when the folder holds it, and turns
+    back into the latest address once a later build holds it again; an address with ``.`` or
+    ``..`` segments is taken as the address they resolve to, and one that climbs out of the
+    base folder stays as it is. Its search script loads its own index, at an address of its
+    own (see ``rename_scripts``). Every other address stays as it is, and a folder adapted
+    once stays the same when it is adapted again."""
+    folder = build.dist / name
+    base = build.address.base
+
+    def change(found: re.Match[str]) -> str:
+        host, rest = found.group(1) or "", _without_dots(found.group(2))
+        if rest is None:
+            return found.group(0)
+        first = rest.split("/")[0]
+        if first in OWN_FILES and (folder / OWN / rest).is_file():
+            return f"{host}{base}{name}/{OWN}/{rest}"
+        if first == LATEST and _file_for(build.dist, build.address, base + rest) is None:
+            tail = rest[len(LATEST) + 1 :]
+            if _file_for(build.dist, build.address, f"{base}{name}/{tail}") is not None:
+                return f"{host}{base}{name}/{tail}"
+        if host and first == name:
+            # What an earlier build made of a latest address it lacked: the latest address
+            # again, once the build holds it. A release writes none of its folder's addresses
+            # with the host in an attribute or in structured data.
+            tail = rest[len(name) + 1 :]
+            if _file_for(build.dist, build.address, f"{base}{LATEST}/{tail}") is not None:
+                return f"{host}{base}{LATEST}/{tail}"
+        return found.group(0)
+
+    def own_index(found: re.Match[str]) -> str:
+        if found.group(2):
+            return found.group(0)
+        quote = found.group(1)
+        return f"bundlePath:{quote}{base}{name}/{OWN}/{quote}"
+
+    rewrites = (
+        ("*.html", folder, _addresses(build.address), change),
+        ("*.js", folder / "_astro", _search_bundle(build.address), own_index),
+    )
+    scripts: list[Path] = []
+    for pattern, where, written, changed in rewrites:
+        for path in sorted(where.rglob(pattern)):
+            if OWN in path.relative_to(folder).parts:
+                continue
+            text = path.read_text(encoding="utf-8")
+            new = written.sub(changed, text)
+            if new != text:
+                path.write_text(new, encoding="utf-8")
+                if path.suffix == ".js":
+                    scripts.append(path)
+    rename_scripts(folder, scripts)
+
+
+# The mark in the name of a kept version's script whose contents the build changed.
+OWN_SCRIPT = "own"
+
+
+def rename_scripts(folder: Path, changed: Iterable[Path]) -> None:
+    """Give each script of a version folder's ``_astro/`` whose contents the build changed an
+    address of its own, and so each script that names a renamed script, and point every page,
+    style and script of the folder at the new names. A script's name holds the hash of its
+    contents, so a cache may keep it for good: an address of its own makes sure no cache
+    serves the contents it had when the folder was the release's own."""
+    scripts = folder / "_astro"
+    renamed: dict[str, str] = {}
+    waiting = [path.name for path in changed]
+    while waiting:
+        old = waiting.pop()
+        if old in renamed:
+            continue
+        renamed[old] = f"{old.removesuffix('.js')}.{OWN_SCRIPT}.js"
+        quoted = re.compile(rf"""/{re.escape(old)}(?=["'`])""")
+        for path in sorted(scripts.glob("*.js")):
+            if path.name not in renamed and quoted.search(path.read_text(encoding="utf-8")):
+                waiting.append(path.name)
+    if not renamed:
+        return
+    names = re.compile(
+        "/(" + "|".join(re.escape(old) for old in sorted(renamed)) + r""")(?=["'`])"""
+    )
+    for path in sorted(folder.rglob("*")):
+        if path.suffix not in (".html", ".css", ".js") or OWN in path.relative_to(folder).parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        new_text = names.sub(lambda found: "/" + renamed[found.group(1)], text)
+        if new_text != text:
+            path.write_text(new_text, encoding="utf-8")
+    for old, new in renamed.items():
+        (scripts / old).rename(scripts / new)
+
+
+# The version picker in the header of a page: the latest pages and every version folder of the
+# built site, newest first, each a link to its home page, the version of the page marked. It
+# sits at the end of the header's title wrapper, which shows on every screen size, with its
+# style in the page's head, made of the colours of the site's theme.
+PICKER = re.compile(r'<details class="pb-versions">.*?</details>', re.DOTALL)
+PICKER_STYLE = (
+    "<style data-pb-versions>"
+    ".title-wrapper:has(> .pb-versions){overflow:visible}"
+    ".pb-versions{position:relative;flex-shrink:0;align-self:center;"
+    "margin-inline-start:.75rem;font-size:var(--sl-text-sm)}"
+    ".pb-versions summary{cursor:pointer;list-style:none;padding:.125rem .5rem;"
+    "border:1px solid var(--sl-color-gray-5);border-radius:.25rem;"
+    "color:var(--sl-color-gray-2);white-space:nowrap}"
+    ".pb-versions summary::-webkit-details-marker{display:none}"
+    '.pb-versions summary::after{content:" \\25BE"}'
+    ".pb-versions ul{position:absolute;z-index:10;inset-inline-start:0;min-width:100%;"
+    "margin:.25rem 0 0;padding:.25rem 0;list-style:none;background:var(--sl-color-bg-nav);"
+    "border:1px solid var(--sl-color-gray-5);border-radius:.25rem}"
+    ".pb-versions li{margin:0}"
+    ".pb-versions a{display:block;padding:.125rem .75rem;color:var(--sl-color-gray-2);"
+    "text-decoration:none;white-space:nowrap}"
+    ".pb-versions a:hover{color:var(--sl-color-white)}"
+    ".pb-versions a[aria-current]{color:var(--sl-color-text-accent);font-weight:600}"
+    "</style>"
+)
+PICKER_STYLE_ELEMENT = re.compile(r"<style data-pb-versions>[^<]*</style>")
+TITLE_WRAPPER = re.compile(r'<div class="title-wrapper(?: [^"]*)?"[^>]*>[^\n]*?(?=</div>)')
+
+
+def _version_key(folder: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in folder.split("."))
+
+
+def picker_place(text: str) -> bool:
+    """Whether a page has the place of the version picker: no header, or a header with one
+    title wrapper and one end of its head once its own picker is taken out."""
+    if "<header" not in text:
+        return True
+    text = PICKER_STYLE_ELEMENT.sub("", PICKER.sub("", text))
+    return len(TITLE_WRAPPER.findall(text)) == 1 and text.count("</head>") == 1
+
+
+def with_picker(text: str, name: str, base: str, versions: Iterable[str], here: str) -> str:
+    """A page with the version picker in its header, in place of the one it has: the latest
+    pages, then ``versions`` newest first, the folder ``here`` marked. A page without a
+    header, such as the page at the base folder, is left as it is.
+
+    Refused: a header without one title wrapper, or a page without one end of its head."""
+    if "<header" not in text:
+        return text
+    if not picker_place(text):
+        raise SiteError(
+            f"{name} has a header without one title wrapper, the place of the version picker: "
+            f"build the site with the Starlight that {SITE}/package-lock.json pins"
+        )
+    folders = [LATEST, *sorted(set(versions), key=_version_key, reverse=True)]
+    items = "".join(
+        f'<li><a href="{base}{folder}/"'
+        + (' aria-current="true"' if folder == here else "")
+        + f">{folder}</a></li>"
+        for folder in folders
+    )
+    picker = (
+        f'<details class="pb-versions"><summary><span class="sr-only">Version: </span>{here}'
+        f"</summary><ul>{items}</ul></details>"
+    )
+    text = PICKER_STYLE_ELEMENT.sub("", PICKER.sub("", text))
+    text = TITLE_WRAPPER.sub(lambda found: found.group(0) + picker, text)
+    return text.replace("</head>", f"{PICKER_STYLE}</head>")
+
+
+def write_pickers(build: Build, folders: Iterable[str], versions: Iterable[str]) -> None:
+    """Give every page of the built site's ``folders`` its version picker, and the page a host
+    serves for a missing address, which is the latest pages'."""
+    versions = list(versions)
+    pages = [(build.dist / "404.html", LATEST)] if (build.dist / "404.html").is_file() else []
+    for folder in folders:
+        pages += [(path, folder) for path in sorted((build.dist / folder).rglob("*.html"))]
+    for path, here in pages:
+        text = path.read_text(encoding="utf-8")
+        name = path.relative_to(build.dist).as_posix()
+        new = with_picker(text, name, build.address.base, versions, here)
+        if new != text:
+            path.write_text(new, encoding="utf-8")
+
+
 OWN_ADDRESS = re.compile(r'<link rel="canonical"[^>]*>|<meta property="og:url"[^>]*>')
 
 
@@ -1752,9 +2369,37 @@ def without_address(page: str) -> str:
     return OWN_ADDRESS.sub("", page)
 
 
-def finish(repo: Path = REPO) -> Build:
-    """Write what Astro does not, copy the release's folder and check the whole site."""
+def published_sources(
+    published: Path | None, saved: Iterable[Path], folder: str, dist: Path, address: Address
+) -> tuple[list[str], dict[str, Path]]:
+    """The version folders of the published site the build keeps, and the built site each
+    takes its own files from when it lacks them; refused before anything is written."""
+    saved = list(saved)
+    if published is None:
+        if saved:
+            raise SiteError(
+                "--saved needs --published FOLDER: a saved site gives the own files of a version "
+                "the published site keeps"
+            )
+        return [], {}
+    kept = earlier_versions(published, folder, dist)
+    for name in kept:
+        for path in sorted((published / name).rglob("*.html")):
+            if not picker_place(path.read_text(encoding="utf-8", errors="replace")):
+                raise SiteError(
+                    f"{path.relative_to(published).as_posix()} in the published site has a "
+                    "header without one title wrapper, the place of the version picker: give "
+                    "the version folders as the builds wrote them"
+                )
+    return kept, own_sources(published, kept, saved, folder, address, dist)
+
+
+def finish(repo: Path = REPO, published: Path | None = None, saved: Iterable[Path] = ()) -> Build:
+    """Write what Astro does not, copy the release's folder, keep the earlier versions'
+    folders of the published site when one is given, with their own files and links, and
+    check the whole site."""
     build = load_build(repo)
+    kept, sources = published_sources(published, saved, build.folder, build.dist, build.address)
     if not (build.dist / LATEST).is_dir():
         raise SiteError(f"no built pages in {build.dist / LATEST}: run the Astro step first")
     write_copies(build)
@@ -1763,6 +2408,12 @@ def finish(repo: Path = REPO) -> Build:
     write_base(build)
     write_badges(build)
     copy_release(build)
+    keep_versions(build, published, kept)
+    for name in kept:
+        if name in sources:
+            fill_own(build, name, sources[name])
+        adapt_version(build, name)
+    write_pickers(build, [LATEST, build.folder, *kept], [build.folder, *kept])
     missing = build.dist / "404.html"
     if missing.is_file():
         missing.write_text(without_address(missing.read_text(encoding="utf-8")), encoding="utf-8")
@@ -1861,6 +2512,17 @@ def _page_address(dist: Path, address: Address, path: Path) -> str:
     return address.root + relative
 
 
+def _names_itself(dist: Path, address: Address, path: Path, canonical: str) -> bool:
+    """Whether a page of a version folder names its own address as its canonical link, for a
+    page whose latest address the site does not hold: a kept page of a version whose page a
+    later release removed."""
+    own = _page_address(dist, address, path)
+    folder, _, tail = own.removeprefix(address.root).partition("/")
+    if canonical != own or not VERSION_NAME.fullmatch(folder):
+        return False
+    return _file_for(dist, address, f"{address.base}{LATEST}/{tail}") is None
+
+
 def check_site(dist: Path, address: Address) -> list[str]:
     """Every problem of a built site: a link, anchor or asset that does not resolve, an
     address outside the base folder, anything fetched from another host, a page without
@@ -1892,7 +2554,11 @@ def check_site(dist: Path, address: Address) -> list[str]:
         if name not in ("index.html", "404.html") and len(here.canonical) != 1:
             problems.append(f"{name}: {len(here.canonical)} canonical links")
         for canonical in here.canonical:
-            if not canonical.startswith(f"{address.root}{LATEST}/") and name != "404.html":
+            if (
+                not canonical.startswith(f"{address.root}{LATEST}/")
+                and name != "404.html"
+                and not _names_itself(dist, address, path, canonical)
+            ):
                 problems.append(f"{name}: the canonical link is not a latest page: {canonical}")
         base_url = _page_address(dist, address, path)
         for tag, ref, fetched in here.refs:
@@ -2044,16 +2710,26 @@ def astro_build(repo: Path = REPO) -> str:
     return log
 
 
-def build_site(repo: Path = REPO, *, quiet: bool = False) -> Build:
-    """The whole build: prepare, whose checks refuse a build before anything is installed;
-    install the packages when they are missing; then Astro and finish."""
+def build_site(
+    repo: Path = REPO,
+    *,
+    quiet: bool = False,
+    published: Path | None = None,
+    saved: Iterable[Path] = (),
+) -> Build:
+    """The whole build: check the published site and the saved sites when they are given,
+    and prepare, whose checks refuse a build before anything is installed; install the
+    packages when they are missing; then Astro and finish."""
+    saved = list(saved)
+    folder = version_folder(read_version(repo))
+    published_sources(published, saved, folder, repo / SITE / DIST, read_address(repo))
     prepare(repo)
     if not (repo / SITE / "node_modules").is_dir():
         install(repo)
     log = astro_build(repo)
     if not quiet:
         print(log, end="")
-    return finish(repo)
+    return finish(repo, published, saved)
 
 
 # --- the repository's llms.txt --------------------------------------------------------
@@ -2067,21 +2743,41 @@ def repository_llms(repo: Path = REPO) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="docs_site.py", description=__doc__.split("\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("build", help="prepare, install if needed, run Astro, finish")
+    build_command = commands.add_parser(
+        "build", help="prepare, install if needed, run Astro, finish"
+    )
     commands.add_parser("prepare", help="copy the pages for Astro")
-    commands.add_parser("finish", help="write the copies and llms files, and check the site")
+    finish_command = commands.add_parser(
+        "finish", help="write the copies and llms files, and check the site"
+    )
+    for command in (build_command, finish_command):
+        command.add_argument(
+            "--published",
+            metavar="FOLDER",
+            type=Path,
+            help="the site as it is published: its earlier versions' folders are kept",
+        )
+        command.add_argument(
+            "--saved",
+            metavar="SITE",
+            type=Path,
+            action="append",
+            default=[],
+            help="the built site of a version the published site keeps, which gives that "
+            "version its own files when its folder lacks them; give it once per version",
+        )
     commands.add_parser("check", help="check a site already built")
     llms = commands.add_parser("llms", help="write the repository's llms.txt")
     llms.add_argument("--check", action="store_true", help="exit 1 when llms.txt differs")
     args = parser.parse_args(argv)
     try:
         if args.command == "build":
-            build = build_site(REPO)
+            build = build_site(REPO, published=args.published, saved=args.saved)
             print(f"built {build.dist}")
         elif args.command == "prepare":
             prepare(REPO)
         elif args.command == "finish":
-            finish(REPO)
+            finish(REPO, args.published, args.saved)
         elif args.command == "check":
             problems = check_site(REPO / SITE / DIST, read_address(REPO))
             for problem in problems:
