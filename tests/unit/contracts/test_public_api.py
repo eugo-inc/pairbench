@@ -174,8 +174,8 @@ def test_the_names_the_package_exports() -> None:
 
 def test_the_version_is_the_static_version_of_the_package() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project["version"] == "0.3.0"
-    assert pairbench.__version__ == "0.3.0"
+    assert project["version"] == "0.3.1"
+    assert pairbench.__version__ == "0.3.1"
     assert "dynamic" not in project
 
 

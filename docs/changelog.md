@@ -6,6 +6,25 @@ description: "What each release of pairbench added and changed, newest first."
 
 This page lists what each release of pairbench added and changed, newest first.
 
+## 0.3.1
+
+The pages of earlier versions kept on the documentation site, with a version picker on every
+page, and a run the tool server answers as ended always given with its exit code.
+
+- **Earlier versions on the documentation site**: the site keeps the pages of the last release
+  of each earlier minor version in the folder of its major and minor version, such as `0.2/`,
+  beside the latest pages, each version with its own badges, icon, share image and search. The
+  header of every page has a version picker beside the site's title that lists the latest pages
+  and each version the site holds, newest first, each a link to that version's home page. A
+  link in an earlier version's pages to a latest page the site lacks goes to that version's own
+  copy of the page. `python3 tools/docs_site.py build --published FOLDER` builds the site of a
+  release with the pages of the versions before it, as the
+  [contributing guide](../CONTRIBUTING.md#the-site-of-a-release) says.
+- **Run state from the tool server**: `run_status` and `run_cancel` take the state of a run and
+  its exit code from one reading, so a run they answer as ended always comes with its exit
+  code.
+- **Unchanged**: the text codes, the results format and the command line are as in 0.3.0.
+
 ## 0.3.0
 
 Verdicts decided in exact arithmetic, the runs of one text file pooled, a capture kept in

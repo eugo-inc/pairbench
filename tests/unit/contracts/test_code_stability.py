@@ -354,12 +354,14 @@ def test_the_changelog_is_read_by_the_rule_and_its_newest_entry_is_this_release(
     entry = newest_entry(_real_changelog())
     assert entry is not None
     assert entry[0] == _version(pairbench.__version__)
-    assert "The new `pairbench.stats.holm_exact`" in entry[1]
+    assert "`run_status` and `run_cancel` take the state of a run" in entry[1]
     assert "## " not in entry[1]
 
 
 # The real changelog with one more line in its newest entry, after the line that ends it.
-REAL_LAST_LINE = "  The set of text codes is that of 0.2.1.\n"
+REAL_LAST_LINE = (
+    "- **Unchanged**: the text codes, the results format and the command line are as in 0.3.0.\n"
+)
 
 
 def _real_with(line: str) -> str:
@@ -392,7 +394,16 @@ def test_every_change_against_the_real_changelog_is_caught() -> None:
 
 def test_a_code_named_as_the_message_says_in_the_real_changelog_is_named() -> None:
     log = _real_with("- Adds `E_MADE_UP`.")
-    assert code_problems(set(PINNED_CODES) | {"E_MADE_UP"}, PINNED_CODES, PINNED_RELEASE, log) == []
+    added = code_problems(set(PINNED_CODES) | {"E_MADE_UP"}, PINNED_CODES, PINNED_RELEASE, log)
+    newest = pairbench.__version__
+    # Named in the entry, the code is not reported as missing; a patch release may not add it.
+    if newest.split(".")[2] == "0":
+        assert added == []
+    else:
+        assert added == [
+            f"the text code E_MADE_UP was added in {newest}, a patch release: a text code is "
+            "added only in a minor or a major release"
+        ]
     log = _real_with("- Removes `E_LOCK`.")
     assert code_problems(set(PINNED_CODES) - {"E_LOCK"}, PINNED_CODES, PINNED_RELEASE, log) == [
         f"the text code E_LOCK of {PINNED_RELEASE} was removed or renamed in "

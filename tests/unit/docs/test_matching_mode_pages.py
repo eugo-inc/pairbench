@@ -129,10 +129,15 @@ def page(repo_root: Path, name: str) -> str:
     return " ".join((repo_root / name).read_text(encoding="utf-8").split())
 
 
-def newest_entry(repo_root: Path) -> str:
+# The release whose changelog entry describes the matching mode.
+MATCHING_RELEASE = "0.3.0"
+
+
+def release_entry(repo_root: Path, version: str) -> str:
     text = page(repo_root, CHANGELOG)
-    start = text.index("## ")
-    return text[start : text.index(" ## ", start + 3)]
+    start = text.index(f"## {version} ")
+    end = text.find(" ## ", start + 3)
+    return text[start : end if end != -1 else len(text)]
 
 
 @pytest.mark.parametrize(
@@ -168,8 +173,10 @@ def test_the_pages_say_what_the_view_and_compare_matching_do(
         pytest.param(CHANGELOG_NOT_FINITE, id="pool-not-finite"),
     ],
 )
-def test_the_newest_changelog_entry_says_it(repo_root: Path, sentence: str) -> None:
-    assert sentence in newest_entry(repo_root)
+def test_the_changelog_entry_of_the_matching_release_says_it(
+    repo_root: Path, sentence: str
+) -> None:
+    assert sentence in release_entry(repo_root, MATCHING_RELEASE)
 
 
 def test_the_results_schema_says_when_the_matching_refusal_is_null(repo_root: Path) -> None:

@@ -66,7 +66,7 @@ from pairbench.errors import Refusal
 # ---------------------------------------------------------------------------
 
 TOOL_NAME: Final = "pairbench"
-TOOL_VERSION: Final = "0.3.0"
+TOOL_VERSION: Final = "0.3.1"
 
 SCHEMA_CAPTURE: Final = "pairbench/capture/v1"
 SCHEMA_RESULTS: Final = "pairbench/results/v1"
