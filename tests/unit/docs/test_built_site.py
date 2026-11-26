@@ -58,6 +58,8 @@ ROOT = "https://eugo.io/docs/pairbench/"
 BASE = "/docs/pairbench/"
 LATEST = f"{ROOT}latest/"
 FOLDER = "0.3"
+# The release's own folder, beside the folder of its minor version.
+RELEASE = TOOL_VERSION
 BUILD_TIMEOUT_S = 600
 AI_CRAWLERS = ("GPTBot", "ClaudeBot", "PerplexityBot", "Google-Extended")
 LLMS_LINE = (
@@ -113,7 +115,7 @@ HOME_ORGANIZATION = {
     "url": "https://eugo.io/",
 }
 # The home page of each folder defines the organisation; no other page does.
-ORGANIZATION_PAGES = [f"{FOLDER}/index.html", "latest/index.html"]
+ORGANIZATION_PAGES = [f"{FOLDER}/index.html", f"{RELEASE}/index.html", "latest/index.html"]
 HOME_SOURCE = {
     "@type": "SoftwareSourceCode",
     "name": "pairbench",
@@ -298,6 +300,7 @@ def test_the_site_built_from_a_clean_copy_passes_its_own_checks(
     assert tool.check_site(built, tool.read_address(REPO)) == []
     assert (built / "latest" / "index.html").is_file()
     assert (built / FOLDER / "index.html").is_file()
+    assert (built / RELEASE / "index.html").is_file()
 
 
 def test_two_builds_in_two_folders_give_the_same_files(
@@ -355,7 +358,7 @@ def test_every_page_carries_its_description_canonical_link_and_version(
         page = build.pages[entry.page]  # type: ignore[attr-defined]
         slug = entry.page.removesuffix(".md").removesuffix("index").rstrip("/")
         latest = LATEST + (f"{slug}/" if slug else "")
-        for folder in ("latest", FOLDER):
+        for folder in ("latest", FOLDER, RELEASE):
             text = read(built, page_file(slug, folder))
             described = re.findall(r'<meta name="description" content="([^"]*)"/>', text)
             assert [html.unescape(d) for d in described] == [page.description]
@@ -369,6 +372,7 @@ def test_the_sitemap_and_robots_txt_are_built_for_the_address(built: Path) -> No
 
     assert f"<loc>{LATEST}</loc>" in sitemap
     assert f"/{FOLDER}/" not in sitemap
+    assert f"/{RELEASE}/" not in sitemap
     assert f"Sitemap: {ROOT}sitemap-index.xml" in robots
     assert f"{LATEST}llms.txt" in robots
     for crawler in AI_CRAWLERS:
@@ -424,7 +428,8 @@ def test_every_page_names_the_share_image_and_the_image_is_in_the_site(built: Pa
     share = load_tool(REPO, "share_image")
 
     assert len(pages) > PAGES_AT_LEAST
-    assert {"index.html", "404.html", "latest/index.html", f"{FOLDER}/index.html"} <= {
+    expected = {"index.html", "404.html", "latest/index.html", f"{FOLDER}/index.html"}
+    assert expected | {f"{RELEASE}/index.html"} <= {
         path.relative_to(built).as_posix() for path in pages
     }
     assert wrong == []
@@ -436,7 +441,7 @@ def test_every_page_carries_one_block_of_structured_data_and_no_other_page_does(
     built: Path, build: object
 ) -> None:
     entries = build.navigation.entries  # type: ignore[attr-defined]
-    folders = ("latest", FOLDER)
+    folders = ("latest", FOLDER, RELEASE)
     pages = [page_file(entry_slug(e.page), folder) for e in entries for folder in folders]
     for name in pages:
         assert graph(read(built, name)), name
@@ -543,8 +548,9 @@ def test_a_versioned_page_carries_the_structured_data_of_its_latest_page(
     for entry in build.navigation.entries:  # type: ignore[attr-defined]
         slug = entry_slug(entry.page)
         latest = LD_JSON.findall(read(built, page_file(slug)))
-        versioned = LD_JSON.findall(read(built, page_file(slug, FOLDER)))
-        assert (len(latest), versioned) == (1, latest), entry.page
+        for folder in (FOLDER, RELEASE):
+            versioned = LD_JSON.findall(read(built, page_file(slug, folder)))
+            assert (len(latest), versioned) == (1, latest), (folder, entry.page)
 
 
 def test_every_address_in_the_structured_data_is_a_built_latest_page(built: Path) -> None:
@@ -567,7 +573,7 @@ def test_every_address_in_the_structured_data_is_a_built_latest_page(built: Path
 def test_every_text_code_and_exit_code_has_its_anchor_where_the_refusal_points(
     built: Path,
 ) -> None:
-    for folder in ("latest", FOLDER):
+    for folder in ("latest", FOLDER, RELEASE):
         found = ids(read(built, f"{folder}/reference/exit-codes/index.html"))
         assert {code.lower() for code in CODES} <= found
         assert {f"exit-code-{code}" for code in EXIT_CODES} <= found
@@ -577,7 +583,7 @@ def test_every_text_code_and_exit_code_has_its_anchor_where_the_refusal_points(
 
 
 def test_the_note_after_a_run_points_at_a_section_the_config_page_has(built: Path) -> None:
-    for folder in ("latest", FOLDER):
+    for folder in ("latest", FOLDER, RELEASE):
         assert SHARED_COMMAND_ANCHOR in ids(read(built, f"{folder}/reference/config/index.html"))
     address = section_address(CONFIG_PAGE, SHARED_COMMAND_ANCHOR, TOOL_VERSION)
     path, _, anchor = address.removeprefix(ROOT).partition("#")

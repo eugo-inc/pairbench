@@ -604,10 +604,19 @@ def add_line(repo: Path) -> None:
         page.write("A line the script does not write.\n")
 
 
-def drop_minor(repo: Path) -> None:
-    path = repo / "pyproject.toml"
-    text = path.read_text(encoding="utf-8")
-    path.write_text(re.sub(r'(?m)^version = "[^"]*"$', 'version = "1"', text), encoding="utf-8")
+def set_version(version: str) -> Callable[[Path], None]:
+    """Spoil a copy with ``version`` as the version of the package."""
+
+    def spoil(repo: Path) -> None:
+        path = repo / "pyproject.toml"
+        text = path.read_text(encoding="utf-8")
+        new = re.sub(r'(?m)^version = "[^"]*"$', f'version = "{version}"', text)
+        path.write_text(new, encoding="utf-8")
+
+    return spoil
+
+
+drop_minor = set_version("1")
 
 
 FAQ = "docs/faq.md"
@@ -808,6 +817,10 @@ REFUSED_BEFORE_INSTALL = {
     "a version without its minor part": (
         drop_minor,
         "the version must start with MAJOR.MINOR: '1'",
+    ),
+    "a version without its patch part": (
+        set_version("1.2"),
+        "the version must start with MAJOR.MINOR.PATCH: '1.2'",
     ),
     "a reference link to a page the site does not have": (
         add_to_faq("Read [the missing part][gone].\n\n[gone]: guides/no-such-page.md\n"),

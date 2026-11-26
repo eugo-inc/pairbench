@@ -2,9 +2,12 @@
 # Copyright (c) 2026, Eugo, Inc.
 """Every page the build writes has a version picker in its header.
 
-The picker lists the latest pages and every version folder the built site holds, newest
-first, each a link to that version's home page, the one the page documents marked. The
-made-up site documents 9.8.7 and keeps 9.7 and 0.10 of the published site.
+The picker lists the latest pages and every release folder the built site holds, newest
+first, each a link to that release's home page, the one the page documents marked. The folder
+of a minor version holds the pages of its newest release: when the site holds that release's
+folder, its pages mark that release, and the picker does not list it a second time. The
+made-up site documents 9.8.7, whose folders are 9.8.7 and 9.8, and keeps 9.7 and 0.10 of the
+published site, whose pages name no release.
 """
 
 from __future__ import annotations
@@ -31,12 +34,13 @@ def built_page(tail: str) -> str:
 
 
 def picker(here: str) -> str:
-    """The picker of a page of the version ``here``: the latest pages, then 9.8, 9.7 and 0.10."""
+    """The picker of a page of the version ``here``: the latest pages, then 9.8.7, 9.7 and
+    0.10."""
     items = "".join(
         f'<li><a href="{BASE}{folder}/"'
         + (' aria-current="true"' if folder == here else "")
         + f">{folder}</a></li>"
-        for folder in ("latest", "9.8", "9.7", "0.10")
+        for folder in ("latest", "9.8.7", "9.7", "0.10")
     )
     return (
         f'<details class="pb-versions"><summary><span class="sr-only">Version: </span>{here}'
@@ -73,7 +77,8 @@ def test_the_pages_the_build_writes_name_every_version_in_their_header(
     built = files(dist)
     for tail in TAILS:
         assert built[f"latest/{tail}index.html"].decode() == with_picker(docs_site, tail, "latest")
-        assert built[f"9.8/{tail}index.html"].decode() == with_picker(docs_site, tail, "9.8")
+        assert built[f"9.8.7/{tail}index.html"].decode() == with_picker(docs_site, tail, "9.8.7")
+        assert built[f"9.8/{tail}index.html"].decode() == with_picker(docs_site, tail, "9.8.7")
     assert built["404.html"].decode() == with_picker(docs_site, "", "latest").replace(
         f'<link rel="canonical" href="{SITE}{BASE}latest/">', ""
     )
@@ -102,7 +107,7 @@ def test_the_pages_of_a_build_without_a_published_site_name_its_own_version_and_
             "tool</a></div>",
             'tool</a><details class="pb-versions"><summary><span class="sr-only">Version: '
             f'</span>latest</summary><ul><li><a href="{BASE}latest/" aria-current="true">latest'
-            f'</a></li><li><a href="{BASE}9.8/">9.8</a></li></ul></details></div>',
+            f'</a></li><li><a href="{BASE}9.8.7/">9.8.7</a></li></ul></details></div>',
         )
     )
 
@@ -110,7 +115,8 @@ def test_the_pages_of_a_build_without_a_published_site_name_its_own_version_and_
 def test_a_page_that_has_a_picker_gets_the_new_one_in_its_place(docs_site: ModuleType) -> None:
     old = with_picker(docs_site, "install/", "9.7").replace("0.10", "0.9")
 
-    page = docs_site.with_picker(old, "9.7/install/index.html", BASE, ["9.8", "0.10", "9.7"], "9.7")
+    versions = ["9.8.7", "0.10", "9.7"]
+    page = docs_site.with_picker(old, "9.7/install/index.html", BASE, versions, "9.7")
 
     assert page == with_picker(docs_site, "install/", "9.7")
 

@@ -4,8 +4,9 @@
 
 ``--published FOLDER`` names the site as it is published. Its version folders, ``9.7/`` and
 the Markdown page ``9.7.md`` beside it, are copied into the built site as they are; the
-folder of the version the build documents, the latest pages and the base pages are the
-build's own. The site is made up, of the version 9.8.7, whose folder is ``9.8``.
+two folders of the release the build documents, the latest pages and the base pages are the
+build's own. The site is made up, of the release 9.8.7, whose folders are ``9.8.7``, its own,
+and ``9.8``, its minor version's.
 """
 
 from __future__ import annotations
@@ -50,7 +51,15 @@ EARLIER_FILES = {
 # What the published site holds that the build writes itself, with text the build never
 # writes: none of it may reach the built site.
 STALE = "stale text of the published site\n"
-STALE_FILES = ("9.8/index.html", "9.8.md", "latest/index.html", "index.html", "llms.txt")
+STALE_FILES = (
+    "9.8/index.html",
+    "9.8.md",
+    "9.8.7/index.html",
+    "9.8.7.md",
+    "latest/index.html",
+    "index.html",
+    "llms.txt",
+)
 NO_LATEST = "holds no latest/index.html: give the folder of the site as it is published"
 
 
@@ -111,10 +120,11 @@ def test_the_finish_step_keeps_every_earlier_version_folder_as_it_is(
     for name in STALE_FILES:
         assert built[name] != STALE.encode()
     assert built["9.8/index.html"] == built["latest/index.html"]
+    assert built["9.8.7/index.html"] == built["latest/index.html"]
     assert docs_site.check_site(dist, address) == []
 
 
-def test_the_finish_step_without_a_published_site_writes_the_two_folders_only(
+def test_the_finish_step_without_a_published_site_writes_the_release_s_folders_only(
     docs_site: ModuleType,
     repo_root: Path,
     tmp_path: Path,
@@ -127,7 +137,12 @@ def test_the_finish_step_without_a_published_site_writes_the_two_folders_only(
     code = docs_site.main(["finish"])
 
     assert (code, capsys.readouterr()) == (EXIT_OK, ("", ""))
-    assert sorted(p.name for p in dist.iterdir() if p.is_dir()) == ["9.8", "_astro", "latest"]
+    assert sorted(p.name for p in dist.iterdir() if p.is_dir()) == [
+        "9.8",
+        "9.8.7",
+        "_astro",
+        "latest",
+    ]
 
 
 def refusal(case: str, site: Path, dist: Path) -> tuple[Path, str]:
@@ -350,7 +365,13 @@ def test_the_finish_step_run_again_with_fewer_versions_keeps_only_those(
     second = docs_site.main(["finish", "--published", str(site)])
 
     assert (first, second, capsys.readouterr()) == (EXIT_OK, EXIT_OK, ("", ""))
-    assert sorted(p.name for p in dist.iterdir() if p.name[0].isdigit()) == ["9.7", "9.8", "9.8.md"]
+    assert sorted(p.name for p in dist.iterdir() if p.name[0].isdigit()) == [
+        "9.7",
+        "9.8",
+        "9.8.7",
+        "9.8.7.md",
+        "9.8.md",
+    ]
     assert files(dist / "9.7") == files(site / "9.7")
 
 

@@ -2,12 +2,14 @@
 # Copyright (c) 2026, Eugo, Inc.
 """A kept version keeps its own badges, icon, share image and search, and no link to nothing.
 
-The made-up site documents 9.8.7 and keeps 9.7. The pages of 9.7 name the files of the base
-folder as its own release built them: the badge, the icon, the share image and the search
-index. The build gives 9.7 its own copies of them in ``9.7/_base/``, taken once from the built
-site of 9.7 (``--saved SITE``) or from the published site when its latest pages are 9.7's,
-and points the pages at them. A link of a kept page to a latest page the build does not
-hold points at the kept version's own copy of that page.
+The made-up site documents 9.8.7 and keeps 9.7, which holds the pages of 9.7.1. The pages of
+9.7 name the files of the base folder as its own release built them: the badge, the icon, the
+share image and the search index. The build gives 9.7 its own copies of them in
+``9.7/_base/``, taken once from the built site of 9.7.1 (``--saved SITE``) or from the
+published site when its latest pages are 9.7.1's, and points the pages at them. The same
+built site gives 9.7.1 its own folder, ``9.7.1/``, which the published site lacks. A link of a
+kept page to a latest page the build does not hold points at the kept version's own copy of
+that page.
 """
 
 from __future__ import annotations
@@ -99,11 +101,23 @@ def kept_folder(site: Path) -> None:
     write(site, "9.7.md", "# tool 9.7\n")
 
 
+def latest_page(tail: str, version: str = "9.7.1") -> str:
+    """A page of ``version`` as its release built it at ``latest/<tail>``: its links and its
+    search script are the latest pages' and the base folder's."""
+    page = kept_page(tail).replace(f"{BASE}9.7/_astro/", f"{BASE}_astro/")
+    return page.replace(f"{BASE}9.7/", f"{BASE}latest/").replace("9.7.1", version)
+
+
 def saved_site(tmp_path: Path, version: str = "9.7.1") -> Path:
-    """The built site of 9.7.1 as its release left it."""
+    """The built site of ``version`` as its release left it: its latest pages, the folder of
+    its minor version, its scripts and the files of its base folder."""
     site = tmp_path / f"saved-{version}"
     kept_folder(site)
-    write(site, "latest/index.html", f"<html><head>{VERSION_META.format(version)}</head></html>")
+    for tail in KEPT_TAILS:
+        write(site, f"latest/{tail}index.html", latest_page(tail, version))
+    write(site, "latest.md", "# tool, the latest pages\n")
+    write(site, "_astro/Search.js", SEARCH)
+    write(site, "_astro/ui.js", SEARCH_UI)
     for name, data in OWN_FILES.items():
         (site / name).parent.mkdir(parents=True, exist_ok=True)
         (site / name).write_bytes(data)
@@ -111,11 +125,11 @@ def saved_site(tmp_path: Path, version: str = "9.7.1") -> Path:
 
 
 def published(tmp_path: Path) -> Path:
-    """The site as it is published: the latest pages of 9.8 and the folder of 9.7, copied in
-    from 9.7's built site without its base files."""
+    """The site as it is published: the latest pages of 9.8.7 and the folder of 9.7, copied in
+    from 9.7.1's built site without its base files."""
     site = tmp_path / "published"
     kept_folder(site)
-    write(site, "latest/index.html", f"<html><head>{VERSION_META.format('9.8.0')}</head></html>")
+    write(site, "latest/index.html", f"<html><head>{VERSION_META.format('9.8.7')}</head></html>")
     return site
 
 
@@ -124,22 +138,27 @@ def current_base(dist: Path) -> None:
         write(dist, name, text)
 
 
-# The version picker of a 9.7 page: the latest pages, then 9.8 and 9.7, which it marks.
+# The version picker of a 9.7 page and of a 9.7.1 page: the latest pages, then the releases
+# 9.8.7 and 9.7.1, which it marks. The folders of the minor versions, 9.8 and 9.7, hold the
+# pages of those releases and are not listed a second time.
 PICKER = (
-    '<details class="pb-versions"><summary><span class="sr-only">Version: </span>9.7</summary>'
-    f'<ul><li><a href="{BASE}latest/">latest</a></li><li><a href="{BASE}9.8/">9.8</a></li>'
-    f'<li><a href="{BASE}9.7/" aria-current="true">9.7</a></li></ul></details>'
+    '<details class="pb-versions"><summary><span class="sr-only">Version: </span>9.7.1</summary>'
+    f'<ul><li><a href="{BASE}latest/">latest</a></li><li><a href="{BASE}9.8.7/">9.8.7</a></li>'
+    f'<li><a href="{BASE}9.7.1/" aria-current="true">9.7.1</a></li></ul></details>'
 )
 
 
-def expected_page(docs_site: ModuleType, tail: str) -> str:
-    """A 9.7 page as the build keeps it: the base files are its own copies, the latest
-    address of a page the build does not hold is the kept version's own page, and its header
-    has the version picker."""
+def expected_page(docs_site: ModuleType, tail: str, folder: str = "9.7") -> str:
+    """A page of 9.7.1 in ``folder`` as the build keeps it or puts it together: the base files
+    are its own copies, the latest address of a page the build does not hold is the version's
+    own page, and its header has the version picker."""
     latest = "latest/" if tail != "oldfaq/" else "9.7/"
     page = kept_page(tail, own="9.7/_base/", latest=latest, search="Search.own.js")
     page = page.replace("</head>", f"{docs_site.PICKER_STYLE}</head>")
-    return page.replace("tool</a></div>", f"tool</a>{PICKER}</div>")
+    page = page.replace("tool</a></div>", f"tool</a>{PICKER}</div>")
+    return page.replace(f"{BASE}9.7/", f"{BASE}{folder}/").replace(
+        f"{ROOT}9.7/", f"{ROOT}{folder}/"
+    )
 
 
 def test_a_kept_version_gets_its_own_files_and_links_from_its_saved_site(
@@ -173,6 +192,47 @@ def test_a_kept_version_gets_its_own_files_and_links_from_its_saved_site(
     assert fragment == gzip.compress(OWN_FRAGMENT, mtime=0)
     for name, text in CURRENT_FILES.items():
         assert built[name] == text.encode()
+    assert docs_site.check_site(dist, address) == []
+
+
+def test_the_saved_site_gives_its_release_a_folder_of_its_own(
+    docs_site: ModuleType,
+    repo_root: Path,
+    tmp_path: Path,
+    address: object,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dist = finished(docs_site, repo_root, tmp_path, address, monkeypatch)
+    current_base(dist)
+    saved = saved_site(tmp_path)
+
+    code = docs_site.main(
+        ["finish", "--published", str(published(tmp_path)), "--saved", str(saved)]
+    )
+
+    assert (code, capsys.readouterr()) == (EXIT_OK, ("", ""))
+    built = files(dist)
+    for tail in KEPT_TAILS:
+        assert built[f"9.7.1/{tail}index.html"].decode() == expected_page(docs_site, tail, "9.7.1")
+    assert built["9.7.1/_astro/Search.own.js"].decode() == OWN_SEARCH.replace("9.7/", "9.7.1/")
+    assert built["9.7.1/_astro/ui.own.js"].decode() == OWN_SEARCH_UI
+    assert built["9.7.1.md"] == b"# tool, the latest pages\n"
+    for name, data in OWN_FILES.items():
+        if not name.endswith(".pf_fragment"):
+            assert built[f"9.7.1/_base/{name}"] == data
+    fragment = gzip.decompress(built["9.7.1/_base/pagefind/fragment/en_1.pf_fragment"])
+    assert fragment == OWN_FRAGMENT.replace(b"9.7/", b"9.7.1/")
+    assert sorted({name.split("/")[0] for name in built if name[0].isdigit()}) == [
+        "9.7",
+        "9.7.1",
+        "9.7.1.md",
+        "9.7.md",
+        "9.8",
+        "9.8.7",
+        "9.8.7.md",
+        "9.8.md",
+    ]
     assert docs_site.check_site(dist, address) == []
 
 
@@ -238,7 +298,7 @@ def test_a_kept_page_names_itself_canonical_only_for_a_page_the_latest_pages_lac
 
 NEEDS_SAVED = (
     "9.7/ in the published site has no _base/badges/version.svg, its own copy of a file its "
-    "pages name: give the built site of 9.7 with --saved SITE"
+    "pages name: give the built site of 9.7.1 with --saved SITE"
 )
 
 
@@ -251,8 +311,8 @@ def own_refusal(case: str, tmp_path: Path) -> tuple[list[str], str]:
     if case == "no published site":
         saved = saved_site(tmp_path)
         return ["--saved", str(saved)], (
-            "--saved needs --published FOLDER: a saved site gives the own files of a version "
-            "the published site keeps"
+            "--saved needs --published FOLDER: a saved site gives the pages of a release the "
+            "published site lacks, or the own files of a version it keeps"
         )
     if case == "a saved site that is not a folder":
         given = tmp_path / "absent"
@@ -267,22 +327,24 @@ def own_refusal(case: str, tmp_path: Path) -> tuple[list[str], str]:
             f"the saved site {saved} holds no latest/index.html that names its version: give "
             "the folder of an earlier release's built site"
         )
-    if case == "a saved site of a version not kept":
-        saved = saved_site(tmp_path, "9.6.2")
+    if case == "a saved site of a later release":
+        saved = saved_site(tmp_path, "9.9.0")
         return ["--published", str(site), "--saved", str(saved)], (
-            f"the saved site {saved} documents 9.6, which the published site does not keep: "
-            "copy its 9.6/ and 9.6.md into the published site first"
+            f"the saved site {saved} documents 9.9.0, a release newer than 9.8.7, the one this "
+            "build documents: give the built sites of earlier releases"
         )
-    if case == "a saved site of the version built":
-        saved = saved_site(tmp_path, "9.8.1")
+    if case == "a saved site of the release built":
+        saved = saved_site(tmp_path, "9.8.7")
         return ["--published", str(site), "--saved", str(saved)], (
-            f"the saved site {saved} documents 9.8, the version this build documents: give "
-            "the built sites of earlier versions"
+            f"the saved site {saved} documents 9.8.7, the release this build documents: give "
+            "the built sites of earlier releases"
         )
-    if case == "two saved sites of one version":
-        one, other = saved_site(tmp_path), saved_site(tmp_path, "9.7.0")
+    if case == "two saved sites of one release":
+        one = saved_site(tmp_path)
+        other = tmp_path / "saved-again"
+        shutil.copytree(one, other)
         return ["--published", str(site), "--saved", str(one), "--saved", str(other)], (
-            f"two saved sites document 9.7: {one} and {other}: give one"
+            f"two saved sites document 9.7.1: {one} and {other}: give one"
         )
     if case == "a saved site without a file the pages name":
         saved = saved_site(tmp_path)
@@ -339,16 +401,10 @@ def own_refusal(case: str, tmp_path: Path) -> tuple[list[str], str]:
         )
     if case == "a saved site of another release of the version":
         saved = saved_site(tmp_path, "9.7.0")
-        return ["--published", str(site), "--saved", str(saved)], (
-            f"the saved site {saved} documents 9.7.0, and 9.7/ in the published site holds the "
-            "pages of 9.7.1: give the built site of 9.7.1"
-        )
+        return ["--published", str(site), "--saved", str(saved)], NEEDS_SAVED
     if case == "a published site of another release of the version":
         given = saved_site(tmp_path, "9.7.0")
-        return ["--published", str(given)], (
-            f"the published site {given} documents 9.7.0, and 9.7/ in the published site holds "
-            "the pages of 9.7.1: give the built site of 9.7.1"
-        )
+        return ["--published", str(given)], NEEDS_SAVED
     if case == "a fragment of a page the kept folder lacks":
         saved = saved_site(tmp_path)
         fragment = saved / "pagefind/fragment/en_1.pf_fragment"
@@ -380,9 +436,9 @@ OWN_REFUSALS = (
     "no published site",
     "a saved site that is not a folder",
     "a saved site without its version",
-    "a saved site of a version not kept",
-    "a saved site of the version built",
-    "two saved sites of one version",
+    "a saved site of a later release",
+    "a saved site of the release built",
+    "two saved sites of one release",
     "a saved site without a file the pages name",
     "a published site without a file the pages name",
     "a link among the own files",
