@@ -117,6 +117,7 @@ HOME_ORGANIZATION = {
     "sameAs": [
         "https://www.youtube.com/@eugo-inc",
         "https://github.com/eugo-inc",
+        "https://www.wikidata.org/wiki/Q142294143",
     ],
 }
 # The home page of each folder defines the organisation; no other page does.

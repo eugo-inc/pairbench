@@ -87,7 +87,8 @@ ASTRO_CONFIG = f"const SITE = '{SITE}';\nconst BASE = '{BASE}';\n"
 # The structured data of a made-up site of four pages in two sections: the home page and one
 # more page in the first section, and in the second a section page and one page under it.
 LATEST = f"{SITE}{BASE}latest/"
-ORGANIZATION = {"@id": f"{SITE}/#organization"}
+# The identifier of the organisation is the host's own, whatever the address of the site.
+ORGANIZATION = {"@id": "https://eugo.io/#organization"}
 # The organisation that publishes the software: the package's author, the citation's author
 # and the holder of the copyright in NOTICE and in the licence header.
 PUBLISHER_NAME = "Eugo, Inc."
@@ -95,13 +96,14 @@ PUBLISHER_NAME = "Eugo, Inc."
 # and logo the home page of the host gives the same organisation, and profiles of it.
 ORGANIZATION_NODE = {
     "@type": "Organization",
-    "@id": f"{SITE}/#organization",
+    "@id": "https://eugo.io/#organization",
     "name": "Eugo",
     "url": "https://eugo.io",
     "logo": "https://eugo.io/eugo-search-logo.png",
     "sameAs": [
         "https://www.youtube.com/@eugo-inc",
         "https://github.com/eugo-inc",
+        "https://www.wikidata.org/wiki/Q142294143",
     ],
 }
 # How many nodes of the made-up site name the publisher: the software and its source on the

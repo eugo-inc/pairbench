@@ -155,15 +155,18 @@ OPERATING_SYSTEMS = "Linux, macOS"
 # and the holder of the copyright in NOTICE and in the licence header. The home page defines
 # it at the root of the host, by the name below.
 PUBLISHER = "Eugo, Inc."
-# The organisation as the structured data names it: the name, address and logo the home page
-# of the host gives the same organisation, and profiles of it, so that a search or answer
-# engine takes the publisher of these pages and of the host for one company.
+# The organisation as the structured data names it: the identifier, name, address and logo the
+# home page of the host gives the same organisation, and profiles of it, among them its item in
+# Wikidata, so that a search or answer engine takes the publisher of these pages and of the
+# host for one company. The identifier is the host's own, whatever the address of this site.
 ORGANIZATION_NAME = "Eugo"
 ORGANIZATION_URL = "https://eugo.io"
+ORGANIZATION_ID = f"{ORGANIZATION_URL}/#organization"
 ORGANIZATION_LOGO = "https://eugo.io/eugo-search-logo.png"
 ORGANIZATION_PROFILES = (
     "https://www.youtube.com/@eugo-inc",
     "https://github.com/eugo-inc",
+    "https://www.wikidata.org/wiki/Q142294143",
 )
 HOME_PAGE = "index.md"
 # The marks of the site, as the content files of the pages name them; the same files as
@@ -1214,7 +1217,7 @@ def structured_data(build: Build, page: Page) -> dict[str, object]:
     home = _absolute(build, HOME_PAGE)
     url = _absolute(build, page.path)
     software = f"{home}#software"
-    organization = f"{build.address.site}/#organization"
+    organization = ORGANIZATION_ID
     publisher = {"@id": organization}
     name, summary = build.navigation.title, build.navigation.summary
     nodes: list[dict[str, object]]
