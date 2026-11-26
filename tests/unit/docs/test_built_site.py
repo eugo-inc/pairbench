@@ -106,13 +106,18 @@ HOME_APPLICATION = {
     "license": LICENSE,
     "publisher": PUBLISHER,
 }
-# The organisation every publisher names, as the home page defines it: no logo, since the
-# repository holds none.
+# The organisation every publisher names, as the home page defines it: the name, address and
+# logo the home page of the host gives the same organisation, and profiles of it.
 HOME_ORGANIZATION = {
     "@type": "Organization",
     "@id": "https://eugo.io/#organization",
-    "name": "Eugo, Inc.",
-    "url": "https://eugo.io/",
+    "name": "Eugo",
+    "url": "https://eugo.io",
+    "logo": "https://eugo.io/eugo-search-logo.png",
+    "sameAs": [
+        "https://www.youtube.com/@eugo-inc",
+        "https://github.com/eugo-inc",
+    ],
 }
 # The home page of each folder defines the organisation; no other page does.
 ORGANIZATION_PAGES = [f"{FOLDER}/index.html", f"{RELEASE}/index.html", "latest/index.html"]

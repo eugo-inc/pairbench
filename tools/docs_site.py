@@ -153,8 +153,18 @@ LICENSE_ADDRESS = "https://www.apache.org/licenses/LICENSE-2.0"
 OPERATING_SYSTEMS = "Linux, macOS"
 # The organisation that publishes the software: the package's author, the citation's author
 # and the holder of the copyright in NOTICE and in the licence header. The home page defines
-# it at the root of the host.
+# it at the root of the host, by the name below.
 PUBLISHER = "Eugo, Inc."
+# The organisation as the structured data names it: the name, address and logo the home page
+# of the host gives the same organisation, and profiles of it, so that a search or answer
+# engine takes the publisher of these pages and of the host for one company.
+ORGANIZATION_NAME = "Eugo"
+ORGANIZATION_URL = "https://eugo.io"
+ORGANIZATION_LOGO = "https://eugo.io/eugo-search-logo.png"
+ORGANIZATION_PROFILES = (
+    "https://www.youtube.com/@eugo-inc",
+    "https://github.com/eugo-inc",
+)
 HOME_PAGE = "index.md"
 # The marks of the site, as the content files of the pages name them; the same files as
 # docs/readme/mark-light.svg and mark-dark.svg.
@@ -1237,8 +1247,10 @@ def structured_data(build: Build, page: Page) -> dict[str, object]:
             {
                 "@type": "Organization",
                 "@id": organization,
-                "name": PUBLISHER,
-                "url": f"{build.address.site}/",
+                "name": ORGANIZATION_NAME,
+                "url": ORGANIZATION_URL,
+                "logo": ORGANIZATION_LOGO,
+                "sameAs": list(ORGANIZATION_PROFILES),
             },
         ]
     else:
