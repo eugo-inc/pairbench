@@ -47,8 +47,12 @@ export default defineConfig({
         '@fontsource-variable/red-hat-display',
         './src/styles/brand.css',
       ],
-      // The footer of every page, with the line that names the maker.
-      components: { Footer: './src/components/Footer.astro' },
+      // The footer of every page, with the line that names the maker; the title of the header,
+      // followed by the maker's logo.
+      components: {
+        Footer: './src/components/Footer.astro',
+        SiteTitle: './src/components/SiteTitle.astro',
+      },
       social: [
         { icon: 'github', label: 'Source', href: 'https://github.com/eugo-inc/pairbench' },
       ],

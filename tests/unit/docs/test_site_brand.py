@@ -57,6 +57,7 @@ REFERENCE = re.compile(r"url\(([^)]*)\)")
 BANNER_PREFIX = "banner-"
 BANNER_TITLE_ID = "title"
 FOOTER = "site/src/components/Footer.astro"
+SITE_TITLE = "site/src/components/SiteTitle.astro"
 MAKER_LINE = 'pairbench is made by <a href="https://eugo.io/">Eugo</a>'
 SITE = "https://made-up.example"
 BASE = "/docs/tool/"
@@ -69,6 +70,22 @@ def test_the_site_shows_the_mark_of_the_readme(repo_root: Path, name: str) -> No
     readme = (repo_root / "docs" / "readme" / name).read_bytes()
 
     assert (repo_root / "site" / "src" / "assets" / name).read_bytes() == readme
+
+
+def test_the_header_follows_the_name_with_the_maker_s_logo_and_no_div(repo_root: Path) -> None:
+    config = (repo_root / "site" / "astro.config.mjs").read_text(encoding="utf-8")
+    text = (repo_root / SITE_TITLE).read_text(encoding="utf-8")
+    template = text.split("---", 2)[2]
+
+    assert "SiteTitle: './src/components/SiteTitle.astro'" in config
+    assert template.index("<Default />") < template.index(
+        '<a class="pb-by" href="https://eugo.io/"'
+    )
+    assert f"import logo from '../assets/{Path(MAKER_LOGO).name}';" in text
+    # One drawing for both themes.
+    assert template.count("<img ") == 1
+    # The version picker goes before the first </div> after the header's title wrapper opens.
+    assert "<div" not in template
 
 
 @pytest.mark.parametrize("name", MARK_DRAWINGS)
