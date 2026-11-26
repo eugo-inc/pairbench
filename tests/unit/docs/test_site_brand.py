@@ -177,6 +177,16 @@ def test_the_footer_names_the_maker(repo_root: Path) -> None:
     assert MAKER_LINE in (repo_root / FOOTER).read_text(encoding="utf-8")
 
 
+def test_the_footer_leads_with_the_maker_s_logo_linked_to_its_home_page(repo_root: Path) -> None:
+    text = (repo_root / FOOTER).read_text(encoding="utf-8")
+
+    assert '<a class="pb-maker-logo" href="https://eugo.io/"' in text
+    assert text.index("pb-maker-logo") < text.index(MAKER_LINE)
+    assert f"import logo from '../assets/{Path(MAKER_LOGO).name}';" in text
+    # One drawing for both themes.
+    assert text.count("<img ") == 1
+
+
 def _check(docs_site: ModuleType, dist: Path, href: str) -> list[str]:
     dist.mkdir(parents=True, exist_ok=True)
     (dist / "index.html").write_text(LINK_PAGE.format(href=href), encoding="utf-8")
