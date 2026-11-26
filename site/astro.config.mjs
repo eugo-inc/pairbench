@@ -40,8 +40,13 @@ export default defineConfig({
         dark: './src/assets/mark-dark.svg',
         alt: '',
       },
-      // Inter, installed from the package and served by the site itself, and the palette.
-      customCss: ['@fontsource-variable/inter', './src/styles/brand.css'],
+      // Red Hat Text and Red Hat Display, installed from their packages and served by the site
+      // itself, and the palette.
+      customCss: [
+        '@fontsource-variable/red-hat-text',
+        '@fontsource-variable/red-hat-display',
+        './src/styles/brand.css',
+      ],
       // The footer of every page, with the line that names the maker.
       components: { Footer: './src/components/Footer.astro' },
       social: [

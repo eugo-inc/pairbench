@@ -160,8 +160,8 @@ HERO_ACTIONS = (
 # The badges of the home page, drawn by the build from the package's own metadata into
 # BADGES under the base folder: each its file, its label and its colour. Nothing is fetched.
 BADGES = "badges"
-BADGE_COLOURS = {"version": "#7c3aed", "python": "#048196", "licence": "#4b5066"}
-BADGE_LABEL_COLOUR = "#1c2135"
+BADGE_COLOURS = {"version": "#6a5cff", "python": "#1a74c4", "licence": "#55566b"}
+BADGE_LABEL_COLOUR = "#160f3d"
 # The width of a badge's text, in pixels per character at its size: the text is drawn to
 # exactly that width, so the badge does not depend on the fonts of the reader's machine.
 BADGE_CHARACTER = 6.4

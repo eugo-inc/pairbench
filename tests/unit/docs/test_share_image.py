@@ -43,27 +43,27 @@ CHECK_RULE = (
 NAME = "pairbench"
 LINE = "Tells real benchmark differences from noise"
 ALT = (
-    "The name pairbench in white beside its mark of four rounded tiles in violet and teal, above "
+    "The name pairbench in white beside its mark of four rounded tiles in violet and blue, above "
     "the line “Tells real benchmark differences from noise”, on a dark background under a "
-    "violet-to-teal band."
+    "violet-to-blue band."
 )
 # A PNG file that holds its header, its pixels and its end, and no text, date or colour
 # profile beside them.
 CHUNKS = [b"IHDR", b"IDAT", b"IEND"]
 RGB_8_BIT = (8, 2)
 # Pixels of the mark, by column and row, and their colours. The top-left tile is violet,
-# shaded from #b061ff at its top to #9c38ff at its bottom; the one below it is teal. Near its
+# shaded from #b26bff at its top to #a24bff at its bottom; the one below it is azure. Near its
 # top edge the white highlight shows, at 22 percent; under its bottom edge, in the gap
-# between the rows of tiles, its shadow darkens the ground (#080d17); far below the mark the
+# between the rows of tiles, its shadow darkens the ground (#160f3d); far below the mark the
 # ground is untouched.
 MARK_PIXELS = {
-    "the highlight at the top of the violet tile": ((197, 161), (193, 131, 255)),
-    "the violet tile near its top": ((197, 170), (173, 91, 255)),
-    "the violet tile near its bottom": ((197, 225), (157, 58, 255)),
-    "the shadow just under the violet tile": ((197, 230), (5, 8, 15)),
-    "the shadow further down": ((197, 234), (7, 11, 20)),
-    "the teal tile below it": ((197, 240), (103, 217, 234)),
-    "the ground far below the mark": ((197, 330), (8, 13, 23)),
+    "the highlight at the top of the violet tile": ((197, 161), (195, 140, 255)),
+    "the violet tile near its top": ((197, 170), (176, 102, 255)),
+    "the violet tile near its bottom": ((197, 225), (163, 77, 255)),
+    "the shadow just under the violet tile": ((197, 230), (14, 10, 39)),
+    "the shadow further down": ((197, 234), (19, 13, 54)),
+    "the azure tile below it": ((197, 240), (115, 198, 255)),
+    "the ground far below the mark": ((197, 330), (22, 15, 61)),
 }
 # The mark's shadow has a standard deviation of 1.2 of its 64 units; the card draws the mark
 # 168 pixels wide, so 3.15 pixels. Three box passes of these widths have a variance of

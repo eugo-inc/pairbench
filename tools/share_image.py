@@ -44,8 +44,8 @@ HEIGHT = 630
 NAME = "pairbench"
 LINE = "Tells real benchmark differences from noise"
 ALT = (
-    f"The name {NAME} in white beside its mark of four rounded tiles in violet and teal, above "
-    f"the line “{LINE}”, on a dark background under a violet-to-teal band."
+    f"The name {NAME} in white beside its mark of four rounded tiles in violet and blue, above "
+    f"the line “{LINE}”, on a dark background under a violet-to-blue band."
 )
 
 Point = tuple[float, float]
@@ -54,18 +54,22 @@ Colour = tuple[int, int, int]
 # The colour of a layer at a pixel, given its column and its row.
 Paint = Callable[[int, int], Colour]
 
-# The dark palette of the site: its ground, its text, a softer text, and the two ends of its
-# gradient.
-BACKGROUND: Colour = (0x08, 0x0D, 0x17)
-NAME_COLOUR: Colour = (0xF2, 0xF3, 0xF8)
-LINE_COLOUR: Colour = (0xA9, 0xB0, 0xC3)
-GRADIENT: tuple[Colour, Colour] = ((0xA0, 0x3F, 0xFF), (0x00, 0x82, 0x94))
+# The dark palette of the site: its ground, its text, a softer text, and the stops of its
+# gradient, each a colour and the share of the width where it falls, in hundredths.
+BACKGROUND: Colour = (0x16, 0x0F, 0x3D)
+NAME_COLOUR: Colour = (0xFF, 0xFF, 0xFF)
+LINE_COLOUR: Colour = (0xD6, 0xD3, 0xEE)
+GRADIENT: tuple[tuple[Colour, int], ...] = (
+    ((0x8E, 0x45, 0xFF), 0),
+    ((0x6A, 0x5C, 0xFF), 45),
+    ((0x2A, 0xA6, 0xFF), 100),
+)
 BAND_HEIGHT = 10
 
 # The mark of ``docs/readme/mark-dark.svg``, in its 64-unit space. Each tile is shaded from
 # its top colour to its bottom one.
-VIOLET: tuple[Colour, Colour] = ((0xB0, 0x61, 0xFF), (0x9C, 0x38, 0xFF))
-TEAL: tuple[Colour, Colour] = ((0x3D, 0xCE, 0xE4), (0x1E, 0xC1, 0xD9))
+VIOLET: tuple[Colour, Colour] = ((0xB2, 0x6B, 0xFF), (0xA2, 0x4B, 0xFF))
+AZURE: tuple[Colour, Colour] = ((0x4D, 0xB6, 0xFF), (0x2A, 0xA6, 0xFF))
 MARK_UNITS = 64.0
 TILE = 26.0
 TILE_RADIUS = 7.0
@@ -406,14 +410,23 @@ def shade(ends: tuple[Colour, Colour], tops: Sequence[float], height: float) -> 
 
 
 def gradient(x: int, width: int = WIDTH) -> Colour:
-    """The colour of the gradient at a column: each channel goes from the first end to the
-    second in a straight line, rounded to the nearest whole value, the same on every machine."""
-    (r0, g0, b0), (r1, g1, b1) = GRADIENT
+    """The colour of the gradient at a column: between the two stops around the column, each
+    channel goes from the first stop's to the second's in a straight line, rounded to the
+    nearest whole value. Only whole numbers are used, so it is the same on every machine."""
     last = width - 1
+    # The pair of stops whose columns, as hundredths of the last column, hold the column: the
+    # last pair when the column is past the end of every other.
+    pairs = list(itertools.pairwise(GRADIENT))
+    (start, at), (end, until) = next(
+        (pair for pair in pairs if x * 100 <= pair[1][1] * last), pairs[-1]
+    )
+    left, right = at * last, until * last
+    span = right - left
+    step = x * 100 - left
     return (
-        (r0 * (last - x) + r1 * x + last // 2) // last,
-        (g0 * (last - x) + g1 * x + last // 2) // last,
-        (b0 * (last - x) + b1 * x + last // 2) // last,
+        (start[0] * (span - step) + end[0] * step + span // 2) // span,
+        (start[1] * (span - step) + end[1] * step + span // 2) // span,
+        (start[2] * (span - step) + end[2] * step + span // 2) // span,
     )
 
 
@@ -461,18 +474,18 @@ def render() -> bytes:
     band = Layer(WIDTH, HEIGHT)
     band.rounded_box(0, 0, WIDTH, BAND_HEIGHT, 0)
     # The mark on its 64-unit grid: four tiles of 26 units with a radius of 7, 4 units in from
-    # the edges and 4 apart; violet at the top left and the bottom right, teal at the others.
+    # the edges and 4 apart; violet at the top left and the bottom right, azure at the others.
     scale = icon / MARK_UNITS
     tile, radius = TILE * scale, TILE_RADIUS * scale
     violet = Layer(WIDTH, HEIGHT)
-    teal = Layer(WIDTH, HEIGHT)
+    azure = Layer(WIDTH, HEIGHT)
     lowered = Layer(WIDTH, HEIGHT)
     tops = [icon_top + (4 + 30 * row) * scale for row in (0, 1)]
     # The highlights of each row of tiles, faded down from the top of their own line.
     highlights = [Layer(WIDTH, HEIGHT) for _ in tops]
     inset = HIGHLIGHT_WIDTH / 2 * scale
     for column, row in ((0, 0), (1, 0), (0, 1), (1, 1)):
-        tiles = violet if column == row else teal
+        tiles = violet if column == row else azure
         x, y = left + (4 + 30 * column) * scale, tops[row]
         tiles.rounded_box(x, y, tile, tile, radius)
         lowered.rounded_box(x, y + SHADOW_OFFSET * scale, tile, tile, radius)
@@ -504,7 +517,7 @@ def render() -> bytes:
         (band, None),
         (shadow, SHADOW),
         (violet, shade(VIOLET, tops, tile)),
-        (teal, shade(TEAL, tops, tile)),
+        (azure, shade(AZURE, tops, tile)),
         *((highlight, HIGHLIGHT) for highlight in highlights),
         (name, NAME_COLOUR),
         (tagline, LINE_COLOUR),

@@ -7,8 +7,8 @@
 The banner holds the wordmark, the mark (``mark-light.svg`` or ``mark-dark.svg``, nested as it
 is) followed by the name, then one line on what the tool does and its five verdicts. Every
 letter is a path: a page shows an SVG image without loading a web font, so the text is drawn
-in Inter as outlines. The letters are shaped with HarfBuzz from the variable Inter font the
-documentation site installs, at the weight each text asks for.
+in Red Hat Display as outlines. The letters are shaped with HarfBuzz from the variable Red Hat
+Display font the documentation site installs, at the weight each text asks for.
 
 Needs ``pip install uharfbuzz fonttools brotli`` and the site's packages (``npm ci`` in
 ``site/``). After the mark files change, run this script again.
@@ -24,13 +24,20 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-FONT = REPO / "site/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
+FONT = (
+    REPO
+    / "site/node_modules/@fontsource-variable/red-hat-display/files"
+    / "red-hat-display-latin-wght-normal.woff2"
+)
 WIDTH = 1200
 HEIGHT = 300
 NAME = "pairbench"
 LINE = "Tells real benchmark differences from noise"
 VERDICTS = ("FASTER", "SLOWER", "TIE", "UNRESOLVED", "NO VERDICT")
 TITLE = f"{NAME}: tells real benchmark differences from noise. Verdicts: {', '.join(VERDICTS)}"
+# The weights of the name (as the site's header sets it) and of the verdicts' letters.
+NAME_WEIGHT = 800
+PILL_WEIGHT = 700
 
 
 @dataclass(frozen=True)
@@ -39,7 +46,8 @@ class Theme:
     border: str
     ink: str
     muted: str
-    rule: tuple[str, str]
+    # The stops of the gradient along the top, each a colour and its offset.
+    rule: tuple[tuple[str, str], ...]
     # Each verdict's fill, border and text.
     verdicts: dict[str, tuple[str, str, str]]
 
@@ -47,30 +55,30 @@ class Theme:
 THEMES = {
     "light": Theme(
         ground="#ffffff",
-        border="#e4e1ee",
-        ink="#0b1020",
-        muted="#4a4f63",
-        rule=("#7c3aed", "#048196"),
+        border="#e6e4f0",
+        ink="#160f3d",
+        muted="#55566b",
+        rule=(("#8e45ff", "0"), ("#6a5cff", ".45"), ("#2aa6ff", "1")),
         verdicts={
-            "FASTER": ("#e3f6f8", "#048196", "#03606f"),
+            "FASTER": ("#e5f3ff", "#1970bd", "#145c9c"),
             "SLOWER": ("#fdebef", "#c0264a", "#9d1c3b"),
-            "TIE": ("#f1eafe", "#7c3aed", "#5b21b6"),
+            "TIE": ("#eeebff", "#6a5cff", "#4b3ccc"),
             "UNRESOLVED": ("#fdf4dc", "#a16207", "#854d0e"),
-            "NO VERDICT": ("#f1f2f6", "#5b6070", "#454a59"),
+            "NO VERDICT": ("#f6f5fb", "#6f7089", "#55566b"),
         },
     ),
     "dark": Theme(
-        ground="#080d17",
-        border="#232a3b",
-        ink="#f2f3f8",
-        muted="#a9b0c3",
-        rule=("#a03fff", "#008294"),
+        ground="#160f3d",
+        border="#352a7f",
+        ink="#ffffff",
+        muted="#d6d3ee",
+        rule=(("#8e45ff", "0"), ("#6a5cff", ".45"), ("#2aa6ff", "1")),
         verdicts={
-            "FASTER": ("#0b2a31", "#22c7e0", "#5ee0f0"),
+            "FASTER": ("#0d2a55", "#2aa6ff", "#7cc8ff"),
             "SLOWER": ("#33121c", "#ff6b81", "#ff8da1"),
-            "TIE": ("#24123d", "#a142ff", "#c99bff"),
+            "TIE": ("#2d1b6e", "#a24bff", "#d9b8ff"),
             "UNRESOLVED": ("#33290d", "#f5c451", "#ffd479"),
-            "NO VERDICT": ("#1a1f2b", "#8c93a6", "#c3c8d6"),
+            "NO VERDICT": ("#291f66", "#a9a4d6", "#d6d3ee"),
         },
     ),
 }
@@ -105,7 +113,7 @@ class _PathPen:
 
 
 class Letters:
-    """Inter, shaped and drawn as outlines."""
+    """Red Hat Display, shaped and drawn as outlines."""
 
     def __init__(self, font_file: Path) -> None:
         import uharfbuzz as hb
@@ -186,24 +194,24 @@ def banner(letters: Letters, theme_name: str) -> str:
     """The banner of a theme: the wordmark, the line and the verdicts, each centred."""
     theme = THEMES[theme_name]
     # The wordmark: the mark, 1.1 times the size of the name high, a gap of 0.3 of that size,
-    # then the name in bold with a letter spacing of -0.03 of that size, both centred on the
-    # middle of the name's letters.
+    # then the name in extra bold with a letter spacing of -0.03 of that size, both centred on
+    # the middle of the name's letters.
     name_size, line_size, pill_size = 88.0, 30.0, 16.0
     mark = 1.1 * name_size
     gap = 0.3 * name_size
     spacing = -0.03 * name_size
-    name_width = letters.width(NAME, name_size, 700, spacing)
+    name_width = letters.width(NAME, name_size, NAME_WEIGHT, spacing)
     left = (WIDTH - (mark + gap + name_width)) / 2
     baseline = 128.0
-    top, bottom = letters.ink(NAME, name_size, 700)
+    top, bottom = letters.ink(NAME, name_size, NAME_WEIGHT)
     middle = baseline - (top + bottom) / 2
     out = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" '
         f'viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-labelledby="title">',
         f'<title id="title">{TITLE}</title>',
         '<defs><linearGradient id="banner-rule" x1="0" y1="0" x2="1" y2="0">'
-        f'<stop offset="0" stop-color="{theme.rule[0]}"/>'
-        f'<stop offset="1" stop-color="{theme.rule[1]}"/></linearGradient>'
+        + "".join(f'<stop offset="{at}" stop-color="{colour}"/>' for colour, at in theme.rule)
+        + "</linearGradient>"
         '<clipPath id="banner-frame"><rect x="1" y="1" width="1198" height="298" rx="18"/>'
         "</clipPath></defs>",
         f'<rect x="1" y="1" width="1198" height="298" rx="18" fill="{theme.ground}" '
@@ -212,14 +220,14 @@ def banner(letters: Letters, theme_name: str) -> str:
         'clip-path="url(#banner-frame)"/>',
         nested_mark(theme_name, left, middle - mark / 2, mark),
         f'<path fill="{theme.ink}" '
-        f'd="{letters.path(NAME, left + mark + gap, baseline, name_size, 700, spacing)}"/>',
+        f'd="{letters.path(NAME, left + mark + gap, baseline, name_size, NAME_WEIGHT, spacing)}"/>',
     ]
     line_width = letters.width(LINE, line_size, 400)
     out.append(
         f'<path fill="{theme.muted}" '
         f'd="{letters.path(LINE, (WIDTH - line_width) / 2, 196, line_size, 400)}"/>'
     )
-    pills = [letters.width(verdict, pill_size, 650) + 32 for verdict in VERDICTS]
+    pills = [letters.width(verdict, pill_size, PILL_WEIGHT) + 32 for verdict in VERDICTS]
     x = (WIDTH - sum(pills) - 12 * (len(pills) - 1)) / 2
     for verdict, pill in zip(VERDICTS, pills, strict=True):
         fill, stroke, ink = theme.verdicts[verdict]
@@ -227,7 +235,9 @@ def banner(letters: Letters, theme_name: str) -> str:
             f'<rect x="{x:.2f}" y="226" width="{pill:.2f}" height="36" rx="18" fill="{fill}" '
             f'stroke="{stroke}" stroke-width="1.5"/>'
         )
-        out.append(f'<path fill="{ink}" d="{letters.path(verdict, x + 16, 250, pill_size, 650)}"/>')
+        out.append(
+            f'<path fill="{ink}" d="{letters.path(verdict, x + 16, 250, pill_size, PILL_WEIGHT)}"/>'
+        )
         x += pill + 12
     out.append("</svg>")
     return "\n".join(out) + "\n"

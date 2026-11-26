@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<a href="https://pypi.org/project/pairbench/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/pairbench?label=pypi&color=7c3aed&labelColor=0b1020"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/pyproject.toml"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/pairbench?label=python&color=048196&labelColor=0b1020"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/LICENSE"><img alt="Licence: Apache-2.0" src="https://img.shields.io/badge/licence-Apache--2.0-4b5066?labelColor=0b1020"></a> <a href="https://eugo.io/docs/pairbench/latest/"><img alt="Documentation" src="https://img.shields.io/badge/docs-latest-7c3aed?labelColor=0b1020"></a>
+<a href="https://pypi.org/project/pairbench/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/pairbench?label=pypi&color=6a5cff&labelColor=160f3d"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/pyproject.toml"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/pairbench?label=python&color=1a74c4&labelColor=160f3d"></a> <a href="https://github.com/eugo-inc/pairbench/blob/main/LICENSE"><img alt="Licence: Apache-2.0" src="https://img.shields.io/badge/licence-Apache--2.0-55566b?labelColor=160f3d"></a> <a href="https://eugo.io/docs/pairbench/latest/"><img alt="Documentation" src="https://img.shields.io/badge/docs-latest-6a5cff?labelColor=160f3d"></a>
 
 **Is one side really faster than another on this workload, on this machine, or is the difference noise?**
 
