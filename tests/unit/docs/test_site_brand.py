@@ -27,6 +27,8 @@ MARKS = ("mark-light.svg", "mark-dark.svg")
 # The maker's logo in the site's assets: one drawing for the light and the dark theme, the
 # outlines of its mark and of its name, each filled with its own gradient.
 MAKER_LOGO = "site/src/assets/eugo-logo.svg"
+# The README's copy of it, which its banners nest.
+README_LOGO = "docs/readme/eugo-logo.svg"
 # The grounds the site shows the logo on: the page and the header of the light theme, then of
 # the dark theme (Starlight's header is its gray-7 on the light theme and its gray-6 on the
 # dark one). Every colour of the logo reaches 3:1 on each, the least a graphic needs.
@@ -175,6 +177,23 @@ def test_a_banner_nests_the_mark_with_its_shadow_under_ids_of_its_own(
     assert [i for i in ids if not i.startswith(BANNER_PREFIX)] == [BANNER_TITLE_ID]
     assert [rest for _, rest in FILTER.findall(text)] == [SHADOW_FILTER]
     assert {ref.removeprefix("#") for ref in REFERENCE.findall(text)} <= set(ids)
+
+
+def test_the_readme_s_logo_is_the_site_s(repo_root: Path) -> None:
+    assert (repo_root / README_LOGO).read_bytes() == (repo_root / MAKER_LOGO).read_bytes()
+
+
+@pytest.mark.parametrize("name", BANNERS)
+def test_a_banner_nests_the_maker_s_logo_as_its_file_draws_it_under_ids_of_its_own(
+    repo_root: Path, name: str
+) -> None:
+    logo = (repo_root / README_LOGO).read_text(encoding="utf-8")
+    inner = logo.split(">", 1)[1].rsplit("</svg>", 1)[0].strip()
+    own = re.sub(r'id="([^"]+)"', rf'id="{BANNER_PREFIX}\1"', inner)
+    own = re.sub(r"url\(#([^)]+)\)", rf"url(#{BANNER_PREFIX}\1)", own)
+
+    assert own != inner
+    assert own in (repo_root / name).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", BANNERS)

@@ -5,13 +5,14 @@
     python3 docs/readme/make_banner.py
 
 The banner holds the wordmark, the mark (``mark-light.svg`` or ``mark-dark.svg``, nested as it
-is) followed by the name, then one line on what the tool does and its five verdicts. Every
-letter is a path: a page shows an SVG image without loading a web font, so the text is drawn
-in Red Hat Display as outlines. The letters are shaped with HarfBuzz from the variable Red Hat
-Display font the documentation site installs, at the weight each text asks for.
+is) followed by the name, then one line on what the tool does and its five verdicts, with the
+maker's logo (``eugo-logo.svg``, nested as it is, in its own gradients on either theme) in the top
+right corner. Every letter is a path: a page shows an SVG image without loading a web font, so the
+text is drawn in Red Hat Display as outlines. The letters are shaped with HarfBuzz from the
+variable Red Hat Display font the documentation site installs, at the weight each text asks for.
 
 Needs ``pip install uharfbuzz fonttools brotli`` and the site's packages (``npm ci`` in
-``site/``). After the mark files change, run this script again.
+``site/``). After the mark files or the logo change, run this script again.
 """
 
 from __future__ import annotations
@@ -34,7 +35,15 @@ HEIGHT = 300
 NAME = "pairbench"
 LINE = "Tells real benchmark differences from noise"
 VERDICTS = ("FASTER", "SLOWER", "TIE", "UNRESOLVED", "NO VERDICT")
-TITLE = f"{NAME}: tells real benchmark differences from noise. Verdicts: {', '.join(VERDICTS)}"
+TITLE = (
+    f"{NAME}: tells real benchmark differences from noise. Verdicts: {', '.join(VERDICTS)}."
+    " Made by Eugo"
+)
+# The maker's logo in the top right corner: its width, and its distance from the top and the
+# right edge, in the banner's pixels.
+LOGO_WIDTH = 110.0
+LOGO_TOP = 26.0
+LOGO_RIGHT = 30.0
 # The weights of the name (as the site's header sets it) and of the verdicts' letters.
 NAME_WEIGHT = 800
 PILL_WEIGHT = 700
@@ -182,12 +191,33 @@ def nested_mark(theme_name: str, x: float, y: float, size: float) -> str:
     """The mark file of a theme, nested at a place and size, its ids made the banner's own."""
     text = (HERE / f"mark-{theme_name}.svg").read_text(encoding="utf-8")
     view = re.search(r'viewBox="([^"]+)"', text)
-    inner = text.split(">", 1)[1].rsplit("</svg>", 1)[0].strip()
-    inner = re.sub(r'id="([^"]+)"', r'id="banner-\1"', inner)
-    inner = re.sub(r"url\(#([^)]+)\)", r"url(#banner-\1)", inner)
     box = view.group(1) if view else "0 0 64 64"
     place = f'x="{x:.2f}" y="{y:.2f}" width="{size:.2f}" height="{size:.2f}"'
-    return f'<svg {place} viewBox="{box}">{inner}</svg>'
+    return f'<svg {place} viewBox="{box}">{_own_ids(text)}</svg>'
+
+
+def _own_ids(text: str) -> str:
+    """What an SVG file draws inside its root, its ids and the references to them made the
+    banner's own."""
+    inner = text.split(">", 1)[1].rsplit("</svg>", 1)[0].strip()
+    inner = re.sub(r'id="([^"]+)"', r'id="banner-\1"', inner)
+    return re.sub(r"url\(#([^)]+)\)", r"url(#banner-\1)", inner)
+
+
+def nested_logo() -> str:
+    """The maker's logo file, nested as it is in the top right corner, its ids made the
+    banner's own: the same drawing, in its own gradients, on either theme."""
+    text = (HERE / "eugo-logo.svg").read_text(encoding="utf-8")
+    view = re.search(r'viewBox="([^"]+)"', text)
+    if view is None:
+        raise SystemExit("eugo-logo.svg must have a viewBox")
+    _, _, box_width, box_height = (float(n) for n in view.group(1).split())
+    height = LOGO_WIDTH * box_height / box_width
+    place = (
+        f'x="{WIDTH - LOGO_RIGHT - LOGO_WIDTH:.2f}" y="{LOGO_TOP:.2f}" '
+        f'width="{LOGO_WIDTH:.2f}" height="{height:.2f}"'
+    )
+    return f'<svg {place} viewBox="{view.group(1)}">{_own_ids(text)}</svg>'
 
 
 def banner(letters: Letters, theme_name: str) -> str:
@@ -219,6 +249,7 @@ def banner(letters: Letters, theme_name: str) -> str:
         '<rect x="0" y="0" width="1200" height="6" fill="url(#banner-rule)" '
         'clip-path="url(#banner-frame)"/>',
         nested_mark(theme_name, left, middle - mark / 2, mark),
+        nested_logo(),
         f'<path fill="{theme.ink}" '
         f'd="{letters.path(NAME, left + mark + gap, baseline, name_size, NAME_WEIGHT, spacing)}"/>',
     ]

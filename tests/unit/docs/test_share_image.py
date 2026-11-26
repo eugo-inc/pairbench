@@ -20,6 +20,8 @@ from .conftest import load_tool
 
 ROOT = Path(__file__).resolve().parents[3]
 IMAGE = "site/public/share.png"
+# The maker's logo the image draws in its top right corner: the README's copy of it.
+LOGO = "docs/readme/eugo-logo.svg"
 WIDTH = 1200
 HEIGHT = 630
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -45,7 +47,7 @@ LINE = "Tells real benchmark differences from noise"
 ALT = (
     "The name pairbench in white beside its mark of four rounded tiles in violet and blue, above "
     "the line “Tells real benchmark differences from noise”, on a dark background under a "
-    "violet-to-blue band."
+    "violet-to-blue band, with the maker's logo in the top right corner."
 )
 # A PNG file that holds its header, its pixels and its end, and no text, date or colour
 # profile beside them.
@@ -64,6 +66,16 @@ MARK_PIXELS = {
     "the shadow further down": ((197, 234), (19, 13, 54)),
     "the azure tile below it": ((197, 240), (115, 198, 255)),
     "the ground far below the mark": ((197, 330), (22, 15, 61)),
+}
+# Pixels of the maker's logo in the top right corner, by column and row, and their colours:
+# the outlines of docs/readme/eugo-logo.svg, each in its own gradient, the mark from violet at
+# its left to blue at its right, and the name from violet at its first letter to blue at its
+# last.
+LOGO_PIXELS = {
+    "the mark at its left": ((998, 71), (148, 91, 232)),
+    "the mark at its right": ((1056, 68), (49, 133, 241)),
+    "the name at its first letter": ((1077, 59), (148, 88, 234)),
+    "the name at its last letter": ((1153, 63), (6, 149, 232)),
 }
 # The mark's shadow has a standard deviation of 1.2 of its 64 units; the card draws the mark
 # 168 pixels wide, so 3.15 pixels. Three box passes of these widths have a variance of
@@ -375,6 +387,18 @@ def test_the_mark_is_shaded_with_a_highlight_and_a_shadow(rows: bytes, where: st
     at = y * (ROW_BYTES + 1) + 1 + 3 * x
 
     assert tuple(rows[at : at + 3]) == colour
+
+
+@pytest.mark.parametrize("where", sorted(LOGO_PIXELS))
+def test_the_maker_s_logo_is_drawn_in_its_own_gradients(rows: bytes, where: str) -> None:
+    (x, y), colour = LOGO_PIXELS[where]
+    at = y * (ROW_BYTES + 1) + 1 + 3 * x
+
+    assert tuple(rows[at : at + 3]) == colour
+
+
+def test_the_logo_is_the_file_the_readme_s_banner_nests(share: ModuleType) -> None:
+    assert share.LOGO == ROOT / LOGO
 
 
 def test_the_shadow_is_blurred_by_box_passes_of_a_gaussian_s_variance(share: ModuleType) -> None:

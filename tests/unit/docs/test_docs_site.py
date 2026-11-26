@@ -19,7 +19,7 @@ from types import ModuleType
 import pytest
 
 from .conftest import load_tool
-from .test_share_image import ALT, HEIGHT, REFUSED, REMEDY, WIDTH, chunk
+from .test_share_image import ALT, HEIGHT, LOGO, REFUSED, REMEDY, WIDTH, chunk
 
 SITE = "https://docs.example.org"
 # The switch that keeps Astro from sending usage data, as npm ci and the Astro build get it.
@@ -405,11 +405,19 @@ def test_the_check_of_a_built_site_refuses_a_published_share_image_and_names_the
     assert docs_site.check_site(tmp_path, address) == [f"share.png {cause}: {PUBLISHED_REMEDY}"]
 
 
-def staged_image(repo_root: Path, repo: Path) -> Path:
-    """A repository of its own that holds the share image's script and the committed image."""
+def staged_script(repo_root: Path, repo: Path) -> None:
+    """Put the share image's script, and the maker's logo it draws, in a repository of its own."""
     (repo / "tools").mkdir(parents=True, exist_ok=True)
     (repo / "site" / "public").mkdir(parents=True, exist_ok=True)
+    (repo / LOGO).parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(repo_root / "tools" / "share_image.py", repo / "tools" / "share_image.py")
+    shutil.copy2(repo_root / LOGO, repo / LOGO)
+
+
+def staged_image(repo_root: Path, repo: Path) -> Path:
+    """A repository of its own that holds the share image's script, the logo it draws and the
+    committed image."""
+    staged_script(repo_root, repo)
     shutil.copy2(repo_root / SOURCE_IMAGE, repo / SOURCE_IMAGE)
     return repo / SOURCE_IMAGE
 
@@ -455,9 +463,7 @@ def test_the_build_writes_nothing_when_the_share_image_is_out_of_date(
     address: object,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    (tmp_path / "tools").mkdir()
-    (tmp_path / "site" / "public").mkdir(parents=True)
-    shutil.copy2(repo_root / "tools" / "share_image.py", tmp_path / "tools" / "share_image.py")
+    staged_script(repo_root, tmp_path)
     (tmp_path / "site/public/share.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     monkeypatch.setattr(docs_site, "load_build", lambda repo: paged_build(docs_site, repo, address))
     monkeypatch.setattr(docs_site, "check_generated_pages", lambda repo: None)
@@ -473,9 +479,7 @@ def test_the_build_writes_nothing_when_the_share_image_is_out_of_date(
 def test_the_build_refuses_a_share_image_with_a_chunk_beside_its_pixels(
     docs_site: ModuleType, repo_root: Path, tmp_path: Path, kind: bytes, place: str
 ) -> None:
-    (tmp_path / "tools").mkdir()
-    (tmp_path / "site" / "public").mkdir(parents=True)
-    shutil.copy2(repo_root / "tools" / "share_image.py", tmp_path / "tools" / "share_image.py")
+    staged_script(repo_root, tmp_path)
     image = tmp_path / "site/public/share.png"
     shutil.copy2(repo_root / "site/public/share.png", image)
     committed = image.read_bytes()

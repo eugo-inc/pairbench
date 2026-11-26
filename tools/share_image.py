@@ -5,17 +5,20 @@
 A page shared on a social site or in a chat shows this image beside its title. It holds
 a band of the site's accent gradient along its top, the mark of the site (the four tiles of
 ``docs/readme/mark-dark.svg``, in the order of two alternating rounds), the name pairbench
-and one line on what it does, on the dark ground of the site. The mark is drawn as its file
-draws it: a soft shadow straight down under all four tiles, each tile shaded from top to
-bottom in its own colour, and a faint white line just inside each tile's edge that fades out
-before the middle of the tile.
+and one line on what it does, on the dark ground of the site, with the maker's logo in the top
+right corner, drawn from ``docs/readme/eugo-logo.svg`` as the README's banner nests it: its
+outlines, each filled with its own gradient. The mark is drawn as its file draws it: a soft
+shadow straight down under all four tiles, each tile shaded from top to bottom in its own
+colour, and a faint white line just inside each tile's edge that fades out before the middle of
+the tile.
 
 The drawing uses only the standard library and arithmetic that gives the same result on
 every machine: the letters are strokes of a small built-in font, made of straight pieces
 and of arcs whose points come from square roots, never from the system's fonts or its
-trigonometry. The shadow is blurred by three passes of a box filter, whose widths come
-from a square root and whose sums are whole numbers, never by the exponential of a Gaussian.
-The build copies the committed file as it is, once ``is_current`` finds it
+trigonometry; the logo's curves are cut into straight pieces by de Casteljau's construction,
+which only adds and multiplies. The shadow is blurred by three passes of a box filter, whose
+widths come from a square root and whose sums are whole numbers, never by the exponential of a
+Gaussian. The build copies the committed file as it is, once ``is_current`` finds it
 is the file this script writes, up to how its rows are compressed; ``is_current`` says
 exactly what it accepts and what it refuses, and ``refusal`` names why a file is refused.
 
@@ -28,8 +31,10 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import functools
 import itertools
 import math
+import re
 import struct
 import sys
 import zlib
@@ -45,7 +50,8 @@ NAME = "pairbench"
 LINE = "Tells real benchmark differences from noise"
 ALT = (
     f"The name {NAME} in white beside its mark of four rounded tiles in violet and blue, above "
-    f"the line “{LINE}”, on a dark background under a violet-to-blue band."
+    f"the line “{LINE}”, on a dark background under a violet-to-blue band, with the maker's "
+    "logo in the top right corner."
 )
 
 Point = tuple[float, float]
@@ -88,6 +94,15 @@ HIGHLIGHT_REACH = 0.45
 # The box passes that blur the shadow, and the whole steps of coverage the blur sums.
 BLUR_PASSES = 3
 COVER_STEPS = 1024
+# The maker's logo: the file that draws it, its width in the image, and its distance from the
+# top and from the right edge, in pixels. Each curve of its outlines is drawn as
+# ``CURVE_PIECES`` straight pieces, and each row of pixels is crossed by ``SAMPLES`` lines.
+LOGO = REPO / "docs" / "readme" / "eugo-logo.svg"
+LOGO_WIDTH = 160.0
+LOGO_TOP = 40.0
+LOGO_RIGHT = 44.0
+CURVE_PIECES = 8
+SAMPLES = 16
 
 # --- directions without trigonometry -------------------------------------------------------
 
@@ -329,6 +344,63 @@ class Layer:
                 if self.cover[index] > 0.0:
                     self.cover[index] *= scale
 
+    def fill(self, contours: Sequence[Sequence[Point]]) -> None:
+        """Fill closed outlines by the nonzero rule, smoothed at their edges: each row of pixels
+        is crossed by ``SAMPLES`` lines, and each pixel is covered by the share of those lines'
+        length inside the outlines that lies in it."""
+        edges = []
+        for contour in contours:
+            for (xa, ya), (xb, yb) in itertools.pairwise([*contour, contour[0]]):
+                if ya == yb:
+                    continue
+                winding = 1 if yb > ya else -1
+                if ya > yb:
+                    xa, ya, xb, yb = xb, yb, xa, ya
+                edges.append((ya, yb, xa, (xb - xa) / (yb - ya), winding))
+        if not edges:
+            return
+        edges.sort()
+        xs = [x for contour in contours for x, _y in contour]
+        x0, x1 = max(0, math.floor(min(xs))), min(self.width, math.ceil(max(xs)) + 1)
+        y0 = max(0, math.floor(edges[0][0]))
+        y1 = min(self.height, math.ceil(max(edge[1] for edge in edges)) + 1)
+        start, active = 0, []
+        for y in range(y0, y1):
+            row = [0.0] * (x1 - x0)
+            for sample in range(SAMPLES):
+                line_y = y + (sample + 0.5) / SAMPLES
+                while start < len(edges) and edges[start][0] <= line_y:
+                    active.append(edges[start])
+                    start += 1
+                active = [edge for edge in active if edge[1] > line_y]
+                crossings = sorted(
+                    (edge[2] + (line_y - edge[0]) * edge[3], edge[4]) for edge in active
+                )
+                winding = 0
+                for (xa, turn), (xb, _turn) in itertools.pairwise(crossings):
+                    winding += turn
+                    if winding:
+                        _span(row, xa - x0, xb - x0)
+            for column, value in enumerate(row):
+                if value > 0.0:
+                    self._put(x0 + column, y, min(1.0, value / SAMPLES))
+
+
+def _span(row: list[float], left: float, right: float) -> None:
+    """Add to a row of pixels the length of a line from ``left`` to ``right`` in each."""
+    left, right = max(0.0, left), min(float(len(row)), right)
+    if right <= left:
+        return
+    first, last = int(left), int(right)
+    if first == last:
+        row[first] += right - left
+        return
+    row[first] += first + 1 - left
+    for column in range(first + 1, min(last, len(row))):
+        row[column] += 1.0
+    if last < len(row):
+        row[last] += right - last
+
 
 def box_widths(deviation: float, passes: int = BLUR_PASSES) -> list[int]:
     """The odd widths, in pixels, of the box passes whose blur together has the variance of a
@@ -430,6 +502,131 @@ def gradient(x: int, width: int = WIDTH) -> Colour:
     )
 
 
+# --- the maker's logo ----------------------------------------------------------------------
+
+# A gradient of the logo file: its line, from (x1, y1) to (x2, y2) in shares of the bounds of the
+# outline it fills, and its stops, each its place along that line and its colour.
+LogoGradient = tuple[tuple[float, float, float, float], tuple[tuple[float, Colour], ...]]
+
+
+def _hex(text: str) -> Colour:
+    return int(text[1:3], 16), int(text[3:5], 16), int(text[5:7], 16)
+
+
+@functools.cache
+def logo() -> tuple[tuple[float, float, float, float], tuple[tuple[str, LogoGradient], ...]]:
+    """The logo file, read once: its view box, then each of its outlines (the commands of an
+    SVG path, every point given whole) with the gradient that fills it."""
+    text = LOGO.read_text(encoding="utf-8")
+    view = re.search(r'viewBox="([^"]+)"', text)
+    gradients: dict[str, LogoGradient] = {}
+    for ident, attributes, body in re.findall(
+        r'<linearGradient id="([^"]+)"([^>]*)>(.*?)</linearGradient>', text
+    ):
+        line = tuple(
+            float(re.findall(rf'\b{name}="([^"]+)"', attributes)[0])
+            for name in ("x1", "y1", "x2", "y2")
+        )
+        stops = tuple(
+            (float(at), _hex(colour))
+            for at, colour in re.findall(
+                r'<stop offset="([^"]+)" stop-color="(#[0-9a-f]{6})"/>', body
+            )
+        )
+        gradients[ident] = (line[0], line[1], line[2], line[3]), stops
+    paths = re.findall(r'<path fill="url\(#([^)]+)\)" d="([^"]+)"/>', text)
+    if view is None or not paths or any(ident not in gradients for ident, _ in paths):
+        raise SystemExit(f"{LOGO} must have a viewBox and paths filled with its own gradients")
+    left, top, width, height = (float(n) for n in view.group(1).split())
+    return (left, top, width, height), tuple((d, gradients[ident]) for ident, d in paths)
+
+
+def _bezier(points: Sequence[Point], t: float) -> Point:
+    """The point at ``t`` of a Bézier curve, by de Casteljau's construction."""
+    row = list(points)
+    while len(row) > 1:
+        row = [
+            (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t) for a, b in itertools.pairwise(row)
+        ]
+    return row[0]
+
+
+def outline_contours(d: str, place: Callable[[float, float], Point]) -> list[list[Point]]:
+    """The closed contours of an SVG path of M, L, Q, C and Z commands with absolute points,
+    each point put in the image by ``place``, its curves drawn as ``CURVE_PIECES`` straight
+    pieces each."""
+    contours: list[list[Point]] = []
+    current: list[Point] = []
+    for op, numbers in re.findall(r"([MLQCZ])([^MLQCZ]*)", d):
+        values = [float(n) for n in numbers.split()]
+        points = [place(x, y) for x, y in zip(values[0::2], values[1::2], strict=True)]
+        if op == "M":
+            if len(current) > 2:
+                contours.append(current)
+            current = [points[0]]
+        elif op == "L":
+            current += points
+        elif op in ("Q", "C"):
+            ends = [current[-1], *points]
+            current += [_bezier(ends, piece / CURVE_PIECES) for piece in range(1, CURVE_PIECES + 1)]
+        else:
+            if len(current) > 2:
+                contours.append(current)
+            current = []
+    if len(current) > 2:
+        contours.append(current)
+    return contours
+
+
+def along(gradient: LogoGradient, box: tuple[float, float, float, float]) -> Paint:
+    """The paint of a logo gradient over the bounds (left, top, width, height) of the outline it
+    fills, as SVG lays a gradient in the units of those bounds: at a pixel, how far along the line
+    its middle lies, then the colour mixed from the two stops around that place, rounded to
+    the nearest whole value."""
+    (x1, y1, x2, y2), stops = gradient
+    left, top, width, height = box
+    dx, dy = x2 - x1, y2 - y1
+    length = dx * dx + dy * dy
+
+    def paint(x: int, y: int) -> Colour:
+        u, v = (x + 0.5 - left) / width, (y + 0.5 - top) / height
+        t = min(max(((u - x1) * dx + (v - y1) * dy) / length, stops[0][0]), stops[-1][0])
+        (at, first), (until, second) = next(
+            (pair for pair in itertools.pairwise(stops) if t <= pair[1][0]),
+            (stops[-2], stops[-1]),
+        )
+        share = (t - at) / (until - at) if until > at else 0.0
+        return (
+            int(first[0] + (second[0] - first[0]) * share + 0.5),
+            int(first[1] + (second[1] - first[1]) * share + 0.5),
+            int(first[2] + (second[2] - first[2]) * share + 0.5),
+        )
+
+    return paint
+
+
+def logo_layers() -> list[tuple[Layer, Paint]]:
+    """The maker's logo in the top right corner, ``LOGO_WIDTH`` pixels wide: a layer for each
+    outline of its file, in that outline's gradient."""
+    (view_left, view_top, view_width, _), outlines = logo()
+    scale = LOGO_WIDTH / view_width
+    left, top = WIDTH - LOGO_RIGHT - LOGO_WIDTH, LOGO_TOP
+
+    def place(x: float, y: float) -> Point:
+        return left + (x - view_left) * scale, top + (y - view_top) * scale
+
+    layers: list[tuple[Layer, Paint]] = []
+    for d, gradient in outlines:
+        contours = outline_contours(d, place)
+        xs = [x for contour in contours for x, _y in contour]
+        ys = [y for contour in contours for _x, y in contour]
+        layer = Layer(WIDTH, HEIGHT)
+        layer.fill(contours)
+        box = (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+        layers.append((layer, along(gradient, box)))
+    return layers
+
+
 def compose(
     width: int, height: int, layers: Sequence[tuple[Layer, Colour | Paint | None]]
 ) -> bytes:
@@ -521,6 +718,7 @@ def render() -> bytes:
         *((highlight, HIGHLIGHT) for highlight in highlights),
         (name, NAME_COLOUR),
         (tagline, LINE_COLOUR),
+        *logo_layers(),
     ]
     return compose(WIDTH, HEIGHT, layers)
 
