@@ -15,6 +15,7 @@ link.
 
 from __future__ import annotations
 
+import itertools
 import re
 import tomllib
 from pathlib import Path
@@ -23,6 +24,19 @@ from types import ModuleType
 import pytest
 
 MARKS = ("mark-light.svg", "mark-dark.svg")
+# The maker's logo in the site's assets: one drawing for the light and the dark theme, the
+# outlines of its mark and of its name, each filled with its own gradient.
+MAKER_LOGO = "site/src/assets/eugo-logo.svg"
+# The grounds the site shows the logo on: the page and the header of the light theme, then of
+# the dark theme (Starlight's header is its gray-7 on the light theme and its gray-6 on the
+# dark one). Every colour of the logo reaches 3:1 on each, the least a graphic needs.
+MAKER_LOGO_GROUNDS = ("#ffffff", "#fbfaff", "#160f3d", "#291f66")
+MAKER_LOGO_CONTRAST = 3.0
+# The points of each stretch between two stops of a gradient at which its colour is checked.
+GRADIENT_SAMPLES = 64
+GRADIENT = re.compile(r'<linearGradient id="([^"]+)"[^>]*>(.*?)</linearGradient>')
+STOP = re.compile(r'<stop offset="[^"]+" stop-color="(#[0-9a-f]{6})"/>')
+PATH_FILL = re.compile(r'<path fill="([^"]+)" d="[^"]+"/>')
 # The files that draw the mark in the mark's 64-unit space: the two marks and the favicon.
 MARK_DRAWINGS = (
     "docs/readme/mark-light.svg",
@@ -78,6 +92,59 @@ def test_the_light_and_the_dark_mark_share_no_id(repo_root: Path) -> None:
     assert light
     assert dark
     assert light & dark == set()
+
+
+def _luminance(colour: str) -> float:
+    channels = []
+    for at in (1, 3, 5):
+        value = int(colour[at : at + 2], 16) / 255
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast(first: str, second: str) -> float:
+    light, dark = sorted((_luminance(first), _luminance(second)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def _between(first: str, second: str, share: float) -> str:
+    """The colour a share of the way from one colour to another, as a browser mixes a gradient."""
+    channels = (
+        int(first[at : at + 2], 16) * (1 - share) + int(second[at : at + 2], 16) * share
+        for at in (1, 3, 5)
+    )
+    return "#" + "".join(f"{round(channel):02x}" for channel in channels)
+
+
+def test_the_maker_s_logo_is_one_drawing_filled_with_its_own_gradients(repo_root: Path) -> None:
+    text = (repo_root / MAKER_LOGO).read_text(encoding="utf-8")
+    gradients = [ident for ident, _ in GRADIENT.findall(text)]
+
+    assert text.startswith(f'<svg xmlns="{SVG_NAMESPACE}" viewBox="')
+    assert re.findall(r"https?://[^\"' ]+", text) == [SVG_NAMESPACE]
+    assert "<image" not in text
+    assert "href" not in text
+    assert PATH_FILL.findall(text) == [f"url(#{ident})" for ident in gradients]
+
+
+def test_every_colour_of_the_maker_s_logo_reaches_3_to_1_on_each_ground_it_is_shown_on(
+    repo_root: Path,
+) -> None:
+    text = (repo_root / MAKER_LOGO).read_text(encoding="utf-8")
+    colours = []
+    for _, stops in GRADIENT.findall(text):
+        for first, second in itertools.pairwise(STOP.findall(stops)):
+            colours += [
+                _between(first, second, n / GRADIENT_SAMPLES) for n in range(GRADIENT_SAMPLES + 1)
+            ]
+
+    assert colours
+    assert [
+        (colour, ground)
+        for colour in colours
+        for ground in MAKER_LOGO_GROUNDS
+        if _contrast(colour, ground) < MAKER_LOGO_CONTRAST
+    ] == []
 
 
 @pytest.mark.parametrize("name", BANNERS)
